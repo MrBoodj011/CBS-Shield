@@ -1,0 +1,20 @@
+[package]
+name = "cbs-core"
+description = "CBS Shield scan engine: ClamAV discovery, probing and scan orchestration"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,19 @@
+[package]
+name = "cbs-store"
+description = "CBS Shield local SQLite history (scans, detections, quarantine records, settings)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cbs-core = { path = "../cbs-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
