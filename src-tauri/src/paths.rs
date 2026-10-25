@@ -21,7 +21,14 @@ pub struct AppPaths {
 impl AppPaths {
     pub fn discover() -> io::Result<Self> {
         let data_dir = if let Some(value) = env::var_os(ENV_DATA_DIR) {
-            PathBuf::from(value)
+            // Audit fix: an override must resolve to an absolute, canonical
+            // location. A relative value used to silently resolve against the
+            // current working directory, which changes depending on how the
+            // app was started (shortcut, service, manual run).
+            match std::path::absolute(&value) {
+                Ok(absolute) => absolute,
+                Err(_) => PathBuf::from(value),
+            }
         } else {
             let local = env::var_os("LOCALAPPDATA").ok_or_else(|| {
                 io::Error::new(
@@ -32,6 +39,10 @@ impl AppPaths {
             PathBuf::from(local).join("Cybrense").join("CBS Shield")
         };
 
+        Self::from_data_dir(data_dir)
+    }
+
+    fn from_data_dir(data_dir: PathBuf) -> io::Result<Self> {
         let clamav_dir = data_dir.join("clamav");
         let bundled_clamav_dir = env::current_exe()
             .ok()
@@ -56,6 +67,30 @@ impl AppPaths {
         std::fs::create_dir_all(&self.signature_db)?;
         std::fs::create_dir_all(&self.quarantine_dir)?;
         Ok(())
+    }
+
+    /// Audit fix: canonicalize the data directory once, at startup, so every
+    /// prefix comparison (`starts_with(data_dir)`) in quarantine and restore
+    /// validation compares like with like. Without this, a drive letter
+    /// casing difference (`c:\` vs `C:\`), an 8.3 short name (`PROGRA~1`) or
+    /// a trailing junction could make `contains` checks silently fail and
+    /// allow a protected location to slip through.
+    pub fn canonicalized(self) -> io::Result<Self> {
+        self.ensure()?;
+        match self.data_dir.canonicalize() {
+            Ok(canonical) => {
+                // Strip the Windows verbatim prefix for user-facing paths.
+                let text = canonical.as_os_str().to_string_lossy();
+                let stripped = text.strip_prefix(r"\\?\").unwrap_or(&text);
+                let canonical = PathBuf::from(stripped.to_string());
+                if canonical != self.data_dir {
+                    Self::from_data_dir(canonical)
+                } else {
+                    Ok(self)
+                }
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Additional places where a portable/app-local ClamAV build can live.

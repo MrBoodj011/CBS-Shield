@@ -216,3 +216,112 @@ export type SectionId =
   | "network"
   | "quarantine"
   | "settings";
+
+// ---------------------------------------------------------------------------
+// Network Monitor (Sprint 2 — read-only observation)
+// ---------------------------------------------------------------------------
+
+export type NetmonTransport = "tcp" | "udp";
+
+export interface NetmonConnection {
+  transport: NetmonTransport;
+  localIp: string;
+  localPort: number;
+  remoteIp: string | null;
+  remotePort: number | null;
+  /** TCP state (e.g. "ESTABLISHED"); null for UDP bindings. */
+  state: string | null;
+  pid: number;
+  /** Best-effort process name; null when the process is not identifiable. */
+  processName: string | null;
+}
+
+export interface NetmonInterfaceTraffic {
+  alias: string;
+  interfaceType: string;
+  /** Cumulative counters at capture time (NDIS InOctets/OutOctets). */
+  rxBytes: number;
+  txBytes: number;
+}
+
+export interface NetmonSnapshot {
+  capturedAt: string;
+  tcpConnections: NetmonConnection[];
+  /** UDP has no connections: rows are local bindings. */
+  udpBindings: NetmonConnection[];
+  interfaces: NetmonInterfaceTraffic[];
+}
+
+export interface NetmonProcessCount {
+  name: string;
+  connections: number;
+}
+
+export interface NetmonSnapshotPayload {
+  snapshot: NetmonSnapshot;
+  tcpTotal: number;
+  tcpEstablished: number;
+  udpTotal: number;
+  /** Measured byte delta between this capture and the previous one (0 on the
+   * very first capture of the session — no interval exists yet). */
+  rxBytesDelta: number;
+  txBytesDelta: number;
+  topProcesses: NetmonProcessCount[];
+  historyRows: number;
+  persistenceError: string | null;
+}
+
+export interface NetmonSnapshotRecord {
+  id: number;
+  capturedAt: string;
+  tcpTotal: number;
+  tcpEstablished: number;
+  udpTotal: number;
+  rxBytesDelta: number;
+  txBytesDelta: number;
+  topProcesses: NetmonProcessCount[];
+}
+
+// ---------------------------------------------------------------------------
+// Firewall foundation (Sprint 2 — strictly read-only inspection)
+// ---------------------------------------------------------------------------
+
+export interface FirewallProfileStatus {
+  profile: string;
+  enabled: boolean;
+  inboundDefault: string;
+  outboundDefault: string;
+}
+
+export interface FirewallRuleSummary {
+  name: string;
+  grouping: string;
+  description: string;
+  applicationName: string;
+  serviceName: string;
+  direction: string;
+  action: string;
+  enabled: boolean;
+  protocol: string;
+  localPorts: string;
+  remotePorts: string;
+  profiles: string;
+}
+
+export interface FirewallStatus {
+  checkedAt: string;
+  profiles: FirewallProfileStatus[];
+  /** Bitmask of profiles Windows currently applies, as display labels. */
+  activeProfiles: string[];
+  /** Rules listed for display (bounded extract when `rulesTotalCount` is larger). */
+  rules: FirewallRuleSummary[];
+  rulesTotalCount: number;
+  rulesHash: string;
+}
+
+export interface FirewallObservation {
+  status: FirewallStatus;
+  previousCheckedAt: string | null;
+  changedSinceLast: boolean;
+  listedTruncated: boolean;
+}

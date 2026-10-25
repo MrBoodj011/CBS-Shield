@@ -20,8 +20,8 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "antivirus", label: "Antivirus", icon: ShieldCheck },
-  { id: "firewall", label: "Firewall", icon: Flame, hint: "P2" },
-  { id: "network", label: "Network Monitor", icon: Activity, hint: "P2" },
+  { id: "firewall", label: "Firewall", icon: Flame, hint: "Observation" },
+  { id: "network", label: "Network Monitor", icon: Activity, hint: "Observation" },
   { id: "quarantine", label: "Quarantaine", icon: Archive },
   { id: "settings", label: "Paramètres", icon: Settings },
 ];
@@ -60,10 +60,10 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
             >
               <Icon size={19} strokeWidth={1.9} aria-hidden="true" />
               <span className="nav__text">{item.label}</span>
-              {unavailable ? (
-                <span className="nav__hint nav__hint--muted">P2</span>
-              ) : item.hint ? (
-                <span className="nav__hint">{item.hint}</span>
+              {item.hint ? (
+                <span className={`nav__hint ${unavailable ? "nav__hint--muted" : ""}`}>
+                  {item.hint}
+                </span>
               ) : null}
             </button>
           );

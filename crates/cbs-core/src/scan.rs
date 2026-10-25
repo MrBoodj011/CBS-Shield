@@ -19,6 +19,10 @@ const MAX_STORED_ERRORS: usize = 200;
 const MAX_STDERR_BYTES: usize = 64_000;
 const MAX_DETECTIONS: usize = 5_000;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
+/// Upper bound for one output line. ClamAV writes one line per file; a file
+/// whose name is megabytes long would otherwise grow the read buffer without
+/// limit (OOM risk on hostile filenames).
+const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Runs `clamscan` against explicit targets.
 #[derive(Debug, Clone)]
@@ -126,6 +130,12 @@ impl Scanner {
                     match reader.read_until(b'\n', &mut raw).await {
                         Ok(0) | Err(_) => break,
                         Ok(_) => {
+                            if raw.len() > MAX_LINE_BYTES {
+                                // Oversized line: keep draining the stream but
+                                // never accumulate it in memory.
+                                collected.push_str("[ligne ClamAV trop longue ignorée]\n");
+                                continue;
+                            }
                             let line = String::from_utf8_lossy(&raw);
                             if collected.len() < MAX_STDERR_BYTES {
                                 collected.push_str(line.trim_end());
@@ -146,6 +156,7 @@ impl Scanner {
         let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(96);
         let mut cancelled = false;
         let mut last_emit = Instant::now() - PROGRESS_INTERVAL;
+        let mut warned_line_overflow = false;
 
         loop {
             raw.clear();
@@ -172,6 +183,28 @@ impl Scanner {
             };
             if read == 0 {
                 break;
+            }
+
+            if raw.len() > MAX_LINE_BYTES {
+                // Keep draining the stream; never parse or retain the line.
+                if !warned_line_overflow {
+                    warned_line_overflow = true;
+                    errors.push(ScanErrorRecord {
+                        path: String::new(),
+                        message: format!(
+                            "une ligne de sortie ClamAV dépasse {MAX_LINE_BYTES} octets (nom de fichier extrêmement long ?) et a été ignorée"
+                        ),
+                    });
+                    sink(ScanEvent::ScanError {
+                        scan_id: scan_id.to_string(),
+                        path: String::new(),
+                        message: "une ligne de sortie ClamAV anormalement longue a été ignorée"
+                            .to_string(),
+                    });
+                }
+                // Drop the grown buffer so its capacity is not retained.
+                raw = Vec::with_capacity(8 * 1024);
+                continue;
             }
 
             let line = String::from_utf8_lossy(&raw)
@@ -265,13 +298,34 @@ impl Scanner {
         let has_stderr_error = stderr_text.to_ascii_lowercase().contains("can't open file")
             || stderr_text.to_ascii_lowercase().contains("no such file");
 
+        // Audit/Mission-E fix: turn "can't open file" stderr warnings into
+        // explicit per-file error records so an inaccessible file is an
+        // honest `completedWithErrors` with the path, not an opaque failure.
+        for record in extract_file_errors(&stderr_text) {
+            if errors.len() >= MAX_STORED_ERRORS {
+                break;
+            }
+            let duplicate = errors
+                .iter()
+                .any(|existing| existing.path == record.path && existing.message == record.message);
+            if !duplicate {
+                errors.push(record);
+            }
+        }
+
         let outcome = if cancelled {
             ScanOutcome::Cancelled
         } else if infected_files > 0 {
             ScanOutcome::Detected
         } else if files_scanned == 0
+            && errors.is_empty()
             && (exit_code == Some(2) || exit_code.is_none() || has_stderr_error)
         {
+            // ClamAV produced nothing at all and no per-file error record
+            // exists: the run is truly fatal. (Audit fix: when explicit
+            // per-file error records exist they are a valid scan result —
+            // an inaccessible file — so the outcome is
+            // `completedWithErrors`, not `failed`.)
             ScanOutcome::Failed
         } else if !errors.is_empty() || exit_code == Some(2) {
             ScanOutcome::CompletedWithErrors
@@ -352,6 +406,63 @@ async fn fingerprint_file(path: &std::path::Path) -> Option<(u64, String)> {
         .flatten()
 }
 
+/// Extract per-file error records from stderr lines such as
+/// `LibClamAV Warning: Can't open file \\?\C:\dir\file: 32`.
+///
+/// ClamAV reports unreadable files on stderr (warnings), not in the parsed
+/// stdout stream; without this extraction pass the user sees a vague
+/// `failed` outcome instead of an honest `completedWithErrors` naming the
+/// inaccessible path (Mission E / Sprint 2 fix).
+fn extract_file_errors(stderr_text: &str) -> Vec<ScanErrorRecord> {
+    let mut records = Vec::new();
+    for raw_line in stderr_text.lines() {
+        let line = raw_line.trim();
+        let lower = line.to_ascii_lowercase();
+        if !lower.contains("can't open file") && !lower.contains("no such file") {
+            continue;
+        }
+        let Some(marker_end) = lower
+            .find("can't open file")
+            .map(|start| start + "can't open file".len())
+        else {
+            // "No such file" lines without the canonical marker cannot be
+            // reliably attributed to one path; skip rather than guess.
+            continue;
+        };
+        let mut path_tail = line[marker_end..].trim();
+        if let Some(rest) = path_tail.strip_prefix("or directory") {
+            path_tail = rest.trim_start();
+        }
+        if let Some(rest) = path_tail.strip_prefix(r"\\?\") {
+            path_tail = rest;
+        }
+        if let Some(index) = lower.rfind("no such file or directory") {
+            // Keep only the leading path portion of the message.
+            path_tail = path_tail[..index.min(path_tail.len())].trim_end();
+        }
+        // Drop the trailing ": <error code>" that ClamAV appends (e.g. ": 32").
+        let path = match path_tail.rfind(':') {
+            Some(index)
+                if path_tail[index + 1..]
+                    .trim()
+                    .chars()
+                    .all(|c| c.is_ascii_digit()) =>
+            {
+                path_tail[..index].trim_end()
+            }
+            _ => path_tail.trim_end(),
+        };
+        if path.is_empty() {
+            continue;
+        }
+        records.push(ScanErrorRecord {
+            path: path.to_string(),
+            message: line.to_string(),
+        });
+    }
+    records
+}
+
 fn truncate(value: &str, max: usize) -> String {
     if value.chars().count() <= max {
         value.to_string()
@@ -401,5 +512,30 @@ mod tests {
             .scan("test", &request, |_| {}, Arc::new(Notify::new()))
             .await;
         assert!(matches!(result, Err(CoreError::EngineNotFound)));
+    }
+
+    #[test]
+    fn extracts_locked_file_path_from_stderr() {
+        // Real-world sample (observed in Mission E validation): a file locked
+        // with an exclusive handle produces this stderr warning.
+        let stderr = "LibClamAV Warning: Can't open file \\\\?\\C:\\corpus\\locked.bin: 32\n";
+        let records = extract_file_errors(stderr);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, r"C:\corpus\locked.bin");
+        assert!(records[0].message.contains("Can't open file"));
+    }
+
+    #[test]
+    fn extracts_missing_file_path_from_stderr() {
+        let stderr = "LibClamAV Warning: Can't open file or directory C:\\gone\\file.txt: 2\n";
+        let records = extract_file_errors(stderr);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, r"C:\gone\file.txt");
+    }
+
+    #[test]
+    fn ignores_unrelated_stderr_noise() {
+        let stderr = "some unrelated log line\nLoading signatures\n";
+        assert!(extract_file_errors(stderr).is_empty());
     }
 }

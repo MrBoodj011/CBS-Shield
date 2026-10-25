@@ -64,7 +64,7 @@ export function Dashboard({ engine, stats, scans, info, onNavigate }: DashboardP
         <div className="hero__content">
           <div className="hero__badges">
             <Badge tone="info" dot>
-              Phase 1
+              Phase 2
             </Badge>
             <Badge tone={engineReady ? "ok" : "danger"} dot>
               {engineReady ? "Moteur ClamAV détecté" : "Moteur ClamAV absent"}
@@ -203,27 +203,41 @@ export function Dashboard({ engine, stats, scans, info, onNavigate }: DashboardP
               <span>Coffre AES-256-GCM, confirmation explicite, restauration possible.</span>
             </button>
 
-            <div className="module-card module-card--disabled">
+            <button
+              type="button"
+              className="module-card"
+              onClick={() => onNavigate("firewall")}
+            >
               <div className="module-card__top">
                 <Flame size={20} />
-                <Badge tone="neutral" dot>
-                  Non disponible
+                <Badge tone="info" dot>
+                  Observation
                 </Badge>
               </div>
               <strong>Firewall</strong>
-              <span>Aucune règle Windows Firewall n'est lue ni modifiée.</span>
-            </div>
+              <span>
+                Vue lecture seule des profils et règles Windows Firewall,
+                détection de modification.
+              </span>
+            </button>
 
-            <div className="module-card module-card--disabled">
+            <button
+              type="button"
+              className="module-card"
+              onClick={() => onNavigate("network")}
+            >
               <div className="module-card__top">
                 <Activity size={20} />
-                <Badge tone="neutral" dot>
-                  Non disponible
+                <Badge tone="info" dot>
+                  Observation
                 </Badge>
               </div>
               <strong>Network Monitor</strong>
-              <span>Aucune capture réseau dans cette version.</span>
-            </div>
+              <span>
+                Connexions TCP/UDP et trafic mesuré, métadonnées uniquement,
+                lecture seule.
+              </span>
+            </button>
           </div>
         </section>
 

@@ -113,6 +113,15 @@ pub async fn update_signatures(
             "la mise à jour des signatures ClamAV",
         ));
     }
+    // Audit fix (Sprint 2): freshclam rewrites the signature database while
+    // clamscan reads it. Running both at the same time produced hard-to-
+    // diagnose scan errors; an update is now refused while a scan is active.
+    if state.is_scanning() {
+        return Err(CommandError::new(
+            "scanInProgress",
+            "Un scan est en cours : attendez la fin du scan avant de mettre à jour les signatures.",
+        ));
+    }
 
     let settings = state.store.settings()?;
     let status = probe_with_settings(&state, &settings);
@@ -197,36 +206,16 @@ pub async fn update_signatures(
     }
 
     let lines = log.lock().map(|guard| guard.clone()).unwrap_or_default();
-    let joined = lines.join("\n");
-    let lower = joined.to_ascii_lowercase();
-    let success = !timed_out
-        && (exit_code == Some(0)
-            || lower.contains("database is up to date")
-            || lower.contains("database updated"));
-    let permission_hint = lower.contains("permission denied")
-        || lower.contains("can't open")
-        || lower.contains("access denied")
-        || lower.contains("write error");
-
-    let message = if timed_out {
-        "Délai dépassé (30 minutes) : la mise à jour a été interrompue.".to_string()
-    } else if success {
+    // Classification is a pure function so the failure paths (network down,
+    // permission denied, interruption) are unit-tested without a real run.
+    let (success, summary) = summarize_update_run(&lines, timed_out, exit_code);
+    let message = if success {
         format!(
             "Signatures téléchargées dans {}. Relancez le diagnostic pour vérifier la date.",
             target_db.display()
         )
     } else {
-        let detail = lines
-            .iter()
-            .rev()
-            .find(|line| line.to_ascii_lowercase().contains("error"))
-            .cloned()
-            .unwrap_or_else(|| format!("freshclam a renvoyé le code {:?}.", exit_code));
-        if permission_hint {
-            format!("{detail} — le dossier de signatures n'est pas accessible en écriture.")
-        } else {
-            detail
-        }
+        summary
     };
 
     let engine = probe_with_settings(&state, &settings);
@@ -290,6 +279,63 @@ fn hide_console(command: &mut Command) {
     command.as_std_mut().creation_flags(0x0800_0000);
 }
 
+/// Classify one freshclam run (pure function, unit-tested).
+///
+/// Returns `(success, final message)`. The message names the observed cause:
+/// interruption by timeout, missing write permission, unreachable network, or
+/// the last explicit error line from freshclam itself.
+pub fn summarize_update_run(
+    lines: &[String],
+    timed_out: bool,
+    exit_code: Option<i32>,
+) -> (bool, String) {
+    let joined = lines.join("\n");
+    let lower = joined.to_ascii_lowercase();
+    let success = !timed_out
+        && (exit_code == Some(0)
+            || lower.contains("database is up to date")
+            || lower.contains("database updated"));
+    let permission_hint = lower.contains("permission denied")
+        || lower.contains("can't open")
+        || lower.contains("access denied")
+        || lower.contains("write error");
+    let network_hint = lower.contains("can't connect")
+        || lower.contains("connection refused")
+        || lower.contains("ip address not resolvable")
+        || lower.contains("connection timed out")
+        || lower.contains("can't resolve");
+
+    if timed_out {
+        return (
+            false,
+            "Délai dépassé (30 minutes) : la mise à jour a été interrompue.".to_string(),
+        );
+    }
+    if success {
+        return (true, "Mise à jour réussie.".to_string());
+    }
+    let detail = lines
+        .iter()
+        .rev()
+        .find(|line| line.to_ascii_lowercase().contains("error"))
+        .or_else(|| lines.iter().rev().find(|line| !line.trim().is_empty()))
+        .cloned()
+        .unwrap_or_else(|| format!("freshclam a renvoyé le code {:?}.", exit_code));
+    if permission_hint {
+        (
+            false,
+            format!("{detail} — le dossier de signatures n'est pas accessible en écriture."),
+        )
+    } else if network_hint {
+        (
+            false,
+            format!("{detail} — vérifiez la connexion réseau ; database.clamav.net doit être accessible."),
+        )
+    } else {
+        (false, detail)
+    }
+}
+
 #[cfg(not(windows))]
 fn hide_console(_command: &mut Command) {}
 
@@ -297,4 +343,79 @@ fn hide_console(_command: &mut Command) {}
 /// scan but should be refreshed.
 pub fn signatures_blocked(status: &EngineStatus) -> bool {
     matches!(status.signature_state, SignatureState::Missing)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(text: &str) -> String {
+        text.to_string()
+    }
+
+    #[test]
+    fn classifies_up_to_date_database_as_success() {
+        let (success, _) = summarize_update_run(
+            &[line(
+                "daily database is up to date (version: 27413, sigs: 28164, f-level: 90)",
+            )],
+            false,
+            Some(0),
+        );
+        assert!(success);
+    }
+
+    #[test]
+    fn classifies_updated_database_as_success() {
+        let (success, _) = summarize_update_run(
+            &[line(
+                "daily.cvd updated (version: 27414, sigs: 28189, f-level: 90)",
+            )],
+            false,
+            Some(0),
+        );
+        assert!(success);
+    }
+
+    #[test]
+    fn classifies_unreachable_network() {
+        let lines = vec![
+            line("Trying to retrieve database.clamav.net..."),
+            line("Error: Can't connect to port 80 of host database.clamav.net (IP: 104.16.219.84)"),
+        ];
+        let (success, message) = summarize_update_run(&lines, false, Some(1));
+        assert!(!success);
+        assert!(message.contains("connexion réseau"), "message: {message}");
+    }
+
+    #[test]
+    fn classifies_unresolvable_host() {
+        let lines = vec![line(
+            "Error: Can't get information about database.clamav.net: IP address not resolvable",
+        )];
+        let (success, message) = summarize_update_run(&lines, false, Some(1));
+        assert!(!success);
+        assert!(message.contains("connexion réseau"), "message: {message}");
+    }
+
+    #[test]
+    fn classifies_missing_write_permission() {
+        let lines = vec![line(
+            "ERROR: Can't open file: C:\\data\\daily.cvd.tmp (Permission denied)",
+        )];
+        let (success, message) = summarize_update_run(&lines, false, Some(1));
+        assert!(!success);
+        assert!(
+            message.contains("dossier de signatures"),
+            "message: {message}"
+        );
+    }
+
+    #[test]
+    fn classifies_timeout_interruption() {
+        let (success, message) =
+            summarize_update_run(&[line("Trying to download daily.cvd")], true, None);
+        assert!(!success);
+        assert!(message.contains("interrompue"), "message: {message}");
+    }
 }

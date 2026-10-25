@@ -1619,6 +1619,28 @@ code,
   padding-top: 2px;
 }
 
+/* Network Monitor filter toolbar. */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 4px 0 14px;
+}
+
+.filter-row .field--grow {
+  flex: 1 1 240px;
+}
+
+.filter-row .switch-row--inline {
+  align-items: center;
+  flex: none;
+}
+
+.filter-row .switch-row--inline span {
+  flex: none;
+}
+
 .scan-controls__hint {
   flex: 1 1 220px;
   color: var(--faint);

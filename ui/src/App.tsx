@@ -31,11 +31,12 @@ const SECTION_META: Record<SectionId, { title: string; subtitle: string }> = {
   },
   firewall: {
     title: "Firewall",
-    subtitle: "Module non implémenté : aucune règle système n'est modifiée.",
+    subtitle: "Observation en lecture seule des profils et règles Windows Firewall.",
   },
   network: {
     title: "Network Monitor",
-    subtitle: "Module non implémenté : aucune capture réseau dans cette version.",
+    subtitle:
+      "Observation en lecture seule des connexions TCP/UDP et du trafic mesuré.",
   },
   quarantine: {
     title: "Quarantaine",

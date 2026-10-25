@@ -10,7 +10,12 @@ use cbs_core::{ScanOutcome, ScanReport};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
+
+// v1: scans, detections, quarantine, settings.
+// v2 (Sprint 2): adds `netmon_snapshots` — local history of Network Monitor
+// summaries. `execute_batch` only uses `CREATE ... IF NOT EXISTS`, so the same
+// batch safely migrates a v1 database (fresh file -> v2 directly).
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS scans (
@@ -65,6 +70,19 @@ CREATE TABLE IF NOT EXISTS settings (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS netmon_snapshots (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_at        TEXT    NOT NULL,
+    tcp_total          INTEGER NOT NULL,
+    tcp_established    INTEGER NOT NULL,
+    udp_total          INTEGER NOT NULL,
+    rx_bytes_delta     INTEGER NOT NULL,
+    tx_bytes_delta     INTEGER NOT NULL,
+    top_processes_json TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_netmon_captured ON netmon_snapshots(captured_at);
 "#;
 
 #[derive(Debug, thiserror::Error)]
@@ -508,6 +526,115 @@ impl Store {
         )?;
         Ok(())
     }
+
+    /// Persist one Network Monitor snapshot summary (Sprint 2).
+    pub fn insert_netmon_snapshot(&self, snapshot: &NewNetmonSnapshot) -> Result<i64, StoreError> {
+        let top_json = serde_json::to_string(&snapshot.top_processes)?;
+        let connection = self.conn()?;
+        connection.execute(
+            r#"INSERT INTO netmon_snapshots (
+                captured_at, tcp_total, tcp_established, udp_total,
+                rx_bytes_delta, tx_bytes_delta, top_processes_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+            params![
+                snapshot.captured_at,
+                snapshot.tcp_total as i64,
+                snapshot.tcp_established as i64,
+                snapshot.udp_total as i64,
+                snapshot.rx_bytes_delta as i64,
+                snapshot.tx_bytes_delta as i64,
+                top_json,
+            ],
+        )?;
+        // Bounded local history: older summaries are trimmed automatically so
+        // the table cannot grow forever during long monitoring sessions.
+        connection.execute(
+            r#"DELETE FROM netmon_snapshots WHERE id <= (
+                SELECT MAX(id) FROM (SELECT id FROM netmon_snapshots
+                                     ORDER BY id DESC LIMIT 1 OFFSET ?1)
+            )"#,
+            [NETMON_SNAPSHOT_RETENTION],
+        )?;
+        Ok(connection.last_insert_rowid())
+    }
+
+    /// Newest-first list of stored Network Monitor summaries.
+    pub fn list_netmon_snapshots(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<NetmonSnapshotRecord>, StoreError> {
+        let connection = self.conn()?;
+        let mut statement = connection.prepare(
+            r#"SELECT id, captured_at, tcp_total, tcp_established, udp_total,
+                      rx_bytes_delta, tx_bytes_delta, top_processes_json
+               FROM netmon_snapshots ORDER BY id DESC LIMIT ?1"#,
+        )?;
+        let rows = statement.query_map([limit], |row| {
+            let top_json: String = row.get(7)?;
+            Ok(NetmonSnapshotRecord {
+                id: row.get(0)?,
+                captured_at: row.get(1)?,
+                tcp_total: row.get::<_, i64>(2)?.max(0) as u64,
+                tcp_established: row.get::<_, i64>(3)?.max(0) as u64,
+                udp_total: row.get::<_, i64>(4)?.max(0) as u64,
+                rx_bytes_delta: row.get::<_, i64>(5)?.max(0) as u64,
+                tx_bytes_delta: row.get::<_, i64>(6)?.max(0) as u64,
+                top_processes: serde_json::from_str(&top_json).unwrap_or_default(),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn netmon_snapshot_count(&self) -> Result<u64, StoreError> {
+        let connection = self.conn()?;
+        Ok(connection
+            .query_row("SELECT COUNT(*) FROM netmon_snapshots", [], |row| {
+                row.get::<_, i64>(0)
+            })?
+            .max(0) as u64)
+    }
+}
+
+/// Maximum number of Network Monitor summaries kept on disk (bounded history).
+pub const NETMON_SNAPSHOT_RETENTION: i64 = 2_000;
+
+/// Aggregated process connection counts stored with a snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NetmonProcessCount {
+    pub name: String,
+    pub connections: u64,
+}
+
+/// New Network Monitor summary row (i64-free input form).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNetmonSnapshot {
+    pub captured_at: String,
+    pub tcp_total: u64,
+    pub tcp_established: u64,
+    pub udp_total: u64,
+    /// Measured incoming-interface counter delta since the previous capture
+    /// (0 when this is the first capture or the counter could not be read).
+    pub rx_bytes_delta: u64,
+    pub tx_bytes_delta: u64,
+    /// Top processes by active connection count (at most a small bounded list).
+    pub top_processes: Vec<NetmonProcessCount>,
+}
+
+/// A stored Network Monitor summary as returned to the UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetmonSnapshotRecord {
+    pub id: i64,
+    pub captured_at: String,
+    pub tcp_total: u64,
+    pub tcp_established: u64,
+    pub udp_total: u64,
+    pub rx_bytes_delta: u64,
+    pub tx_bytes_delta: u64,
+    pub top_processes: Vec<NetmonProcessCount>,
 }
 
 fn outcome_as_str(outcome: ScanOutcome) -> &'static str {
@@ -564,6 +691,55 @@ mod tests {
     use super::*;
     use cbs_core::Detection;
 
+    /// Exact Phase 1 (schema v1) layout, used to prove in-place migration.
+    const LEGACY_V1_SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS scans (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid              TEXT    NOT NULL UNIQUE,
+    started_at        TEXT    NOT NULL,
+    finished_at       TEXT    NOT NULL,
+    duration_ms       INTEGER NOT NULL,
+    targets_json      TEXT    NOT NULL,
+    files_scanned     INTEGER NOT NULL,
+    infected_files    INTEGER NOT NULL,
+    error_count       INTEGER NOT NULL,
+    outcome           TEXT    NOT NULL,
+    cancelled         INTEGER NOT NULL,
+    engine_version    TEXT,
+    signature_version TEXT,
+    summary_json      TEXT,
+    fatal_error       TEXT
+);
+CREATE TABLE IF NOT EXISTS detections (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id     INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+    file_path   TEXT    NOT NULL,
+    threat_name TEXT    NOT NULL,
+    file_size   INTEGER,
+    sha256      TEXT,
+    created_at  TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS quarantine (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id        TEXT    NOT NULL UNIQUE,
+    file_name      TEXT    NOT NULL,
+    original_path  TEXT    NOT NULL,
+    stored_path    TEXT    NOT NULL,
+    sha256         TEXT    NOT NULL,
+    size_bytes     INTEGER NOT NULL,
+    threat_name    TEXT    NOT NULL,
+    status         TEXT    NOT NULL DEFAULT 'active',
+    created_at     TEXT    NOT NULL,
+    restored_at    TEXT,
+    source_scan_id INTEGER REFERENCES scans(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"#;
+
     fn sample_report() -> ScanReport {
         ScanReport {
             id: "scan-uuid-1".to_string(),
@@ -615,6 +791,96 @@ mod tests {
         assert_eq!(stats.total_detections, 1);
         assert_eq!(stats.total_files_scanned, 42);
         assert!(stats.last_scan.is_some());
+    }
+
+    fn netmon_sample(captured_at: &str, tcp: u64, rx: u64, tx: u64) -> NewNetmonSnapshot {
+        NewNetmonSnapshot {
+            captured_at: captured_at.to_string(),
+            tcp_total: tcp,
+            tcp_established: tcp / 2,
+            udp_total: 3,
+            rx_bytes_delta: rx,
+            tx_bytes_delta: tx,
+            top_processes: vec![NetmonProcessCount {
+                name: "chrome.exe".to_string(),
+                connections: tcp,
+            }],
+        }
+    }
+
+    #[test]
+    fn netmon_snapshots_roundtrip_newest_first() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_netmon_snapshot(&netmon_sample("2026-10-25T10:00:00Z", 10, 0, 0))
+            .unwrap();
+        store
+            .insert_netmon_snapshot(&netmon_sample("2026-10-25T10:00:05Z", 12, 1024, 512))
+            .unwrap();
+
+        let list = store.list_netmon_snapshots(10).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].captured_at, "2026-10-25T10:00:05Z");
+        assert_eq!(list[0].tcp_total, 12);
+        assert_eq!(list[0].rx_bytes_delta, 1024);
+        assert_eq!(list[0].tx_bytes_delta, 512);
+        assert_eq!(list[0].top_processes[0].connections, 12);
+        assert_eq!(list[1].captured_at, "2026-10-25T10:00:00Z");
+        assert_eq!(store.netmon_snapshot_count().unwrap(), 2);
+
+        let limited = store.list_netmon_snapshots(1).unwrap();
+        assert_eq!(limited.len(), 1);
+    }
+
+    #[test]
+    fn netmon_snapshot_history_is_trimmed() {
+        // Retention + 60 extra rows: only the newest `retention` rows remain.
+        let store = Store::open_in_memory().unwrap();
+        let total = (NETMON_SNAPSHOT_RETENTION as u64 + 60) as i64;
+        for index in 1..=total {
+            let snapshot = netmon_sample("2026-10-25T10:00:00Z", index as u64, 0, 0);
+            store.insert_netmon_snapshot(&snapshot).unwrap();
+        }
+        assert_eq!(
+            store.netmon_snapshot_count().unwrap(),
+            NETMON_SNAPSHOT_RETENTION as u64
+        );
+        let newest = store.list_netmon_snapshots(1).unwrap();
+        assert_eq!(newest[0].tcp_total, total as u64);
+    }
+
+    #[test]
+    fn legacy_v1_database_is_migrated_to_v2() {
+        // Build a real SQLite file stamped as schema v1 (Phase 1 layout),
+        // without the netmon_snapshots table.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.db");
+        {
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            connection.execute_batch(LEGACY_V1_SCHEMA_SQL).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO scans (uuid, started_at, finished_at, duration_ms, targets_json, files_scanned, infected_files, error_count, outcome, cancelled)
+                     VALUES ('legacy-1', '2026-10-01T00:00:00Z', '2026-10-01T00:00:01Z', 1000, '[]', 1, 0, 0, 'clean', 0)",
+                    [],
+                )
+                .unwrap();
+            connection.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        // Opening must keep every existing capability and add the new table.
+        let store = Store::open(&path).unwrap();
+        let scans = store.list_scans(10).unwrap();
+        assert_eq!(scans.len(), 1);
+        assert_eq!(store.netmon_snapshot_count().unwrap(), 0);
+        store
+            .insert_netmon_snapshot(&netmon_sample("2026-10-25T10:00:00Z", 7, 0, 0))
+            .unwrap();
+        assert_eq!(store.netmon_snapshot_count().unwrap(), 1);
+        assert_eq!(store.list_netmon_snapshots(1).unwrap()[0].tcp_total, 7);
+
+        let migrated_version = Store::open(&path).unwrap();
+        assert!(migrated_version.list_netmon_snapshots(10).unwrap().len() == 1);
     }
 
     #[test]

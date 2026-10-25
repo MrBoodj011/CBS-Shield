@@ -17,8 +17,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let paths = AppPaths::discover()?;
-            paths.ensure()?;
+            // Audit fix: canonicalize the data directory (also creates the
+            // layout) so every containment check compares comparable paths.
+            let paths = AppPaths::discover()?.canonicalized()?;
 
             let store = Arc::new(Store::open(&paths.history_db)?);
             let quarantine = Quarantine::new(paths.quarantine_dir.clone());
@@ -43,6 +44,9 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::open_data_dir,
+            commands::netmon::netmon_snapshot,
+            commands::netmon::netmon_history,
+            commands::firewall::firewall_status,
         ])
         .run(tauri::generate_context!())
         .expect("échec du démarrage de CBS Shield");

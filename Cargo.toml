@@ -4,11 +4,13 @@ members = [
     "crates/cbs-core",
     "crates/cbs-store",
     "crates/cbs-quarantine",
+    "crates/cbs-netmon",
+    "crates/cbs-firewall",
     "src-tauri",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0-dev"
 edition = "2021"
 authors = ["Cybrense"]
 license = "Apache-2.0"

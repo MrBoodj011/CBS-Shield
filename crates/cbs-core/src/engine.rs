@@ -7,7 +7,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 
@@ -230,9 +230,8 @@ fn probe_version(executable: &Path, database: Option<&Path>) -> Result<VersionIn
         command.arg(format!("--database={}", database.display()));
     }
     command.arg("--version");
-    hide_console(&mut command);
 
-    match command.output() {
+    match execute_with_timeout(&mut command, PROBE_TIMEOUT) {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -243,8 +242,71 @@ fn probe_version(executable: &Path, database: Option<&Path>) -> Result<VersionIn
                 format!("réponse inattendue de clamscan --version : {detail}")
             })
         }
-        Err(err) => Err(format!("impossible d'exécuter clamscan --version : {err}")),
+        Err(err) => Err(err),
     }
+}
+
+/// Run a child process to completion, but never wait longer than `timeout`.
+///
+/// Previously `probe_version` used `Command::output()`, which blocks until the
+/// child exits: a hung or wedged `clamscan --version` (locked antivirus
+/// exclusion, broken pipe, slow network drive) would freeze the UI probe
+/// forever. The declared `PROBE_TIMEOUT` was never actually enforced. This
+/// helper polls `try_wait` and kills the child once the deadline is reached.
+fn execute_with_timeout(
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    hide_console(command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("impossible d'exécuter le programme : {err}"))?;
+
+    let started = Instant::now();
+    let poll_interval = Duration::from_millis(25);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "le moteur n'a pas répondu dans le délai imparti ({:?}) ; processus interrompu",
+                        timeout
+                    ));
+                }
+                std::thread::sleep(poll_interval);
+            }
+            Err(err) => return Err(format!("échec de l'attente du processus : {err}")),
+        }
+    }
+
+    // The child has exited; the pipes hold its remaining buffered output.
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        let _ = pipe.read_to_end(&mut stdout);
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_end(&mut stderr);
+    }
+    let status = child
+        .wait()
+        .map_err(|err| format!("échec de l'attente du processus : {err}"))?;
+    Ok(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn first_meaningful_line(text: &str) -> Option<String> {
@@ -419,5 +481,33 @@ mod tests {
         let found = locate_database(None, &[dir.path().to_path_buf()], None).unwrap();
         assert_eq!(count_signature_files(&found), 1);
         assert_eq!(found.file_name().unwrap(), "database");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn execute_with_timeout_completes_fast_commands() {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/c", "echo probe-ok"]);
+        let output = execute_with_timeout(&mut command, Duration::from_secs(10)).unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("probe-ok"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn execute_with_timeout_kills_hung_child() {
+        // `ping -n 30` blocks well past the 300 ms budget: before the fix
+        // (plain `Command::output()`) this would have hung until completion.
+        let mut command = Command::new("cmd.exe");
+        command.args(["/c", "ping", "-n", "30", "127.0.0.1"]);
+        let started = Instant::now();
+        let result = execute_with_timeout(&mut command, Duration::from_millis(300));
+        let elapsed = started.elapsed();
+        assert!(result.is_err(), "a hung child must be reported as an error");
+        assert!(result.unwrap_err().contains("délai imparti"));
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "the helper must give up near the deadline, not after the child (elapsed {elapsed:?})"
+        );
     }
 }

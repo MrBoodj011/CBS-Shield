@@ -1,15 +1,19 @@
 # CBS Shield
 
 > **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.1.0 (Phase 1)**.
+> Édité par **Cybrense** — version expérimentale **0.2.0-dev (Phase 2, sprint 2)**.
 
-CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 livre une
-fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus manuelle
-de fichiers et de dossiers avec ClamAV**, l'historique local des rapports dans SQLite
-et une **quarantaine chiffrée** avec confirmation explicite de chaque action.
+CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
+une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
+manuelle de fichiers et de dossiers avec ClamAV**, l'historique local des rapports
+dans SQLite et une **quarantaine chiffrée** avec confirmation explicite de chaque
+action.
 
-Le reste de la suite (pare-feu, moniteur réseau) est **volontairement absent** et
-affiché comme « Non disponible » dans l'interface. Rien n'est simulé.
+Le Sprint 2 ajoute deux modules **strictement observationnels, en lecture
+seule** : un **Moniteur réseau** (connexions TCP/UDP, ports, processus, trafic
+mesuré — métadonnées uniquement, aucune capture de contenu) et un **Pare-feu**
+(lecture des profils et règles Windows Firewall, détection de modification par
+empreinte). Aucune règle n'est jamais modifiée, aucun contenu réseau n'est lu.
 
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
@@ -166,7 +170,7 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.1.0_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.2.0_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 

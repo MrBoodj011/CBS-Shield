@@ -4,6 +4,9 @@ import type {
   AppInfo,
   DashboardStats,
   EngineStatus,
+  FirewallObservation,
+  NetmonSnapshotPayload,
+  NetmonSnapshotRecord,
   QuarantineRecord,
   ScanDetails,
   ScanRecord,
@@ -51,6 +54,10 @@ export const api = {
   updateSettings: (patch: SettingsPatch) =>
     invoke<SettingsView>("update_settings", { patch }),
   openDataDir: () => invoke<void>("open_data_dir"),
+
+  netmonSnapshot: () => invoke<NetmonSnapshotPayload>("netmon_snapshot"),
+  netmonHistory: (limit = 40) => invoke<NetmonSnapshotRecord[]>("netmon_history", { limit }),
+  firewallStatus: () => invoke<FirewallObservation>("firewall_status"),
 };
 
 export function errorMessage(error: unknown): string {

@@ -79,6 +79,7 @@ impl Quarantine {
 
     pub fn ensure_layout(&self) -> Result<(), QuarantineError> {
         fs::create_dir_all(&self.root)?;
+        cleanup_temp_blobs(&self.root);
         if !self.key_path.is_file() {
             let key = random_bytes(KEY_LEN)?;
             let protected = dpapi::protect(&key)?;
@@ -308,6 +309,32 @@ fn random_bytes(len: usize) -> Result<Vec<u8>, QuarantineError> {
     Ok(bytes)
 }
 
+/// Remove orphaned temporary blobs left by a crash during `store`.
+///
+/// `store` writes the encrypted blob as `.<item_id>.tmp` and then renames it
+/// to `<item_id>.cbsq`. If the application dies between the two steps, the
+/// temporary file stays in the vault. Such a file can never be legitimate
+/// (nothing else in the vault uses that naming nor that extension), so it is
+/// safe to delete every `.tmp` file at startup and before each store.
+fn cleanup_temp_blobs(root: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_temp_blob = entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.') && name.ends_with(".tmp"));
+        if is_temp_blob && fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 fn hex_digest(data: &[u8]) -> String {
     format!("{:x}", Sha256::digest(data))
 }
@@ -421,5 +448,48 @@ mod tests {
             q.store(&missing),
             Err(QuarantineError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn stale_temp_blobs_are_cleaned_on_layout_ensure() {
+        // Simulates a crash during `store`: the temporary blob was written but
+        // the atomic rename never happened.
+        let (_dir, q) = setup();
+        q.ensure_layout().unwrap();
+        let orphan = q.root().join(".0b9e9c9a-dead-4a5f-8e30-000000000001.tmp");
+        fs::write(&orphan, b"partial encrypted blob").unwrap();
+
+        q.ensure_layout().unwrap();
+        assert!(!orphan.exists(), "orphaned temp blob must be removed");
+
+        // Ordinary blobs and unrelated files are never touched.
+        let kept = q.root().join("readme.txt");
+        fs::write(&kept, b"keep me").unwrap();
+        q.ensure_layout().unwrap();
+        assert!(kept.exists());
+    }
+
+    #[test]
+    fn truncated_and_corrupt_blobs_fail_cleanly() {
+        let (dir, q) = setup();
+        q.ensure_layout().unwrap();
+
+        // Blob cut short by a disk-full crash: unknown format, no panic.
+        let truncated_id = "00000000-0000-4000-8000-000000000001";
+        let truncated = q.root().join(format!("{truncated_id}.cbsq"));
+        fs::write(&truncated, b"CBS").unwrap();
+        let result = q.restore(truncated_id, &dir.path().join("out1.txt"), None);
+        assert!(matches!(result, Err(QuarantineError::InvalidVault(_))));
+
+        // Blob with a valid header but altered ciphertext: authenticated
+        // decryption must refuse instead of writing garbage to disk.
+        let corrupt_id = "00000000-0000-4000-8000-000000000002";
+        let corrupt = q.root().join(format!("{corrupt_id}.cbsq"));
+        let mut payload = MAGIC.to_vec();
+        payload.resize(MAGIC.len() + NONCE_LEN + 32, 0xAB);
+        fs::write(&corrupt, &payload).unwrap();
+        let result = q.restore(corrupt_id, &dir.path().join("out2.txt"), None);
+        assert!(matches!(result, Err(QuarantineError::Crypto(_))));
+        assert!(!dir.path().join("out2.txt").exists());
     }
 }

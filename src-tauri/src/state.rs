@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use cbs_netmon::InterfaceTraffic;
 use cbs_quarantine::Quarantine;
 use cbs_store::Store;
 use tokio::sync::Notify;
@@ -38,6 +39,9 @@ pub struct AppState {
     pub store: Arc<Store>,
     pub quarantine: Quarantine,
     scan_slot: Arc<Mutex<Option<ActiveScan>>>,
+    /// Last observed interface counters, used to compute measured traffic
+    /// deltas between two Network Monitor captures.
+    netmon_last: Arc<Mutex<Option<Vec<InterfaceTraffic>>>>,
 }
 
 impl AppState {
@@ -47,6 +51,7 @@ impl AppState {
             store,
             quarantine,
             scan_slot: Arc::new(Mutex::new(None)),
+            netmon_last: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -86,6 +91,27 @@ impl AppState {
             Ok(true)
         } else {
             Ok(false)
+        }
+    }
+
+    /// True while a scan owns the slot. Used by `update_signatures` to refuse
+    /// concurrent signature updates (freshclam rewrites the database while
+    /// clamscan is reading it — documented race condition fixed in Sprint 2).
+    pub fn is_scanning(&self) -> bool {
+        self.scan_slot
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Interfaces observed during the previous Network Monitor capture.
+    pub fn last_netmon_interfaces(&self) -> Option<Vec<InterfaceTraffic>> {
+        self.netmon_last.lock().ok()?.clone()
+    }
+
+    pub fn remember_netmon_interfaces(&self, interfaces: Vec<InterfaceTraffic>) {
+        if let Ok(mut last) = self.netmon_last.lock() {
+            *last = Some(interfaces);
         }
     }
 }
