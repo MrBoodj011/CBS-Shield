@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod paths;
 mod state;
+mod tray;
 
 pub use error::CommandError;
 pub use paths::AppPaths;
@@ -26,6 +27,18 @@ pub fn run() {
             quarantine.ensure_layout()?;
 
             app.manage(AppState::new(paths, store, quarantine));
+
+            // Sprint 3: optional native tray entry point. The stored language is
+            // read here so the menu starts in the user's language.
+            let language = app
+                .state::<AppState>()
+                .store
+                .settings()
+                .ok()
+                .and_then(|map| map.get("language").cloned())
+                .unwrap_or_else(|| "fr".to_string());
+            tray::setup(app.handle(), &language);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +60,7 @@ pub fn run() {
             commands::netmon::netmon_snapshot,
             commands::netmon::netmon_history,
             commands::firewall::firewall_status,
+            tray::set_tray_language,
         ])
         .run(tauri::generate_context!())
         .expect("échec du démarrage de CBS Shield");

@@ -1,7 +1,7 @@
 # CBS Shield
 
 > **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.2.0-dev (Phase 2, sprint 2)**.
+> Édité par **Cybrense** — version expérimentale **0.3.0-dev (Phase 3, sprint 3)**.
 
 CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
 une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
@@ -14,6 +14,16 @@ seule** : un **Moniteur réseau** (connexions TCP/UDP, ports, processus, trafic
 mesuré — métadonnées uniquement, aucune capture de contenu) et un **Pare-feu**
 (lecture des profils et règles Windows Firewall, détection de modification par
 empreinte). Aucune règle n'est jamais modifiée, aucun contenu réseau n'est lu.
+
+Le Sprint 3 transforme l'interface en produit : **design system « Midnight
+Navy »** (thèmes sombre/clair), **tableau de bord temps réel** alimenté
+exclusivement par le backend local, **pages Historique, Mises à jour et À
+propos & diagnostic**, **architecture de localisation FR/EN** (le shell, le
+tableau de bord et les nouveaux modules sont traduits ; les modules historiques
+restent en français jusqu'à leur migration), et **icône de zone de
+notification** minimale (ouvrir/quitter). Les compteurs réseau ont été corrigés :
+les sous-couches de filtres NDIS ne sont plus additionnées (mesure contrôlée de
+20 Mio : 160 Mo avant, 24,6 Mo après).
 
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
@@ -42,15 +52,18 @@ empreinte). Aucune règle n'est jamais modifiée, aucun contenu réseau n'est lu
 
 | Élément | État |
 | --- | --- |
-| Interface React/Tauri (6 sections) | Fonctionnelle |
+| Interface React/Tauri (9 sections) | Fonctionnelle, design system 0.3.0 |
 | Moteur Rust (`cbs-core`) | Fonctionnel |
 | Scan réel ClamAV (fichier/dossier) | Fonctionnel, vérifié |
 | Mise à jour des signatures (`freshclam`) | Fonctionnelle, sans élévation |
-| Historique SQLite | Fonctionnel |
+| Historique SQLite + page dédiée | Fonctionnel |
 | Quarantaine AES-256-GCM + clé DPAPI | Fonctionnelle |
-| Installeur NSIS `currentUser` | Généré (2,30 Mo), build release OK |
-| Firewall | **Non disponible** (Phase 2) |
-| Network Monitor | **Non disponible** (Phase 2) |
+| Tableau de bord (données réelles) | Fonctionnel, vérifié |
+| Localisation FR/EN | Architecture livrée, couverture partielle documentée |
+| Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
+| Installeur NSIS `currentUser` | Généré (2,42 Mo), vérifié sans Vite |
+| Firewall Windows | **Lecture seule** (profils + règles) |
+| Network Monitor | **Lecture seule** (métadonnées, volumes mesurés) |
 | Protection temps réel / pilote noyau | **Hors périmètre** |
 
 Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
@@ -85,11 +98,16 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
 - Suppression définitive du blob : case à cocher **et** saisie du mot `SUPPRIMER`.
 - Aucune suppression automatique de fichier, aucune exécution de fichier.
 
-### Firewall / Network Monitor
+### Firewall / Network Monitor (lecture seule)
 
-- Sections présentes, clairement marquées **« Non disponible »**.
-- Aucune lecture ni modification des règles Windows Firewall.
-- Aucune capture réseau, aucune socket ouverte par ces modules.
+- **Moniteur réseau** : connexions TCP/UDP, ports, PID et processus, volumes par
+  interface mesurés via `GetIfTable2` ; métadonnées uniquement, aucun contenu,
+  aucune socket ouverte par CBS Shield. Les couches de filtres NDIS sont exclues
+  des compteurs (sprint 3).
+- **Pare-feu** : profils et règles Windows lus via l'API documentée
+  `INetFwPolicy2`, détection de modification par empreinte. Aucune règle n'est
+  créée, modifiée, activée ou désactivée ; aucun pilote installé.
+- Ces deux modules n'exigent aucune élévation et n'ont aucun effet de bord.
 
 ## Prérequis
 
@@ -170,7 +188,7 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.2.0_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.3.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
@@ -260,6 +278,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — crates, flux de données, IPC, schéma SQLite.
+- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) — jetons, typographie, mouvement, layout, accessibilité.
+- [UI_COMPONENTS.md](UI_COMPONENTS.md) — inventaire et contrats des composants UI.
+- [UX_TEST_REPORT.md](UX_TEST_REPORT.md) — validations réelles, captures et limites UX.
+- [SECURITY_AUDIT.md](SECURITY_AUDIT.md) — constats de sécurité et corrections.
 - [SECURITY.md](SECURITY.md) — modèle de menace, chiffrement, signalement de vulnérabilité.
 - [LICENSES.md](LICENSES.md) — licences du code et des composants tiers.
 - [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) — état vérifié, tests, limites, feuille de route.

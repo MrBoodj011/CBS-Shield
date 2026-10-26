@@ -166,6 +166,26 @@ plusieurs.
 **Correction.** Lecture directe de `CurrentProfileTypes()` et libellé
 explicite « Actif : X + Y » ; aucun profil inventé quand le masque est vide.
 
+### A-10. (Moyen) Compteurs réseau gonflés par les sous-couches de filtres NDIS
+
+**Cause.** `GetIfTable2` expose chaque couche de filtre NDIS (WFP, Npcap, QoS,
+filtre Wi-Fi virtuel…) comme une interface distincte, avec ses propres
+`InOctets`/`OutOctets`. Le moniteur additionnait toutes les lignes « opérationnelles » :
+un même paquet Wi-Fi était compté 6 à 8 fois. Preuve contrôlée (sprint 3) : un
+téléchargement unique de 20 Mio (21 Mo) mesurait **160 Mo** avant correction, soit
+7,6×.
+
+**Correction.** `keep_interface_row()` dans `crates/cbs-netmon/src/sys.rs` exclut les
+lignes dont `InterfaceAndOperStatusFlags.FilterInterface` (bit 1) est positionné,
+en conservant les adaptateurs réels (Wi-Fi, Ethernet, Tailscale, vEthernet WSL).
+Trois tests unitaires ajoutés (7 au total pour `cbs-netmon`). Après correction, le
+même téléchargement contrôlé de 20 Mio mesure **24,6 Mo** (1,17×, trafic de fond et
+surcoût protocolaire inclus), et une fenêtre inactive 5 s mesure ~13 Ko.
+
+**Limite restante (documentée).** Les octets sont cumulés par interface : un flux
+encapsulé (VPN) apparaît à la fois sur le tunnel et sur l'adaptateur physique. Les
+deltas restent des mesures par interface, jamais des estimations.
+
 ---
 
 ## Constats explicitement NON traités (assumés, documentés)
@@ -182,10 +202,11 @@ explicite « Actif : X + Y » ; aucun profil inventé quand le masque est vide.
 
 ## Vérification de non-régression
 
-- `cargo test --workspace` : **60 réussis, 0 échec, 1 ignoré** (EICAR manuel).
+- `cargo test --workspace` : **64 réussis, 0 échec, 1 ignoré** (EICAR manuel), après
+  ajout des tests de filtrage d'interfaces et de validation de langue.
 - `cargo clippy --workspace --all-targets -- -D warnings` : propre.
 - `cargo fmt --all -- --check` : propre.
-- `npm run ui:build` + `npm run ui:test` : 10/10.
+- `npm run ui:build` + `npm run ui:test` : **17/17** (6 fichiers).
 - Parcours manuels réels (fenêtre Tauri) : scan/détection/quarantaine/restauration/
   purge inchangés ; moniteur réseau et pare-feu validés en lecture seule
-  (voir `DEVELOPMENT_STATUS.md` § 4).
+  (voir `DEVELOPMENT_STATUS.md` § 4 et `UX_TEST_REPORT.md`).

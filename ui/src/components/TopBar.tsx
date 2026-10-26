@@ -1,6 +1,7 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 
-import { signatureStateLabel, signatureStateTone } from "../lib/format";
+import { signatureStateTone } from "../lib/format";
+import { useI18n, type TranslationKey } from "../lib/i18n";
 import type { EngineStatus } from "../types";
 import { Badge } from "./Badge";
 
@@ -12,13 +13,11 @@ interface TopBarProps {
   onRefresh: () => void;
 }
 
-export function TopBar({
-  title,
-  subtitle,
-  engine,
-  engineLoading,
-  onRefresh,
-}: TopBarProps) {
+export function TopBar({ title, subtitle, engine, engineLoading, onRefresh }: TopBarProps) {
+  const { t } = useI18n();
+  const signatureLabel = (state: EngineStatus["signatureState"]) =>
+    t(("signature." + state) as TranslationKey);
+
   return (
     <header className="topbar">
       <div className="topbar__titles">
@@ -35,16 +34,16 @@ export function TopBar({
               <strong>
                 {engine.installed
                   ? `ClamAV ${engine.engineVersion ?? ""}`.trim()
-                  : "ClamAV non détecté"}
+                  : t("engine.missing")}
               </strong>
               <span>
                 {engine.installed
-                  ? `Signatures ${engine.signatureVersion ?? "absentes"}`
-                  : "Moteur requis"}
+                  ? `${t("updates.signaturesTitle")} ${engine.signatureVersion ?? t("signature.missing")}`
+                  : t("updates.engineMissing")}
               </span>
             </div>
             <Badge tone={signatureStateTone(engine.signatureState)} dot>
-              {signatureStateLabel(engine.signatureState)}
+              {signatureLabel(engine.signatureState)}
             </Badge>
           </div>
         ) : (
@@ -54,7 +53,7 @@ export function TopBar({
               className={engineLoading ? "spin" : undefined}
               aria-hidden="true"
             />
-            <span>Diagnostic du moteur…</span>
+            <span>{t("engine.checking")}</span>
           </div>
         )}
 
@@ -63,8 +62,8 @@ export function TopBar({
           className="button button--ghost button--icon"
           onClick={onRefresh}
           disabled={engineLoading}
-          title="Relancer le diagnostic ClamAV et rafraîchir les données"
-          aria-label="Rafraîchir"
+          title={t("topbar.refresh")}
+          aria-label={t("topbar.refresh")}
         >
           <RefreshCw size={18} className={engineLoading ? "spin" : undefined} />
         </button>

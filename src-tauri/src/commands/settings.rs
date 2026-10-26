@@ -12,6 +12,7 @@ use crate::state::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct SettingsView {
     pub theme: String,
+    pub language: String,
     pub recursive: bool,
     pub include_pua: bool,
     pub clamscan_path: Option<String>,
@@ -29,11 +30,26 @@ pub struct SettingsView {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
     pub theme: Option<String>,
+    pub language: Option<String>,
     pub recursive: Option<bool>,
     pub include_pua: Option<bool>,
     pub clamscan_path: Option<String>,
     pub database_path: Option<String>,
     pub signature_max_age_days: Option<i64>,
+}
+
+/// Supported interface languages. Stored as a plain `settings` key/value entry:
+/// no schema migration is needed, unknown values gracefully fall back to French.
+pub(crate) fn normalize_language(raw: &str) -> Result<String, CommandError> {
+    let language = raw.trim().to_ascii_lowercase();
+    if matches!(language.as_str(), "fr" | "en") {
+        Ok(language)
+    } else {
+        Err(CommandError::new(
+            "invalidSetting",
+            "Langue invalide (fr ou en attendu).",
+        ))
+    }
 }
 
 fn parse_bool(value: Option<&String>, default: bool) -> bool {
@@ -100,6 +116,11 @@ fn build_view(state: &AppState, map: &HashMap<String, String>) -> SettingsView {
             .get("theme")
             .cloned()
             .unwrap_or_else(|| "dark".to_string()),
+        language: map
+            .get("language")
+            .cloned()
+            .filter(|value| matches!(value.as_str(), "fr" | "en"))
+            .unwrap_or_else(|| "fr".to_string()),
         recursive: parse_bool(map.get("recursive"), true),
         include_pua: parse_bool(map.get("includePua"), false),
         clamscan_path: non_empty(map.get("clamscanPath")),
@@ -140,6 +161,10 @@ pub fn update_settings(
             ));
         }
         updates.push(("theme", theme));
+    }
+
+    if let Some(language) = patch.language {
+        updates.push(("language", normalize_language(&language)?));
     }
 
     if let Some(recursive) = patch.recursive {
@@ -225,6 +250,14 @@ mod tests {
         let exe = dir.path().join("notepad.exe");
         std::fs::write(&exe, b"x").unwrap();
         assert!(validate_clamscan_path(&exe.display().to_string()).is_err());
+    }
+
+    #[test]
+    fn normalizes_supported_languages_only() {
+        assert_eq!(normalize_language(" FR ").unwrap(), "fr");
+        assert_eq!(normalize_language("en").unwrap(), "en");
+        assert!(normalize_language("de").is_err());
+        assert!(normalize_language("").is_err());
     }
 
     #[test]

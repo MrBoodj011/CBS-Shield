@@ -23,6 +23,7 @@ import {
   signatureStateTone,
   truncateMiddle,
 } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type { AppInfo, EngineStatus, SettingsView } from "../types";
 
 interface SettingsProps {
@@ -36,6 +37,7 @@ interface SettingsProps {
 
 interface FormState {
   theme: string;
+  language: string;
   recursive: boolean;
   includePua: boolean;
   clamscanPath: string;
@@ -45,6 +47,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   theme: "dark",
+  language: "fr",
   recursive: true,
   includePua: false,
   clamscanPath: "",
@@ -61,6 +64,7 @@ export function Settings({
   onEngineChanged,
 }: SettingsProps) {
   const toast = useToast();
+  const { t } = useI18n();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -70,6 +74,7 @@ export function Settings({
     if (!settings) return;
     setForm({
       theme: settings.theme,
+      language: settings.language === "en" ? "en" : "fr",
       recursive: settings.recursive,
       includePua: settings.includePua,
       clamscanPath: settings.clamscanPath ?? "",
@@ -84,6 +89,7 @@ export function Settings({
     try {
       const saved = await api.updateSettings({
         theme: form.theme,
+        language: form.language,
         recursive: form.recursive,
         includePua: form.includePua,
         clamscanPath: form.clamscanPath,
@@ -132,6 +138,7 @@ export function Settings({
   const dirty = Boolean(
     settings &&
       (form.theme !== settings.theme ||
+        form.language !== settings.language ||
         form.recursive !== settings.recursive ||
         form.includePua !== settings.includePua ||
         form.clamscanPath !== (settings.clamscanPath ?? "") ||
@@ -176,6 +183,34 @@ export function Settings({
                   {option.label}
                 </button>
               ))}
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div className="panel__head" style={{ marginBottom: 8 }}>
+                <div>
+                  <span className="panel__eyebrow">Localisation</span>
+                  <h2>{t("settings.language")}</h2>
+                </div>
+              </div>
+              <div className="segmented" role="group" aria-label={t("settings.language")}>
+                {[
+                  { value: "fr", label: t("settings.languageFr") },
+                  { value: "en", label: t("settings.languageEn") },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={form.language === option.value ? "is-active" : ""}
+                    onClick={() => setForm((current) => ({ ...current, language: option.value }))}
+                    lang={option.value}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="field__hint" style={{ marginTop: 8 }}>
+                {t("settings.languageHint")}
+              </p>
             </div>
           </section>
 

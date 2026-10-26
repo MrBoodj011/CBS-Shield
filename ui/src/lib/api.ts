@@ -54,6 +54,8 @@ export const api = {
   updateSettings: (patch: SettingsPatch) =>
     invoke<SettingsView>("update_settings", { patch }),
   openDataDir: () => invoke<void>("open_data_dir"),
+  setTrayLanguage: (language: string) =>
+    invoke<boolean>("set_tray_language", { language }),
 
   netmonSnapshot: () => invoke<NetmonSnapshotPayload>("netmon_snapshot"),
   netmonHistory: (limit = 40) => invoke<NetmonSnapshotRecord[]>("netmon_history", { limit }),

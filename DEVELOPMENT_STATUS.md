@@ -1,12 +1,14 @@
-# État du développement — CBS Shield 0.2.0-dev (Phase 2, sprint 2)
+# État du développement — CBS Shield 0.3.0-dev (Phase 3, sprint 3)
 
-**Date de vérification :** 25 octobre 2026
-**Branche :** `sprint-2` (base `9a735e0`)
-**Nature :** version expérimentale, scanner manuel + deux modules d'observation en lecture seule.
+**Date de vérification :** 26 octobre 2026
+**Branche :** `sprint-3` (base `a2cc990`, sprint 2 revalidé avant modification)
+**Nature :** version expérimentale — protection manuelle, tableau de bord réel,
+design system, localisation FR/EN, observation réseau et pare-feu en lecture seule.
 
 Ce document décrit ce qui a été **réellement implémenté et vérifié**, ce qui ne l'est
 pas, et les limites connues. Aucune fonctionnalité non testée n'est présentée comme
-opérationnelle.
+opérationnelle. Les détails de recette et les captures sont dans
+[`UX_TEST_REPORT.md`](UX_TEST_REPORT.md).
 
 ---
 
@@ -18,207 +20,338 @@ opérationnelle.
 | Rust | 1.99.1, toolchain MSVC |
 | Node.js / npm | 24.18 / 12 |
 | WebView2 | Runtime 155 |
-| ClamAV | 1.5.4 (installation `winget`, `Cisco.ClamAV`) |
-| Base de signatures | version `28164`, publiée le dim. 25 oct. 2026 |
+| ClamAV | 1.5.4 (`winget`, `Cisco.ClamAV`) |
+| Base de signatures | version `28164`, âge 1 jour lors de la recette |
 | Emplacement des signatures | `%LOCALAPPDATA%\Cybrense\CBS Shield\clamav\database` |
+| Pare-feu Windows (OS) | **désactivé sur les 3 profils** — état constaté, non modifié par CBS Shield |
 | Visual Studio | 2022 Build Tools (C++) |
 
-> Les signatures sont mises à jour régulièrement : les numéros ci-dessus sont ceux
-> observés lors de la validation, pas une exigence.
+> Les signatures évoluent : les numéros ci-dessus sont ceux observés à la validation.
 
-## 2. Composants livrés
+---
+
+## 2. Ce que le sprint 3 a livré
+
+### 2.1 Design system « Midnight Navy » et interface
+
+- Nouvelle couche de design `ui/src/theme.css` (jetons de couleur, typographie,
+  rayons, élévations, mouvement, composants), chargée après la base historique
+  `styles.css` — aucune régression des modules existants.
+- **9 sections** : Dashboard, Antivirus, Historique des scans, Quarantaine,
+  Moniteur réseau, Pare-feu, Mises à jour, Paramètres, À propos & diagnostic.
+- Navigation en trois groupes (Protection / Observation / Système), rail actif,
+  carte moteur en pied de sidebar, transitions de page, squelettes de chargement.
+- Thèmes **sombre (défaut)** et **clair** entièrement tokenisés, préférence
+  persistée ; mode `system` conservé.
+- Fenêtre native 1380×900, minimum **1080×700** sans débordement horizontal.
+- Documentation : [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md),
+  [`UI_COMPONENTS.md`](UI_COMPONENTS.md).
+
+### 2.2 Tableau de bord alimenté par le backend réel
+
+Chaque valeur provient d'une commande IPC, sans donnée fictive :
+
+| Bloc | Source |
+| --- | --- |
+| Moteur / signatures / fraîcheur | `engine_status` |
+| Scans, fichiers, détections, quarantaine | `dashboard_stats` |
+| Dernière analyse + activité récente | `list_scans` (rapports SQLite) |
+| Éléments en quarantaine | `list_quarantine` |
+| Pare-feu (profils actifs) | `firewall_status` (lecture seule) |
+| Trafic observé | `netmon_history` (dernière capture persistée) |
+| Version / phase | `app_info` |
+
+Règles d'honnêteté appliquées :
+
+- l'état « **Protection manuelle opérationnelle** » n'apparaît que si ClamAV est
+  détecté **et** les signatures à jour ; sinon « incomplète » ou « indisponible » ;
+- « **Temps réel inactif** » est toujours affiché et Microsoft Defender est
+  explicitement désigné comme protection principale ;
+- aucune formulation « entièrement protégé » n'existe dans les dictionnaires ;
+  un test UI l'interdit.
+
+### 2.3 Localisation FR/EN
+
+- Dictionnaires typés `fr`/`en` dans `ui/src/lib/i18n.tsx` : une clé manquante en
+  anglais est une erreur `tsc`.
+- Langue persistée côté Rust (`settings.language`, `fr` | `en`), sans migration de
+  schéma (table clé/valeur existante).
+- Couverture 0.3.0 : shell, navigation, tableau de bord, historique, mises à jour,
+  à propos/diagnostic, primitives partagées (fermeture de modale, badges, dates de
+  mise à jour).
+- Les modules Antivirus, Quarantaine, Réseau, Pare-feu et le corps des Paramètres
+  restent en français jusqu'à leur migration : choix explicite pour ne pas livrer
+  d'écran à moitié traduit. Les dates et nombres restent au format `fr-FR`.
+- Changement de langue **à chaud**, sans rechargement ; synchronisation du menu de
+  la zone de notification (`set_tray_language` renvoie `true` quand le menu est mis
+  à jour).
+
+### 2.4 Icône de notification (tray)
+
+- `src-tauri/src/tray.rs` : icône système minimale, menu **Ouvrir CBS Shield /
+  Quitter**, clic gauche = restaurer et focaliser la fenêtre.
+- Aucune interception de la fermeture, aucune réduction automatique, aucun
+  démarrage automatique : le comportement Windows natif est conservé.
+- Création en « best effort » : si la zone de notification refuse l'icône,
+  l'application démarre normalement.
+
+### 2.5 Correction des compteurs réseau (finding A‑10)
+
+`GetIfTable2` expose les sous-couches de filtres NDIS (WFP, Npcap, QoS, filtre
+Wi‑Fi virtuel) comme des interfaces distinctes ; le moniteur additionnait leurs
+octets, comptant chaque paquet 6 à 8 fois.
+
+- **Correction** : `keep_interface_row()` exclut les lignes dont
+  `InterfaceAndOperStatusFlags.FilterInterface` est positionné, en conservant les
+  adaptateurs réels (Wi‑Fi, Ethernet, Tailscale, vEthernet WSL).
+- **Mesure contrôlée** : téléchargement unique de 20 Mio → **160 Mo avant**,
+  **24,6 Mo après** (1,17×, surcoût protocolaire inclus) ; fenêtre inactive 5 s
+  ≈ **13 Ko**.
+- **Interfaces visibles** après correction : `Tailscale`, `Wi‑Fi`.
+- 3 tests unitaires ajoutés (`cbs-netmon` : 7 tests).
+- Limite résiduelle documentée : un flux encapsulé VPN apparaît sur le tunnel et
+  sur l'adaptateur physique (mesures par interface, jamais des estimations).
+
+### 2.6 Pages Historique, Mises à jour, À propos & diagnostic
+
+- **Historique** : liste SQLite (200 rapports), filtres (tous/propres/détections/
+  erreurs), recherche par chemin, modale de rapport avec cibles, moteur,
+  signatures, détections et erreurs réelles.
+- **Mises à jour** : état moteur/signatures, chemins `clamscan`/`freshclam`, base
+  de signatures, jauge d'âge réelle vs seuil configuré, mise à jour explicite avec
+  confirmation et journal `freshclam`, guide d'installation ClamAV (`winget`) si
+  le moteur est absent.
+- **À propos & diagnostic** : produit, version, phase, chemins de données, coffre,
+  signatures, `freshclam.conf`, états live moteur/quarantaine/pare-feu/réseau,
+  avertissement Defender, ouverture du dossier de données.
+
+### 2.7 Version et packaging
+
+- Version `0.3.0-dev` alignée : `Cargo.toml`, `src-tauri/tauri.conf.json`,
+  `package.json`, `ui/package.json`, `Cargo.lock`.
+- `app_info.phase` et la description longue de l'installeur ne mentionnent plus la
+  « phase 1 ».
+- Installeur NSIS `currentUser` généré par `npm run build`, **2,42 Mo**
+  (`CBS Shield_0.3.0-dev_x64-setup.exe`), **non signé** ; l'interface est
+  embarquée depuis `ui/dist` (aucun serveur Vite en production).
+
+---
+
+## 3. Composants
 
 ### Backend Rust
 
 | Crate | Contenu | État |
 | --- | --- | --- |
-| `cbs-core` | modèles, découverte ClamAV, parsing `clamscan`, orchestration, progression, annulation, extraction des erreurs par fichier (stderr) | Complet et testé |
-| `cbs-store` | SQLite v2 (scans, détections, quarantaine, réglages, `netmon_snapshots`), migration v1→v2 testée, tableau de bord | Complet et testé |
-| `cbs-quarantine` | AES-256-GCM, clé DPAPI, store/restore/purge, anti-écrasement, purge des blobs orphelins (crash) | Complet et testé |
-| `cbs-netmon` | **Nouveau** : capture TCP/UDP via `GetExtendedTcpTable`/`GetExtendedUdpTable`, compteurs d'interface via `GetIfTable2`, noms de processus via `OpenProcess`+`QueryFullProcessImageNameW` | Complet et testé |
-| `cbs-firewall` | **Nouveau** : observation lecture seule de la stratégie Windows Firewall (`windows-firewall 0.8` + COM direct `INetFwPolicy2`), empreinte SHA-256 du jeu de règles | Complet et testé |
-| `src-tauri` | commandes IPC (`netmon_snapshot`, `netmon_history`, `firewall_status`, …), état partagé, chemins canonisés, événements, validation restaurations renforcée | Compilé et testé |
+| `cbs-core` | modèles, découverte ClamAV, parsing `clamscan`, orchestration, progression, annulation, erreurs par fichier | Complet et testé |
+| `cbs-store` | SQLite v2 (scans, détections, quarantaine, réglages, `netmon_snapshots`), migration v1→v2 | Complet et testé |
+| `cbs-quarantine` | AES-256-GCM, clé DPAPI, store/restore/purge, anti-écrasement, purge des orphelins | Complet et testé |
+| `cbs-netmon` | TCP/UDP via `GetExtendedTcpTable`/`GetExtendedUdpTable`, compteurs d'interface filtrés (NDIS), noms de processus | Complet et testé |
+| `cbs-firewall` | observation lecture seule (`INetFwPolicy2`), empreinte SHA-256 des règles | Complet et testé |
+| `src-tauri` | IPC, état partagé, chemins canonisés, langue persistée, tray, gardes de restauration | Compilé et testé |
 
 ### Interface React
 
 | Section | État |
 | --- | --- |
-| Dashboard | Fonctionnel : stats, dernier scan, état moteur ; cartes Firewall/Network passées en « Observation » (cliquables) |
-| Antivirus | Fonctionnel : sélection, scan réel, progression, annulation, rapport, mise en quarantaine ; refus de mise à jour pendant un scan |
-| Firewall | **Fonctionnel (lecture seule)** : profils (actif/état/défauts), 665 règles réelles listées avec recherche, bannière de détection de modification, garde-fous |
-| Network Monitor | **Fonctionnel (lecture seule)** : TCP/UDP (63/95 connexions observées), recherche + filtre transport, rafraîchissement auto 5 s, historique local 2 000 lignes, deltas mesurés honnêtes |
-| Quarantaine | Fonctionnel : liste, restauration (destination revalidée), suppression à double confirmation |
-| Paramètres | Fonctionnel : thème, options, chemins ClamAV, seuil de fraîcheur, diagnostic |
+| Dashboard | Réel : posture, moteur, signatures, dernier scan, quarantaine, pare-feu, trafic, activité, accès rapides |
+| Antivirus | Fonctionnel : sélection, scan réel, progression, annulation, rapport, quarantaine ; refus de mise à jour pendant un scan |
+| Historique | Fonctionnel : 200 rapports, filtres, recherche, rapport détaillé |
+| Quarantaine | Fonctionnel : liste, restauration revalidée, suppression à double confirmation |
+| Moniteur réseau | Fonctionnel (lecture seule) : TCP/UDP, processus, volumes corrigés, historique 2 000 lignes |
+| Pare-feu | Fonctionnel (lecture seule) : profils, règles, empreinte de modification |
+| Mises à jour | Fonctionnel : fraîcheur réelle, `freshclam` avec confirmation, journal |
+| Paramètres | Fonctionnel : thème, **langue**, options de scan, chemins, seuil de fraîcheur, diagnostic |
+| À propos | Fonctionnel : versions, chemins, diagnostic live, ouverture du dossier de données |
 
-Fonctions transverses : thème sombre/clair/système, notifications, bannière
-d'avertissement, responsive, états vides, messages d'erreur explicites.
+---
 
-## 3. Tests et résultats
+## 4. Tests et résultats
 
-Commande : `cargo test --workspace` — **toutes les suites `ok`** (code de sortie 0).
+### Rust — `cargo test --workspace`
+
+**64 réussis, 0 échec, 1 ignoré** (EICAR manuel), code de sortie 0.
 
 | Suite | Tests | Résultat |
 | --- | --- | --- |
-| `cbs-core` (unitaires : parsing, moteur, scan, extract_file_errors) | 20 | ✅ 20 réussis |
-| `cbs-core` (intégration ClamAV réelle) | 4 | ✅ 3 réussis, 1 ignoré (EICAR manuel) |
-| `cbs-core` (mission E : volume 240 fichiers + fichier verrouillé) | 2 | ✅ 2 réussis |
-| `cbs-firewall` (fingerprint, tri, COM réel) | 3 | ✅ 3 réussis |
-| `cbs-netmon` (capture réelle, delta pur, bornes) | 4 | ✅ 4 réussis |
-| `cbs-quarantine` (dont blobs orphelins crash) | 9 | ✅ 9 réussis |
-| `cbs-shield` (chemins verbatim, gardes restaurations, classification mises à jour) | 12 | ✅ 12 réussis |
-| `cbs-store` (schéma v2, migration v1→v2, historique netmon) | 7 | ✅ 7 réussis |
-| **Total Rust** | **61** | **60 réussis, 0 échec, 1 ignoré** |
+| `cbs-core` unitaires | 20 | ✅ 20 |
+| `cbs-core` intégration ClamAV | 4 | ✅ 3 + 1 ignoré |
+| `cbs-core` mission E (volume + fichier verrouillé) | 2 | ✅ 2 |
+| `cbs-firewall` | 3 | ✅ 3 |
+| `cbs-netmon` (dont 3 tests de filtrage NDIS) | 7 | ✅ 7 |
+| `cbs-quarantine` | 9 | ✅ 9 |
+| `cbs-shield` (dont validation de langue) | 13 | ✅ 13 |
+| `cbs-store` | 7 | ✅ 7 |
+| **Total** | **65** | **64 réussis, 1 ignoré** |
 
-Frontend :
+### Frontend
 
 | Commande | Résultat |
 | --- | --- |
-| `npm run ui:build` | ✅ `tsc --noEmit` + Vite OK (1 953 modules, ~315 Ko JS) |
-| `npm run ui:test` | ✅ 10 tests / 3 fichiers (format, `UnavailablePanel`, `NetworkMonitor` avec IPC simulé) |
+| `npm run ui:build` | ✅ `tsc --noEmit` + Vite (1 958 modules, 54,99 Ko CSS / 361,86 Ko JS) |
+| `npm run ui:test` | ✅ **17 tests / 6 fichiers** |
 
-Qualité Rust :
+Nouveaux tests UI : dictionnaires/interpolation (`i18n.test.ts`), tableau de bord
+sans fausse protection et avec données réelles (`Dashboard.test.tsx`), historique
+filtres + rapport (`History.test.tsx`).
+
+### Qualité
 
 | Commande | Résultat |
 | --- | --- |
 | `cargo fmt --all -- --check` | ✅ propre |
 | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ aucun avertissement |
-| `cargo test --workspace` | ✅ 60 réussis, 1 ignoré |
 
-## 4. Vérifications fonctionnelles effectuées
+---
 
-### 4.1 Audit de sécurité et corrections (sprint 2)
+## 5. Vérifications fonctionnelles effectuées
 
-Audit appliqué avec corrections immédiates (détail : `SECURITY_AUDIT.md`) :
+### 5.1 Fenêtre native et design
 
-- **(Critique)** `canonicalize()` Windows renvoie des chemins `\\?\C:\…` : **tous les
-  gardes `starts_with` de la Phase 1 ne correspondaient jamais**. Corrections dans
-  `vault.rs` (`normalized_path`/`is_inside`), garde quarantaine/répertoire de données
-  effectivement fonctionnelle + revalidation des destinations de restauration (5 tests).
-- **(Élevé)** `probe_version` sans limite de temps → `execute_with_timeout` avec
-  arrêt du processus (`PROBE_TIMEOUT`).
-- **(Élevé)** verrouillage OS : qu'une mise à jour de signatures ne démarre pas
-  pendant un scan (`is_scanning`), classification pure des runs `freshclam`
-  (6 tests).
-- **(Moyen)** buffet de lecture stdout/stderr borné à 64 Ko par ligne + erreur explicite,
-  purge des blobs `.<id>.tmp` orphelins après un crash de mise en quarantaine.
-- **(Moyen)** base de données `/schema` migrée v1→v2 (`netmon_snapshots`,
-  rétention 2 000 lignes) sans perte, migration testée.
-- **(Moyen)** erreurs « Can't open file » de ClamAV (stderr) converties en enregistrements
-  d'erreur **par fichier** : un fichier verrouillé donne `completedWithErrors` explicitant
-  l'objet, pas un `failed` opaque (vérifié sur un vrai fichier verrouillé avec
-  `share_mode(0)`).
+- Titre lu depuis l'OS : **`CBS Shield — Cybrense`**.
+- 9 sections parcourues dans la fenêtre Tauri réelle ; captures dans
+  `SCREENSHOTS/` (15 fichiers, voir `UX_TEST_REPORT.md`).
+- Thème sombre et thème clair vérifiés ; changement de langue FR→EN à chaud.
+- **1080×700** : `scrollWidth == innerWidth` (aucun débordement), navigation
+  complète, sous-titre conservé.
+- Clavier : `Tab` réel → anneau de focus `solid 2px rgb(78,167,255)`,
+  `:focus-visible` actif ; `Échap` ferme les modales ; `aria-current="page"` sur
+  l'élément de navigation actif, `aria-pressed` sur les filtres.
+- Tray : commande `set_tray_language` → **`true`** (icône existante, menu
+  reconstruit dans la langue choisie).
 
-### 4.2 Moniteur réseau — parcours réel
+### 5.2 Moniteur réseau — données réelles (corrigées)
 
-Validé sur la fenêtre Tauri, données système réelles :
+1. Interfaces réelles après correctif : **Tailscale, Wi‑Fi** (les couches de
+   filtres NDIS ne sont plus comptées). ✅
+2. Fenêtre inactive de 5 s : ≈ **13 Ko**, au lieu de centaines de Mo auparavant. ✅
+3. Téléchargement contrôlé de 20 Mio : **24,6 Mo** mesurés (1,17×), contre
+   **160 Mo** avant correction. ✅
+4. Connexions TCP/UDP, PID et processus affichés ; recherche et filtre transport
+   opérationnels ; historique SQLite borné à 2 000 lignes. ✅
 
-1. Ouverture de la section : **63 connexions TCP, 95 ports UDP, 158 lignes** affichées,
-   processus associés (chrome.exe, System, nvcontainer.exe…). ✅
-2. **Rafraîchissement auto (5 s)** activé : comptes mis à jour (UDP 95 → 99), historique
-   alimenté, captures espacées par une garde anti-recouvrement. ✅
-3. **Deltas mesurés réels** : 174 Mo reçus / 450 Ko émis sur une fenêtre de 5 s
-   (trafic navigateur réel) ; première capture marquée 0 o (aucun intervalle). ✅
-4. Historique persisté en SQLite (2 000 lignes max, purge auto). ✅
-5. Recherche + filtre transport (TCP/UDP/TCP établies) effectifs. ✅
+> Correction d'une affirmation du rapport sprint 2 : les « 174 Mo en 5 s » n'étaient
+> pas du trafic réel mais la somme des sous-couches NDIS. Le chiffre correct pour
+> une navigation ordinaire est de l'ordre de quelques Ko à quelques Mo selon
+> l'activité.
 
-### 4.3 Pare-feu — parcours réel
+### 5.3 Pare-feu — lecture seule
 
-Validé sur la fenêtre Tauri, configuration réelle de la machine :
+1. Les trois profils sont rapportés **Désactivé**, conforme à
+   `Get-NetFirewallProfile` (`Enabled=False`) et `netsh advfirewall show
+   allprofiles state` (`OFF`) — vérification croisée indépendante. ✅
+2. Profil actif courant : `privé` (valeur dépendante du réseau, lue via
+   `CurrentProfileTypes()`). ✅
+3. **657 règles** observées lors de cette session (665 au sprint 2 : les règles
+   Windows évoluent), liste bornée avec recherche. ✅
+4. **Aucune écriture** : aucun appel `put_*` dans `cbs-firewall` ; CBS Shield n'a
+   pas modifié l'état du pare-feu pendant la recette. ✅
 
-1. **Profils** : les trois profils rapportés « Désactivé », conforme à
-   `Get-NetFirewallProfile` (tous `Enabled=False`) — viz la vérification croisée. ✅
-2. **Défauts par profil** : `bloquer` en entrant / `autoriser` en sortant, lus via COM
-   direct `INetFwPolicy2` (après correction du `NET_FW_PROFILE2_PUBLIC` : 0x4, pas 0x3 —
-   voir audit). ✅
-3. **Profil actif** : badge `Actif : privé + public` (masque 6 lu via
-   `CurrentProfileTypes()`, cas que l'API mono-profil ne représente pas). ✅
-4. **Règles** : 665 règles annoncées, liste bornée avec recherche par nom/programme/
-   protocole/port — règles réelles du poste (Intel, Clipchamp, Microsoft.AAD…). ✅
-5. **Aucune écriture** : aucune règle ajoutée, supprimée, activée ou désactivée
-   (aucun appel `put_*` dans tout le crate `cbs-firewall`). ✅
+### 5.4 Non-régression Phase 1 / sprint 2
 
-### 4.4 Parcours Phase 1 (non régressés)
+1. Scan propre réel via IPC + ClamAV réel (1 fichier, 0 menace). ✅
+2. Détection de marqueur de test inoffensif, hash/taille affichés. ✅
+3. Quarantaine / restauration / purge à confirmations multiples inchangées. ✅
+4. Persistance SQLite après rescan (3 rapports réels dans l'historique). ✅
+5. Mise à jour de signatures refusée pendant un scan (garde conservée). ✅
 
-1. Scan propre réel (1 fichier analysé, 0 menace) via IPC + ClamAV réel. ✅
-2. Détection de marqueur de test inoffensive + hash/taille affichés. ✅
-3. Quarantaine/restauration/purge à confirmations multiples inchangées. ✅
-4. Persistance SQLite après rescan. ✅
+### 5.5 Distribution
 
-## 5. Limite EICAR / Microsoft Defender
+- Installeur NSIS `currentUser` généré (aucune élévation à l'installation) :
+  `target\release\bundle\nsis\CBS Shield_0.3.0-dev_x64-setup.exe`,
+  **2 534 183 octets (2,42 Mo)**, SHA‑256
+  `58BBD3717367D7BA165CE29104578242322AA69CF31C0A2E7632EA764E460D27`,
+  **non signé** (`NotSigned`).
+- L'exécutable release (7 033 856 octets) a été lancé **sans serveur Vite**
+  (port 1420 fermé) : la page servie était `http://tauri.localhost/`, interface
+  embarquée, données backend réelles. Les captures 01 à 15 ont été refaites depuis
+  cette instance release, puis l'application a été fermée (préférences restaurées
+  en français + thème sombre).
+- Détail complet de la vérification : `UX_TEST_REPORT.md` § 8.
+- L'installeur n'a **pas été installé sur une machine propre** (voir limites).
 
-Le test EICAR de bout en bout **n'a pas pu être validé sur la machine de
-développement** : Microsoft Defender bloque la lecture du fichier EICAR par ClamAV
-(`Win32 error 225`). Conformément aux contraintes du projet :
+---
+
+## 6. Limites connues
+
+### Interface / localisation
+
+- **Localisation partielle assumée** : Antivirus, Quarantaine, Réseau, Pare-feu et
+  le corps des Paramètres restent en français ; dates/nombres au format `fr-FR`.
+  Aucun écran n'est à moitié traduit.
+- Le tray est minimal (ouvrir/quitter) : pas de réduction dans la zone de
+  notification, pas de démarrage automatique, pas de menu contextuel avancé.
+- Accessibilité partiellement vérifiée : focus clavier, ARIA, contrastes des jetons
+  revus ; **NVDA/Narrateur et mode contraste élevé non testés**.
+- Mouvement réduit implémenté (`prefers-reduced-motion`) mais non validé
+  visuellement.
+- L'installeur n'est **pas signé** (aucun certificat configuré) : SmartScreen peut
+  afficher un avertissement.
+
+### Sécurité / fonctionnel
+
+- **Pas de protection en temps réel** : le moniteur observe, il ne bloque rien.
+- Un scan propre **ne garantit pas** l'absence de malware (signatures uniquement).
+- Pare-feu et réseau strictement en lecture seule ; aucune écriture système.
+- La liste des règles du pare-feu est bornée à l'affichage ; l'empreinte porte sur
+  l'intégralité.
+- La base SQLite n'est pas chiffrée (permissions du profil Windows) ; le coffre de
+  quarantaine l'est (AES-256-GCM + DPAPI).
+- Un flux VPN encapsulé est compté sur le tunnel et sur l'interface physique.
+- Un seul scan simultané ; 64 cibles maximum ; mise à jour de signatures refusée
+  pendant un scan.
+- Les fichiers > 512 Mo et les liens symboliques ne sont pas mis en quarantaine.
+
+### Environnement / validation
+
+- **Aucune validation sur machine propre** : la recette a eu lieu sur le poste de
+  développement existant. L'installeur a été produit et inspecté, pas installé sur
+  une VM vierge (`VM_TEST_PLAN.md` décrit la procédure).
+- Le pare-feu Windows était **désactivé au niveau OS** sur ce poste ; CBS Shield
+  l'affiche fidèlement et ne le modifie pas. Le chemin lecture seule est le même
+  sur une machine où il est actif, mais ce cas n'a pas été rejoué ici.
+- La mise à jour `freshclam` n'a **pas été relancée** pendant la recette UX (base
+  déjà fraîche) : la modale de confirmation a été vérifiée, le flux reste couvert
+  par les tests et la validation sprint 2.
+- EICAR bloqué par Defender (voir section 7).
+
+---
+
+## 7. Limite EICAR / Microsoft Defender
+
+Le test EICAR de bout en bout **n'a pas pu être validé sur cette machine** :
+Microsoft Defender bloque la lecture du fichier par ClamAV (`Win32 error 225`).
+Conformément aux contraintes du projet :
 
 - Defender **n'a pas été désactivé** ;
 - **aucune exclusion** n'a été ajoutée ;
 - aucun malware réel n'a été téléchargé ou exécuté.
 
-La chaîne de détection est donc validée avec une signature ClamAV de test inoffensive,
-ce qui exerce le même chemin de code (lancement, parsing, détection, hash, événements),
-sans dépendre du fichier EICAR.
+La chaîne de détection est validée avec une signature ClamAV de test inoffensive,
+qui exerce le même code (lancement, parsing, détection, hash, événements). Le script
+`scripts/eicar-manual-test.ps1` permet de refaire le diagnostic avec accord explicite.
 
-Le script `scripts/eicar-manual-test.ps1` permet de refaire le diagnostic sur une
-machine où Defender ne bloque pas la lecture, avec confirmation explicite. Un échec
-lié à Defender est une limite de l'environnement, pas une preuve de défaut du moteur.
+---
 
-## 6. Limites connues
-
-### Sécurité / fonctionnel
-
-- **Pas de protection en temps réel** : le moniteur réseau observe, il ne bloque rien ;
-  aucune interrogation de processus en continu entre deux captures explicites.
-- **Pare-feu et moniteur réseau en lecture seule** : aucune écriture système n'existe ;
-  la détection de modification du pare-feu dépend d'une observation préalable locale
-  (empreinte SHA-256 des règles).
-- La liste des règles du pare-feu est **bornée à l'affichage** (compteur complet
-  disponible) ; l'empreinte porte sur l'intégralité.
-- **Pas de YARA-X** planifié en sprint 2 (Phase 3).
-- Un scan propre **ne garantit pas** l'absence de malware (signatures uniquement).
-- Les archives, tailles et formats supportés sont ceux de ClamAV.
-- La base SQLite (chemins, hashes, résumés réseau) n'est **pas chiffrée** ; elle est
-  protégée par les permissions du profil Windows.
-- La clé de quarantaine perdue rend les blobs irrécupérables (limite assumée du chiffrement).
-- Les fichiers de plus de 512 Mo sont refusés par la quarantaine.
-- Les liens symboliques ne sont pas mis en quarantaine.
-- La restauration n'est possible que vers le chemin d'origine ou un chemin explicite
-  hors du coffre et du répertoire de données (refus validation) ; jamais d'écrasement.
-- Un seul scan simultané ; maximum 64 cibles par scan ; mise à jour de signatures
-  refusée pendant un scan.
-- Le premier scan est lent car ClamAV charge toute la base en mémoire.
-- Le moniteur réseau n'identifie pas tous les processus (processus système protégés,
-  PID 0/4) ; le nom manquant est affiché « inconnu », jamais inventé.
-- Les deltas réseau mesurent les **compteurs cumulés d'interface** entre deux captures :
-  toute capture survolée manuellement par une capture auto invalide l'intervalle
-  (garde anti-recouvrement côté UI).
-
-### Environnement
-
-- EICAR bloqué par Defender (voir section 5).
-- `freshclam` peut échouer si l'utilisateur configure un dossier système en écriture
-  protégée ; le message d'erreur est affiché, aucune élévation n'est tentée. Une
-  interruption forcée de `freshclam` (kill) laisse des fichiers temporaires dans le
-  dossier de signatures ; ils sont ignorés par le compteur de fichiers de base
-  (`daily.cvd`/`main.cvd`/`bytecode.cvd`) et remplacés par la mise à jour suivante.
-- L'installeur NSIS n'a pas été exécuté sur le poste de validation (voir plan de test
-  machine propre : `VM_TEST_PLAN.md`).
-
-## 7. Feuille de route
+## 8. Feuille de route
 
 | Phase | Contenu | Statut |
 | --- | --- | --- |
 | 1 | Scanner manuel ClamAV, historique, quarantaine chiffrée | ✅ Livrée (expérimentale) |
-| 2 | Observation réseau + fondation pare-feu lecture seule | ✅ Sprint 2 livré (strictement observationnel) |
-| 3 | YARA-X, planification, protection temps réel | Non commencée |
+| 2 | Observation réseau + pare-feu lecture seule | ✅ Livrée |
+| 3 | Interface produit, design system, tableau de bord réel, FR/EN, tray | ✅ Sprint 3 livré |
+| 3 (suite) | Migration i18n des modules restants, YARA-X, planification | À planifier |
+| 4 | Protection temps réel / pilote / filtrage actif | Non commencée — conception et revue dédiées requises |
 
-Toute fonctionnalité de sécurité active (temps réel, pilote, filtrage réseau) exigera
-une conception dédiée, des privilèges adaptés, une réversibilité et une revue de
-sécurité — jamais une activation silencieuse.
+Toute fonctionnalité de sécurité active exigera des privilèges adaptés, une
+réversibilité et une revue de sécurité — jamais une activation silencieuse.
 
-## 8. Reproduire la validation
+---
+
+## 9. Reproduire la validation
 
 ```powershell
-# Dépendances (depuis la racine du dépôt)
+# Dépendances
 npm --prefix ui install
 
 # Backend
@@ -230,10 +363,10 @@ cargo test --workspace
 npm run ui:build
 npm run ui:test
 
-# Application (dev)
+# Application (dev, Vite sur 1420)
 npm run dev
 
-# Installeur NSIS + exécutable release
+# Installeur NSIS + exécutable release (interface embarquée)
 npm run build
 
 # Diagnostic EICAR manuel (optionnel, confirmation requise)
@@ -243,9 +376,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\vm-validate.ps1
 ```
 
-## 9. Avertissement final
+---
 
-CBS Shield 0.2.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
-Defender, qui doit rester actif. Il ne fournit aucune protection automatique, aucune
-modification de configuration pare-feu, aucune capture de contenu réseau et ne doit
-pas être présenté comme un antivirus complet.
+## 10. Avertissement final
+
+CBS Shield 0.3.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
+Defender, qui doit rester actif. Il ne fournit aucune protection automatique,
+aucune modification de configuration pare-feu, aucune capture de contenu réseau, et
+ne doit pas être présenté comme un antivirus complet.

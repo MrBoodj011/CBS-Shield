@@ -4,12 +4,16 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { useToast } from "./components/Toasts";
 import { api, errorMessage } from "./lib/api";
+import { I18nProvider, translate, type Language, type TranslationKey } from "./lib/i18n";
+import { About } from "./sections/About";
 import { Antivirus } from "./sections/Antivirus";
 import { Dashboard } from "./sections/Dashboard";
 import { Firewall } from "./sections/Firewall";
+import { History } from "./sections/History";
 import { NetworkMonitor } from "./sections/NetworkMonitor";
 import { Quarantine } from "./sections/Quarantine";
 import { Settings } from "./sections/Settings";
+import { Updates } from "./sections/Updates";
 import type {
   AppInfo,
   DashboardStats,
@@ -20,31 +24,42 @@ import type {
   SettingsView,
 } from "./types";
 
-const SECTION_META: Record<SectionId, { title: string; subtitle: string }> = {
+const SECTION_META: Record<SectionId, { title: TranslationKey; subtitle: TranslationKey }> = {
   dashboard: {
-    title: "Dashboard",
-    subtitle: "Vue d'ensemble locale de CBS Shield — Phase 1, protection manuelle.",
+    title: "section.dashboard.title",
+    subtitle: "section.dashboard.subtitle",
   },
   antivirus: {
-    title: "Antivirus",
-    subtitle: "Analyse manuelle réelle par ClamAV, sans surveillance en temps réel.",
+    title: "section.antivirus.title",
+    subtitle: "section.antivirus.subtitle",
   },
-  firewall: {
-    title: "Firewall",
-    subtitle: "Observation en lecture seule des profils et règles Windows Firewall.",
-  },
-  network: {
-    title: "Network Monitor",
-    subtitle:
-      "Observation en lecture seule des connexions TCP/UDP et du trafic mesuré.",
+  history: {
+    title: "section.history.title",
+    subtitle: "section.history.subtitle",
   },
   quarantine: {
-    title: "Quarantaine",
-    subtitle: "Coffre chiffré local, restauration et suppression toujours confirmées.",
+    title: "section.quarantine.title",
+    subtitle: "section.quarantine.subtitle",
+  },
+  network: {
+    title: "section.network.title",
+    subtitle: "section.network.subtitle",
+  },
+  firewall: {
+    title: "section.firewall.title",
+    subtitle: "section.firewall.subtitle",
   },
   settings: {
-    title: "Paramètres",
-    subtitle: "Configuration locale du moteur, des analyses et de l'apparence.",
+    title: "section.settings.title",
+    subtitle: "section.settings.subtitle",
+  },
+  updates: {
+    title: "section.updates.title",
+    subtitle: "section.updates.subtitle",
+  },
+  about: {
+    title: "section.about.title",
+    subtitle: "section.about.subtitle",
   },
 };
 
@@ -60,6 +75,7 @@ export default function App() {
   const [quarantine, setQuarantine] = useState<QuarantineRecord[]>([]);
   const [quarantineLoading, setQuarantineLoading] = useState(true);
   const [offline, setOffline] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const mainRef = useRef<HTMLDivElement | null>(null);
 
   const refreshEngine = useCallback(
@@ -180,6 +196,7 @@ export default function App() {
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshEngine(), refreshHistory(), refreshQuarantine()]);
+    setRefreshTick((tick) => tick + 1);
   }, [refreshEngine, refreshHistory, refreshQuarantine]);
 
   const handleDataChanged = useCallback(async () => {
@@ -188,99 +205,139 @@ export default function App() {
 
   const handleSettingsSaved = useCallback(
     (saved: SettingsView) => {
+      const languageChanged = saved.language !== settings?.language;
       setSettings(saved);
       void refreshEngine();
+      if (languageChanged) {
+        // Keep the native tray menu in sync with the interface language.
+        void api.setTrayLanguage(saved.language).catch(() => undefined);
+      }
     },
-    [refreshEngine],
+    [refreshEngine, settings?.language],
   );
 
-  const meta = SECTION_META[section];
+  const language: Language = settings?.language === "en" ? "en" : "fr";
+  const t = (key: TranslationKey) => translate(language, key);
+  const meta = {
+    title: t(SECTION_META[section].title),
+    subtitle: t(SECTION_META[section].subtitle),
+  };
 
   return (
-    <div className="app-shell">
-      <Sidebar section={section} onSelect={setSection} engine={engine} info={info} />
+    <I18nProvider language={language}>
+      <div className="app-shell">
+        <Sidebar section={section} onSelect={setSection} engine={engine} info={info} />
 
-      <div className="app-main" ref={mainRef}>
-        <TopBar
-          title={meta.title}
-          subtitle={meta.subtitle}
-          engine={engine}
-          engineLoading={engineLoading}
-          onRefresh={() => {
-            void refreshAll();
-          }}
-        />
+        <div className="app-main" ref={mainRef}>
+          <TopBar
+            title={meta.title}
+            subtitle={meta.subtitle}
+            engine={engine}
+            engineLoading={engineLoading}
+            onRefresh={() => {
+              void refreshAll();
+            }}
+          />
 
-        <main className="content" aria-live="polite">
-          {offline && (
-            <div className="banner banner--danger">
-              <div>
-                <strong>Connexion au moteur natif incomplète</strong>
-                <span>{offline}</span>
-                <div className="banner__actions">
-                  <button type="button" className="button button--ghost" onClick={() => void refreshAll()}>
-                    Réessayer
-                  </button>
+          <main className="content" aria-live="polite">
+            {offline && (
+              <div className="banner banner--danger">
+                <div>
+                  <strong>{t("shell.offlineTitle")}</strong>
+                  <span>{offline}</span>
+                  <div className="banner__actions">
+                    <button
+                      type="button"
+                      className="button button--ghost"
+                      onClick={() => void refreshAll()}
+                    >
+                      {t("common.retry")}
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            <div className="section-view" key={section}>
+              {section === "dashboard" && (
+                <Dashboard
+                  engine={engine}
+                  stats={stats}
+                  scans={scans}
+                  quarantine={quarantine}
+                  info={info}
+                  onNavigate={setSection}
+                  refreshToken={refreshTick}
+                />
+              )}
+
+              {section === "antivirus" && (
+                <Antivirus
+                  engine={engine}
+                  engineLoading={engineLoading}
+                  settings={settings}
+                  onEngineChanged={(status) => setEngine(status)}
+                  onHistoryChanged={() => {
+                    void handleDataChanged();
+                  }}
+                  onNavigate={setSection}
+                />
+              )}
+
+              {section === "history" && <History onNavigate={setSection} />}
+
+              {section === "firewall" && <Firewall />}
+
+              {section === "network" && <NetworkMonitor />}
+
+              {section === "quarantine" && (
+                <Quarantine
+                  items={quarantine}
+                  settings={settings}
+                  loading={quarantineLoading}
+                  onRefresh={handleDataChanged}
+                />
+              )}
+
+              {section === "updates" && (
+                <Updates
+                  engine={engine}
+                  settings={settings}
+                  onEngineChanged={(status) => setEngine(status)}
+                />
+              )}
+
+              {section === "settings" && (
+                <Settings
+                  settings={settings}
+                  engine={engine}
+                  info={info}
+                  engineLoading={engineLoading}
+                  onSettingsSaved={handleSettingsSaved}
+                  onEngineChanged={(status) => setEngine(status)}
+                />
+              )}
+
+              {section === "about" && (
+                <About
+                  info={info}
+                  engine={engine}
+                  settings={settings}
+                  stats={stats}
+                  refreshToken={refreshTick}
+                />
+              )}
             </div>
-          )}
 
-          {section === "dashboard" && (
-            <Dashboard
-              engine={engine}
-              stats={stats}
-              scans={scans}
-              info={info}
-              onNavigate={setSection}
-            />
-          )}
-
-          {section === "antivirus" && (
-            <Antivirus
-              engine={engine}
-              engineLoading={engineLoading}
-              settings={settings}
-              onEngineChanged={(status) => setEngine(status)}
-              onHistoryChanged={() => {
-                void handleDataChanged();
-              }}
-              onNavigate={setSection}
-            />
-          )}
-
-          {section === "firewall" && <Firewall />}
-
-          {section === "network" && <NetworkMonitor />}
-
-          {section === "quarantine" && (
-            <Quarantine
-              items={quarantine}
-              settings={settings}
-              loading={quarantineLoading}
-              onRefresh={handleDataChanged}
-            />
-          )}
-
-          {section === "settings" && (
-            <Settings
-              settings={settings}
-              engine={engine}
-              info={info}
-              engineLoading={engineLoading}
-              onSettingsSaved={handleSettingsSaved}
-              onEngineChanged={(status) => setEngine(status)}
-            />
-          )}
-
-          <footer className="app-footer">
-            <span>
-              CBS Shield v{info?.version ?? "0.1.0"} — {info?.vendor ?? "Cybrense"}
-            </span>
-            <span>{info?.disclaimer ?? "Protection manuelle expérimentale. Microsoft Defender reste actif."}</span>
-          </footer>
-        </main>
+            <footer className="app-footer">
+              <span>
+                CBS Shield v{info?.version ?? "0.3.0-dev"} — {info?.vendor ?? "Cybrense"}
+              </span>
+              <span>{t("shell.disclaimer")}</span>
+            </footer>
+          </main>
+        </div>
       </div>
-    </div>
+    </I18nProvider>
   );
 }

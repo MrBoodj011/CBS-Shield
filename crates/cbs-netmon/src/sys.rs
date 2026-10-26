@@ -360,6 +360,23 @@ unsafe fn udp_rows_v6() -> Result<Vec<NetConnection>, NetmonError> {
     Ok(bindings)
 }
 
+/// Windows flag `MIB_IF_ROW2::InterfaceAndOperStatusFlags::FilterInterface`
+/// (msdn bit 1): the row is not a real adapter but an NDIS filter sub-layer
+/// (WFP, Npcap, QoS scheduler…). Each filter of an adapter re-counts the same
+/// bytes, so a 20 MiB controlled download was measured as ~160 MiB before
+/// excluding them (Sprint 3 investigation).
+const MIB_IF_ROW2_FLAGS_FILTER: u8 = 0x02;
+
+/// Decide whether an `MIB_IF_ROW2` must contribute to interface counters:
+/// operational, not software loopback, and not an NDIS filter sub-layer.
+/// Endpoint interfaces (Hyper-V vEthernet, Tailscale tunnel…) are kept: they
+/// are real adapters whose counters are documented in the UI as per-interface.
+fn keep_interface_row(interface_flags: u8, oper_status: i32, kind: u32) -> bool {
+    oper_status == IF_OPER_STATUS_UP
+        && kind != IF_TYPE_SOFTWARE_LOOPBACK
+        && (interface_flags & MIB_IF_ROW2_FLAGS_FILTER) == 0
+}
+
 /// Cumulative interface counters; best effort (empty vector on failure so a
 /// counter glitch never hides the connection tables).
 unsafe fn interface_rows() -> Vec<InterfaceTraffic> {
@@ -372,7 +389,11 @@ unsafe fn interface_rows() -> Vec<InterfaceTraffic> {
     let rows = (*table).Table.as_mut_ptr();
     for index in 0..entries {
         let row = &*rows.add(index);
-        if row.OperStatus != IF_OPER_STATUS_UP || row.Type == IF_TYPE_SOFTWARE_LOOPBACK {
+        if !keep_interface_row(
+            row.InterfaceAndOperStatusFlags._bitfield,
+            row.OperStatus,
+            row.Type,
+        ) {
             continue;
         }
         let alias = u16s_to_string(&row.Alias);
@@ -408,4 +429,34 @@ pub fn capture_snapshot() -> Result<NetSnapshot, NetmonError> {
         udp_bindings: udp,
         interfaces,
     })
+}
+
+/// Sprint 3: interface-row hygiene — filter sub-layers must never be counted
+/// (they re-count the same bytes as their parent adapter).
+#[cfg(test)]
+mod interface_row_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_operational_non_filter_adapter() {
+        assert!(keep_interface_row(0x01, IF_OPER_STATUS_UP, 71)); // 0x01 = hardware
+    }
+
+    #[test]
+    fn rejects_filter_sub_layers() {
+        // Observed on the dev machine: Wi-Fi, Wi-Fi-QoS Packet Scheduler-0000,
+        // Wi-Fi-Npcap Packet Driver (NPCAP)-0000, … all share one real packet.
+        assert!(!keep_interface_row(0x02, IF_OPER_STATUS_UP, 71));
+        assert!(!keep_interface_row(0x03, IF_OPER_STATUS_UP, 71));
+    }
+
+    #[test]
+    fn rejects_loopback_and_down_rows() {
+        assert!(!keep_interface_row(
+            0x00,
+            IF_OPER_STATUS_UP,
+            IF_TYPE_SOFTWARE_LOOPBACK
+        ));
+        assert!(!keep_interface_row(0x00, 2, 71)); // IF_OPER_STATUS_DOWN
+    }
 }

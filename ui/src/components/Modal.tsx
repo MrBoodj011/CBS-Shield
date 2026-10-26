@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
+import { useI18n } from "../lib/i18n";
 import type { Tone } from "../lib/format";
 
 interface ModalProps {
@@ -26,6 +27,8 @@ export function Modal({
   busy = false,
   wide = false,
 }: ModalProps) {
+  const { t } = useI18n();
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -60,7 +63,7 @@ export function Modal({
             className="button button--ghost button--icon"
             onClick={onClose}
             disabled={busy}
-            aria-label="Fermer"
+            aria-label={t("common.close")}
           >
             <X size={18} />
           </button>

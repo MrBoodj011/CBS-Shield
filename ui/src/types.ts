@@ -160,6 +160,7 @@ export interface QuarantineRecord {
 
 export interface SettingsView {
   theme: "dark" | "light" | "system" | string;
+  language: "fr" | "en" | string;
   recursive: boolean;
   includePua: boolean;
   clamscanPath: string | null;
@@ -175,6 +176,7 @@ export interface SettingsView {
 
 export interface SettingsPatch {
   theme?: string;
+  language?: string;
   recursive?: boolean;
   includePua?: boolean;
   clamscanPath?: string;
@@ -212,10 +214,13 @@ export interface CommandError {
 export type SectionId =
   | "dashboard"
   | "antivirus"
-  | "firewall"
-  | "network"
+  | "history"
   | "quarantine"
-  | "settings";
+  | "network"
+  | "firewall"
+  | "settings"
+  | "updates"
+  | "about";
 
 // ---------------------------------------------------------------------------
 // Network Monitor (Sprint 2 — read-only observation)

@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-core"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-firewall"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-netmon"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-quarantine"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "aes-gcm",
  "chrono",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-shield"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "cbs-core",
  "cbs-firewall",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-store"
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 dependencies = [
  "cbs-core",
  "chrono",
