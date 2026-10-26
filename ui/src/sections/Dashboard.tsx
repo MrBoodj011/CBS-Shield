@@ -37,10 +37,12 @@ import type {
   QuarantineRecord,
   ScanRecord,
   SectionId,
+  SignatureInventory,
 } from "../types";
 
 interface DashboardProps {
   engine: EngineStatus | null;
+  inventory?: SignatureInventory | null;
   stats: DashboardStats | null;
   scans: ScanRecord[];
   quarantine: QuarantineRecord[];
@@ -69,6 +71,7 @@ interface DashEvent {
 
 export function Dashboard({
   engine,
+  inventory = null,
   stats,
   scans,
   quarantine,
@@ -321,11 +324,23 @@ export function Dashboard({
             </Badge>
           </div>
           <span className="metric-card__label">{t("dashboard.signatures")}</span>
-          <span className="metric-card__value">{engine?.signatureVersion ?? "—"}</span>
+          <span className="metric-card__value">
+            {inventory && inventory.officialSignatures > 0
+              ? formatNumber(inventory.officialSignatures)
+              : (engine?.signatureVersion ?? "—")}
+          </span>
           <span className="metric-card__hint">
-            {engine?.signatureAgeDays !== null && engine?.signatureAgeDays !== undefined
-              ? t("common.days", { count: engine.signatureAgeDays })
-              : t("dashboard.signaturesHint")}
+            {inventory && inventory.officialSignatures > 0
+              ? `CVD v${engine?.signatureVersion ?? "—"} · ${
+                  engine?.signatureAgeDays !== null &&
+                  engine?.signatureAgeDays !== undefined
+                    ? t("common.days", { count: engine.signatureAgeDays })
+                    : t("dashboard.signaturesHint")
+                }`
+              : engine?.signatureAgeDays !== null &&
+                  engine?.signatureAgeDays !== undefined
+                ? t("common.days", { count: engine.signatureAgeDays })
+                : t("dashboard.signaturesHint")}
           </span>
         </button>
 

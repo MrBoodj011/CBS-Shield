@@ -273,7 +273,7 @@ pub async fn delete_quarantine(
             "la suppression définitive d'un élément de quarantaine",
         ));
     }
-    if phrase.trim() != "SUPPRIMER" {
+    if phrase.trim() != "SUPPRIMER" && phrase.trim() != "DELETE" {
         return Err(CommandError::new(
             "confirmationPhrase",
             "Saisissez exactement SUPPRIMER pour confirmer la suppression définitive.",

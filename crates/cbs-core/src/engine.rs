@@ -146,6 +146,41 @@ pub fn locate_freshclam(
     None
 }
 
+/// Locate `sigtool` next to `clamscan`, in the app-local bin, PATH or standard dirs.
+pub fn locate_sigtool(
+    explicit: Option<&Path>,
+    extra_dirs: &[PathBuf],
+    clamscan: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(path) = configured_exe(explicit, "CBS_SIGTOOL_PATH") {
+        return Some(path);
+    }
+    if let Some(clamscan) = clamscan {
+        if let Some(parent) = clamscan.parent() {
+            let candidate = parent.join(exe_name("sigtool"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    for dir in extra_dirs {
+        let candidate = dir.join(exe_name("sigtool"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    if let Some(path) = find_in_path("sigtool") {
+        return Some(path);
+    }
+    for dir in standard_install_dirs() {
+        let candidate = dir.join(exe_name("sigtool"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 pub fn count_signature_files(dir: &Path) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -253,7 +288,7 @@ fn probe_version(executable: &Path, database: Option<&Path>) -> Result<VersionIn
 /// exclusion, broken pipe, slow network drive) would freeze the UI probe
 /// forever. The declared `PROBE_TIMEOUT` was never actually enforced. This
 /// helper polls `try_wait` and kills the child once the deadline is reached.
-fn execute_with_timeout(
+pub(crate) fn execute_with_timeout(
     command: &mut Command,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
@@ -344,6 +379,7 @@ pub fn detect_engine(
 ) -> EngineStatus {
     let clamscan = locate_clamscan(explicit_clamscan.as_deref(), extra_dirs);
     let freshclam = locate_freshclam(None, extra_dirs, clamscan.as_deref());
+    let sigtool = locate_sigtool(None, extra_dirs, clamscan.as_deref());
     let database = locate_database(
         explicit_database.as_deref(),
         extra_dirs,
@@ -356,6 +392,7 @@ pub fn detect_engine(
         return EngineStatus {
             installed: false,
             freshclam_path: freshclam,
+            sigtool_path: sigtool,
             database_path: database,
             database_file_count,
             checked_at,
@@ -369,6 +406,7 @@ pub fn detect_engine(
         installed: true,
         clamscan_path: Some(clamscan),
         freshclam_path: freshclam,
+        sigtool_path: sigtool,
         database_path: database,
         database_file_count,
         checked_at,

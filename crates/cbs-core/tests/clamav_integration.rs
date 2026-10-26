@@ -93,6 +93,7 @@ async fn detects_benign_file_with_real_clamav_and_test_signature() {
         paths: vec![target],
         recursive: false,
         include_pua: false,
+        ..ScanRequest::default()
     };
 
     let report = scanner
@@ -148,6 +149,7 @@ async fn scans_a_harmless_file_clean_with_real_database() {
         paths: vec![target],
         recursive: false,
         include_pua: false,
+        ..ScanRequest::default()
     };
 
     let report = scanner
@@ -201,6 +203,7 @@ async fn eicar_manual_diagnostic() {
         paths: vec![target],
         recursive: false,
         include_pua: false,
+        ..ScanRequest::default()
     };
     let report = scanner
         .scan(

@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   Archive,
   ArrowRight,
@@ -8,20 +8,24 @@ import {
   CircleCheck,
   Clock,
   Database,
+  Download,
   FilePlus2,
   FileSearch,
   FolderOpen,
+  Gauge,
   KeyRound,
+  Layers,
   LoaderCircle,
   Play,
   RefreshCw,
   ScanLine,
+  Settings2,
   ShieldCheck,
   Square,
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/Badge";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -35,32 +39,40 @@ import {
   formatDateTime,
   formatDuration,
   formatNumber,
+  freshnessText,
   outcomeLabel,
   outcomeTone,
+  profileLabel,
   signatureStateLabel,
   signatureStateTone,
   truncateMiddle,
 } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type {
   Detection,
   EngineStatus,
+  ResolvedTargets,
   ScanErrorRecord,
   ScanEvent,
+  ScanLimits,
+  ScanProfile,
   ScanResultPayload,
   SectionId,
   SettingsView,
-  SignatureUpdateEvent,
-  SignatureUpdateResult,
+  SignatureInventory,
 } from "../types";
 
 interface AntivirusProps {
   engine: EngineStatus | null;
   engineLoading: boolean;
   settings: SettingsView | null;
+  inventory: SignatureInventory | null;
   onEngineChanged: (engine: EngineStatus) => void;
   onHistoryChanged: () => void;
   onNavigate: (section: SectionId) => void;
 }
+
+type Tab = "quick" | "full" | "custom" | "results";
 
 interface ProgressState {
   filesScanned: number;
@@ -68,25 +80,47 @@ interface ProgressState {
   currentFile: string | null;
 }
 
+const DEFAULT_LIMITS: ScanLimits = {
+  maxFileSizeMb: 200,
+  maxScanSizeMb: 2000,
+  maxFiles: 100000,
+  maxRecursion: 10,
+  maxDurationMinutes: 0,
+  scanArchives: true,
+  lowPriority: true,
+};
+
 export function Antivirus({
   engine,
   engineLoading,
   settings,
+  inventory,
   onEngineChanged,
   onHistoryChanged,
   onNavigate,
 }: AntivirusProps) {
   const toast = useToast();
-  const [targets, setTargets] = useState<string[]>([]);
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>("quick");
+  const [customTargets, setCustomTargets] = useState<string[]>([]);
+  const [manualPath, setManualPath] = useState("");
+  const [resolved, setResolved] = useState<ResolvedTargets | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [recursive, setRecursive] = useState(true);
   const [includePua, setIncludePua] = useState(false);
+  const [limits, setLimits] = useState<ScanLimits>(DEFAULT_LIMITS);
+  const [limitsOpen, setLimitsOpen] = useState(false);
+
   const [scanning, setScanning] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [progress, setProgress] = useState<ProgressState>({
     filesScanned: 0,
     threatsFound: 0,
     currentFile: null,
   });
+  const [totalFiles, setTotalFiles] = useState<number | null>(null);
+  const [indexTruncated, setIndexTruncated] = useState(false);
   const [liveDetections, setLiveDetections] = useState<Detection[]>([]);
   const [liveErrors, setLiveErrors] = useState<ScanErrorRecord[]>([]);
   const [result, setResult] = useState<ScanResultPayload | null>(null);
@@ -95,15 +129,13 @@ export function Antivirus({
   const scanStartedAt = useRef<number | null>(null);
 
   const [checking, setChecking] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [updateLog, setUpdateLog] = useState<string[]>([]);
-  const [updateResult, setUpdateResult] = useState<SignatureUpdateResult | null>(null);
-  const updateLogRef = useRef<HTMLPreElement | null>(null);
-
   const [pendingDetection, setPendingDetection] = useState<Detection | null>(null);
   const [quarantining, setQuarantining] = useState(false);
   const [quarantinedPaths, setQuarantinedPaths] = useState<string[]>([]);
+
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState("json");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
@@ -112,11 +144,36 @@ export function Antivirus({
   }, [settings]);
 
   useEffect(() => {
+    if (tab !== "quick" && tab !== "full") return;
+    let active = true;
+    setResolveError(null);
+    api
+      .resolveScanTargets(tab)
+      .then((value) => {
+        if (active) setResolved(value);
+      })
+      .catch((error) => {
+        if (active) setResolveError(errorMessage(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [tab]);
+
+  useEffect(() => {
     const subscription = listen<ScanEvent>("scan:event", ({ payload }) => {
       switch (payload.kind) {
+        case "preparing":
+          setPreparing(true);
+          setTotalFiles(null);
+          setIndexTruncated(false);
+          break;
         case "started":
+          setPreparing(false);
           setScanning(true);
           setCancelRequested(false);
+          setTotalFiles(payload.totalFiles);
+          setIndexTruncated(payload.indexTruncated);
           setProgress({ filesScanned: 0, threatsFound: 0, currentFile: null });
           break;
         case "progress":
@@ -128,7 +185,11 @@ export function Antivirus({
           break;
         case "detection":
           setLiveDetections((current) =>
-            current.some((item) => item.filePath === payload.filePath)
+            current.some(
+              (item) =>
+                item.filePath === payload.filePath &&
+                item.threatName === payload.threatName,
+            )
               ? current
               : [
                   ...current,
@@ -156,6 +217,8 @@ export function Antivirus({
             },
           );
           setScanning(false);
+          setPreparing(false);
+          setTab("results");
           break;
       }
     });
@@ -166,32 +229,17 @@ export function Antivirus({
   }, []);
 
   useEffect(() => {
-    const subscription = listen<SignatureUpdateEvent>("signatures:update", ({ payload }) => {
-      setUpdateLog((current) => [...current.slice(-199), payload.line]);
-    });
-    return () => {
-      subscription.then((unlisten) => unlisten()).catch(() => undefined);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!scanning) return;
+    if (!scanning && !preparing) return;
     const timer = window.setInterval(() => {
       if (scanStartedAt.current) {
         setElapsed(Date.now() - scanStartedAt.current);
       }
     }, 200);
     return () => window.clearInterval(timer);
-  }, [scanning]);
-
-  useEffect(() => {
-    if (updateLogRef.current) {
-      updateLogRef.current.scrollTop = updateLogRef.current.scrollHeight;
-    }
-  }, [updateLog]);
+  }, [scanning, preparing]);
 
   const addTargets = (selection: string[]) => {
-    setTargets((current) => {
+    setCustomTargets((current) => {
       const seen = new Set(current.map((path) => path.toLowerCase()));
       const next = [...current];
       for (const path of selection) {
@@ -211,35 +259,50 @@ export function Antivirus({
         directory: kind === "folder",
         title:
           kind === "folder"
-            ? "Choisir un ou plusieurs dossiers à analyser"
-            : "Choisir un ou plusieurs fichiers à analyser",
+            ? t("av.pick.folderTitle")
+            : t("av.pick.fileTitle"),
       });
       if (!selection) return;
       addTargets(Array.isArray(selection) ? selection : [selection]);
     } catch (error) {
       toast({
         tone: "error",
-        title: "Sélection impossible",
+        title: t("av.toast.selectionFailed"),
         message: errorMessage(error),
       });
     }
   };
 
+  const activeProfile: ScanProfile =
+    tab === "custom" ? "custom" : tab === "full" ? "full" : "quick";
+  const scanPaths =
+    activeProfile === "custom" ? customTargets : (resolved?.targets ?? []);
+  const canStart =
+    !scanning &&
+    !preparing &&
+    scanPaths.length > 0 &&
+    Boolean(engine?.installed) &&
+    engine?.signatureState !== "missing";
+
   const startScan = async () => {
-    if (targets.length === 0) {
-      toast({ tone: "info", title: "Aucune cible", message: "Ajoutez un fichier ou un dossier." });
+    if (scanPaths.length === 0) {
+      toast({
+        tone: "info",
+        title: t("av.toast.noTargets.title"),
+        message: t("av.toast.noTargets.body"),
+      });
       return;
     }
     if (!engine?.installed) {
       toast({
         tone: "error",
-        title: "Moteur ClamAV absent",
-        message: "Installez ClamAV ou configurez son chemin dans les paramètres.",
+        title: t("av.toast.engineMissing.title"),
+        message: t("av.toast.engineMissing.body"),
       });
       return;
     }
     if (engine.signatureState === "missing") {
-      setUpdateOpen(true);
+      onNavigate("updates");
       return;
     }
 
@@ -249,26 +312,42 @@ export function Antivirus({
     setLiveErrors([]);
     setProgress({ filesScanned: 0, threatsFound: 0, currentFile: null });
     setElapsed(0);
+    setPreparing(true);
     setScanning(true);
     setCancelRequested(false);
+    setTotalFiles(null);
+    setIndexTruncated(false);
     scanStartedAt.current = Date.now();
 
     try {
-      const payload = await api.startScan(targets, recursive, includePua);
+      const payload = await api.startScan({
+        paths: scanPaths,
+        recursive: activeProfile === "custom" ? recursive : true,
+        includePua,
+        profile: activeProfile,
+        limits,
+        followSymlinks: false,
+      });
       setResult(payload);
+      setTab("results");
       if (payload.persistenceError) {
         toast({
           tone: "error",
-          title: "Historique non enregistré",
+          title: t("av.toast.historyNotSaved"),
           message: payload.persistenceError,
         });
       }
       onHistoryChanged();
     } catch (error) {
       setScanError(errorMessage(error));
-      toast({ tone: "error", title: "Scan impossible", message: errorMessage(error) });
+      toast({
+        tone: "error",
+        title: t("av.toast.scanFailed"),
+        message: errorMessage(error),
+      });
     } finally {
       setScanning(false);
+      setPreparing(false);
       scanStartedAt.current = null;
       setCancelRequested(false);
     }
@@ -279,12 +358,20 @@ export function Antivirus({
       const requested = await api.cancelScan();
       if (requested) {
         setCancelRequested(true);
-        toast({ tone: "info", title: "Annulation demandée", message: "ClamAV va être arrêté." });
+        toast({
+          tone: "info",
+          title: t("av.toast.cancelRequested.title"),
+          message: t("av.toast.cancelRequested.body"),
+        });
       } else {
-        toast({ tone: "info", title: "Aucun scan actif" });
+        toast({ tone: "info", title: t("av.toast.noActiveScan") });
       }
     } catch (error) {
-      toast({ tone: "error", title: "Annulation impossible", message: errorMessage(error) });
+      toast({
+        tone: "error",
+        title: t("av.toast.cancelFailed"),
+        message: errorMessage(error),
+      });
     }
   };
 
@@ -295,43 +382,19 @@ export function Antivirus({
       onEngineChanged(status);
       toast({
         tone: status.installed ? "success" : "error",
-        title: status.installed ? "Moteur détecté" : "Moteur introuvable",
+        title: status.installed
+          ? t("av.toast.engineDetected")
+          : t("av.toast.engineNotFound"),
         message: status.message,
-      });
-    } catch (error) {
-      toast({ tone: "error", title: "Diagnostic impossible", message: errorMessage(error) });
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  const openUpdate = () => {
-    setUpdateLog([]);
-    setUpdateResult(null);
-    setUpdateOpen(true);
-  };
-
-  const updateSignatures = async () => {
-    setUpdating(true);
-    setUpdateLog([]);
-    setUpdateResult(null);
-    try {
-      const result = await api.updateSignatures(true);
-      setUpdateResult(result);
-      onEngineChanged(result.engine);
-      toast({
-        tone: result.success ? "success" : "error",
-        title: result.success ? "Signatures mises à jour" : "Mise à jour incomplète",
-        message: result.message,
       });
     } catch (error) {
       toast({
         tone: "error",
-        title: "Mise à jour impossible",
+        title: t("av.toast.diagnosticFailed"),
         message: errorMessage(error),
       });
     } finally {
-      setUpdating(false);
+      setChecking(false);
     }
   };
 
@@ -348,19 +411,64 @@ export function Antivirus({
       setQuarantinedPaths((current) => [...current, pendingDetection.filePath]);
       toast({
         tone: "success",
-        title: "Fichier mis en quarantaine",
-        message: `${fileBaseName(pendingDetection.filePath)} a été déplacé dans le coffre chiffré.`,
+        title: t("av.toast.quarantined"),
+        message: `${fileBaseName(pendingDetection.filePath)} — ${t("av.toast.quarantinedBody")}`,
       });
       onHistoryChanged();
       setPendingDetection(null);
     } catch (error) {
       toast({
         tone: "error",
-        title: "Mise en quarantaine refusée",
+        title: t("av.toast.quarantineFailed"),
         message: errorMessage(error),
       });
     } finally {
       setQuarantining(false);
+    }
+  };
+
+  const exportReport = async () => {
+    if (!result?.recordId) {
+      toast({
+        tone: "info",
+        title: t("av.export.noRecord"),
+        message: t("av.export.noRecordBody"),
+      });
+      return;
+    }
+    try {
+      const extension = exportFormat === "md" ? "md" : exportFormat;
+      const destination = await save({
+        title: t("av.export.title"),
+        defaultPath: `cbs-shield-${result.report.id.slice(0, 8)}.${extension}`,
+        filters: [
+          {
+            name: exportFormat.toUpperCase(),
+            extensions: [extension],
+          },
+        ],
+      });
+      if (!destination) return;
+      setExporting(true);
+      const exported = await api.exportScanReport(
+        result.recordId,
+        exportFormat,
+        destination,
+      );
+      toast({
+        tone: "success",
+        title: t("av.export.success"),
+        message: `${formatNumber(exported.bytes)} · ${exported.path}`,
+      });
+      setExportOpen(false);
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: t("av.export.failed"),
+        message: errorMessage(error),
+      });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -372,17 +480,29 @@ export function Antivirus({
   const report = result?.report ?? null;
   const displayDetections = report?.detections ?? liveDetections;
   const displayErrors = report?.errors ?? liveErrors;
+  const percent =
+    totalFiles && totalFiles > 0
+      ? Math.min(99, Math.round((progress.filesScanned / totalFiles) * 100))
+      : null;
+  const tabButton = (id: Tab, label: string, icon: ReactNode) => (
+    <button
+      type="button"
+      className={`av-tab${tab === id ? " is-active" : ""}`}
+      onClick={() => setTab(id)}
+      aria-pressed={tab === id}
+    >
+      {icon}
+      {label}
+    </button>
+  );
 
   return (
     <div className="section-stack">
       <div className="banner banner--warning">
         <TriangleAlert size={19} aria-hidden="true" />
         <div>
-          <strong>Analyse à la demande uniquement</strong>
-          <span>
-            ClamAV analyse les cibles choisies. Aucun fichier n'est supprimé
-            automatiquement. Microsoft Defender n'est ni désactivé ni contourné.
-          </span>
+          <strong>{t("av.banner.title")}</strong>
+          <span>{t("av.banner.body")}</span>
         </div>
       </div>
 
@@ -390,19 +510,30 @@ export function Antivirus({
         <div className="banner banner--danger">
           <CircleAlert size={19} aria-hidden="true" />
           <div>
-            <strong>ClamAV n'est pas détecté sur ce poste</strong>
-            <span>{engine?.message ?? "Installez l'outil officiel Cisco ClamAV pour activer les scans."}</span>
+            <strong>{t("av.engineMissing.title")}</strong>
+            <span>{engine?.message ?? t("av.engineMissing.body")}</span>
             <div className="banner__actions">
-              <button type="button" className="button button--ghost" onClick={recheckEngine} disabled={checking}>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={recheckEngine}
+                disabled={checking}
+              >
                 <RefreshCw size={15} className={checking ? "spin" : undefined} />
-                Revérifier
+                {t("av.engine.recheck")}
               </button>
-              <button type="button" className="button button--ghost" onClick={() => onNavigate("settings")}>
-                Configurer le chemin
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onNavigate("updates")}
+              >
+                {t("av.engine.provision")}
                 <ArrowRight size={15} />
               </button>
             </div>
-            <code className="inline-code">winget install --id Cisco.ClamAV --exact</code>
+            <code className="inline-code">
+              winget install --id Cisco.ClamAV --exact
+            </code>
           </div>
         </div>
       )}
@@ -411,15 +542,22 @@ export function Antivirus({
         <div className="banner banner--danger">
           <Database size={19} aria-hidden="true" />
           <div>
-            <strong>Signatures ClamAV absentes</strong>
-            <span>{engine.message}</span>
+            <strong>{t("av.signaturesMissing.title")}</strong>
+            <span>
+              {freshnessText(
+                engine.signatureState,
+                engine.signatureAgeDays,
+                settings?.signatureMaxAgeDays,
+              )}
+            </span>
             <div className="banner__actions">
-              <button type="button" className="button button--primary" onClick={openUpdate}>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => onNavigate("updates")}
+              >
                 <RefreshCw size={15} />
-                Mettre à jour les signatures
-              </button>
-              <button type="button" className="button button--ghost" onClick={() => onNavigate("settings")}>
-                Voir la base configurée
+                {t("av.engine.update")}
               </button>
             </div>
           </div>
@@ -430,12 +568,22 @@ export function Antivirus({
         <div className="banner banner--warning">
           <Clock size={19} aria-hidden="true" />
           <div>
-            <strong>Signatures anciennes — analyse toujours possible</strong>
-            <span>{engine.message}</span>
+            <strong>{t("av.signaturesOutdated.title")}</strong>
+            <span>
+              {freshnessText(
+                engine.signatureState,
+                engine.signatureAgeDays,
+                settings?.signatureMaxAgeDays,
+              )}
+            </span>
             <div className="banner__actions">
-              <button type="button" className="button button--ghost" onClick={openUpdate}>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onNavigate("updates")}
+              >
                 <RefreshCw size={15} />
-                Mettre à jour
+                {t("av.engine.update")}
               </button>
             </div>
           </div>
@@ -445,164 +593,675 @@ export function Antivirus({
       <div className="av-layout">
         <div className="av-main">
           <section className="panel">
-            <div className="panel__head">
-              <div>
-                <span className="panel__eyebrow">Cibles</span>
-                <h2>Fichiers et dossiers</h2>
-              </div>
-              <Badge tone={targets.length > 0 ? "info" : "neutral"} dot>
-                {targets.length} cible{targets.length > 1 ? "s" : ""}
-              </Badge>
+            <div className="av-tabs" role="tablist" aria-label={t("av.tabs.label")}>
+              {tabButton("quick", t("av.tabs.quick"), <Gauge size={16} />)}
+              {tabButton("full", t("av.tabs.full"), <ShieldCheck size={16} />)}
+              {tabButton("custom", t("av.tabs.custom"), <FolderOpen size={16} />)}
+              {tabButton("results", t("av.tabs.results"), <FileSearch size={16} />)}
             </div>
 
-            {targets.length === 0 ? (
-              <EmptyState
-                icon={FileSearch}
-                title="Aucune cible sélectionnée"
-                description="Choisissez un fichier ou un dossier. Les chemins restent sur votre poste."
-                action={
-                  <div className="button-row">
-                    <button type="button" className="button button--primary" onClick={() => pickTargets("file")}>
-                      <FilePlus2 size={16} />
-                      Choisir un fichier
-                    </button>
-                    <button type="button" className="button button--ghost" onClick={() => pickTargets("folder")}>
-                      <FolderOpen size={16} />
-                      Choisir un dossier
-                    </button>
-                  </div>
-                }
-              />
-            ) : (
+            {tab !== "results" && (
               <>
-                <ul className="target-list">
-                  {targets.map((target) => (
-                    <li key={target}>
-                      <div className="target-list__icon">
-                        <FileSearch size={16} />
-                      </div>
-                      <div className="target-list__text">
-                        <strong>{fileBaseName(target)}</strong>
-                        <span title={target}>{truncateMiddle(target, 80)}</span>
-                      </div>
+                <div className="av-profile">
+                  <div>
+                    <span className="panel__eyebrow">{profileLabel(activeProfile)}</span>
+                    <h2>{t(`av.${activeProfile}.title` as const)}</h2>
+                    <p className="muted">{t(`av.${activeProfile}.hint` as const)}</p>
+                  </div>
+                  <Badge tone="info" dot>
+                    {scanPaths.length} {t("av.targets.unit")}
+                  </Badge>
+                </div>
+
+                {resolveError && activeProfile !== "custom" && (
+                  <div className="callout callout--warning">
+                    <strong>{t("av.resolveFailed")}</strong>
+                    <span>{resolveError}</span>
+                  </div>
+                )}
+
+                {activeProfile !== "custom" ? (
+                  <div className="target-summary">
+                    <div className="target-summary__head">
+                      <strong>{t("av.targets.resolved")}</strong>
+                      <span>
+                        {activeProfile === "quick"
+                          ? t("av.quick.coverage")
+                          : t("av.full.coverage")}
+                      </span>
+                    </div>
+                    {resolved ? (
+                      <ul className="target-list">
+                        {resolved.targets.map((target) => (
+                          <li key={target}>
+                            <div className="target-list__icon">
+                              {activeProfile === "quick" ? (
+                                <FileSearch size={16} />
+                              ) : (
+                                <Layers size={16} />
+                              )}
+                            </div>
+                            <div className="target-list__text">
+                              <strong>{fileBaseName(target) || target}</strong>
+                              <span title={target}>{truncateMiddle(target, 86)}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="muted">{t("common.loading")}</div>
+                    )}
+                    {activeProfile === "full" && (
+                      <details className="details">
+                        <summary>{t("av.full.exclusions")}</summary>
+                        <ul className="rule-list rule-list--compact">
+                          {resolved?.excluded.map((path) => (
+                            <li key={path}>
+                              <span className="mono">{truncateMiddle(path, 90)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="manual-path">
+                      <input
+                        type="text"
+                        value={manualPath}
+                        placeholder={t("av.targets.pathPlaceholder")}
+                        onChange={(event) => setManualPath(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            const value = manualPath.trim().replace(/^"|"$/g, "");
+                            if (value) addTargets([value]);
+                            setManualPath("");
+                          }
+                        }}
+                        disabled={scanning}
+                        spellCheck={false}
+                      />
                       <button
                         type="button"
-                        className="button button--ghost button--icon"
-                        onClick={() =>
-                          setTargets((current) => current.filter((item) => item !== target))
-                        }
-                        disabled={scanning}
-                        aria-label={`Retirer ${fileBaseName(target)}`}
+                        className="button button--ghost"
+                        onClick={() => {
+                          const value = manualPath.trim().replace(/^"|"$/g, "");
+                          if (value) addTargets([value]);
+                          setManualPath("");
+                        }}
+                        disabled={scanning || manualPath.trim().length === 0}
                       >
-                        <X size={16} />
+                        <FilePlus2 size={16} />
+                        {t("av.targets.addPath")}
                       </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="button-row">
-                  <button type="button" className="button button--ghost" onClick={() => pickTargets("file")} disabled={scanning}>
-                    <FilePlus2 size={16} />
-                    Ajouter un fichier
-                  </button>
-                  <button type="button" className="button button--ghost" onClick={() => pickTargets("folder")} disabled={scanning}>
-                    <FolderOpen size={16} />
-                    Ajouter un dossier
-                  </button>
+                    </div>
+                    {customTargets.length === 0 ? (
+                      <EmptyState
+                        icon={FileSearch}
+                        title={t("av.targets.emptyTitle")}
+                        description={t("av.targets.emptyBody")}
+                        action={
+                          <div className="button-row">
+                            <button
+                              type="button"
+                              className="button button--primary"
+                              onClick={() => pickTargets("file")}
+                            >
+                              <FilePlus2 size={16} />
+                              {t("av.targets.addFile")}
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--ghost"
+                              onClick={() => pickTargets("folder")}
+                            >
+                              <FolderOpen size={16} />
+                              {t("av.targets.addFolder")}
+                            </button>
+                          </div>
+                        }
+                      />
+                    ) : (
+                      <>
+                        <ul className="target-list">
+                          {customTargets.map((target) => (
+                            <li key={target}>
+                              <div className="target-list__icon">
+                                <FileSearch size={16} />
+                              </div>
+                              <div className="target-list__text">
+                                <strong>{fileBaseName(target)}</strong>
+                                <span title={target}>{truncateMiddle(target, 86)}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="button button--ghost button--icon"
+                                onClick={() =>
+                                  setCustomTargets((current) =>
+                                    current.filter((item) => item !== target),
+                                  )
+                                }
+                                disabled={scanning}
+                                aria-label={`${t("av.targets.remove")} ${fileBaseName(target)}`}
+                              >
+                                <X size={16} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => pickTargets("file")}
+                            disabled={scanning}
+                          >
+                            <FilePlus2 size={16} />
+                            {t("av.targets.addFile")}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => pickTargets("folder")}
+                            disabled={scanning}
+                          >
+                            <FolderOpen size={16} />
+                            {t("av.targets.addFolder")}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--ghost button--subtle"
+                            onClick={() => setCustomTargets([])}
+                            disabled={scanning}
+                          >
+                            {t("av.targets.removeAll")}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+
+                <div className="options">
+                  {activeProfile === "custom" && (
+                    <label className="switch-row">
+                      <input
+                        type="checkbox"
+                        checked={recursive}
+                        onChange={(event) => setRecursive(event.target.checked)}
+                        disabled={scanning}
+                      />
+                      <span>
+                        <strong>{t("av.options.recursive")}</strong>
+                        <small>{t("av.options.recursiveHint")}</small>
+                      </span>
+                    </label>
+                  )}
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={includePua}
+                      onChange={(event) => setIncludePua(event.target.checked)}
+                      disabled={scanning}
+                    />
+                    <span>
+                      <strong>{t("av.options.pua")}</strong>
+                      <small>{t("av.options.puaHint")}</small>
+                    </span>
+                  </label>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={limits.scanArchives}
+                      onChange={(event) =>
+                        setLimits((current) => ({
+                          ...current,
+                          scanArchives: event.target.checked,
+                        }))
+                      }
+                      disabled={scanning}
+                    />
+                    <span>
+                      <strong>{t("av.options.archives")}</strong>
+                      <small>{t("av.options.archivesHint")}</small>
+                    </span>
+                  </label>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={limits.lowPriority}
+                      onChange={(event) =>
+                        setLimits((current) => ({
+                          ...current,
+                          lowPriority: event.target.checked,
+                        }))
+                      }
+                      disabled={scanning}
+                    />
+                    <span>
+                      <strong>{t("av.options.lowPriority")}</strong>
+                      <small>{t("av.options.lowPriorityHint")}</small>
+                    </span>
+                  </label>
+                </div>
+
+                <details
+                  className="details limits-details"
+                  open={limitsOpen}
+                  onToggle={(event) =>
+                    setLimitsOpen((event.target as HTMLDetailsElement).open)
+                  }
+                >
+                  <summary>
+                    <Settings2 size={15} />
+                    {t("av.limits.title")}
+                  </summary>
+                  <div className="limits-grid">
+                    <label className="field">
+                      <span className="field__label">{t("av.limits.fileSize")}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4096}
+                        value={limits.maxFileSizeMb}
+                        disabled={scanning}
+                        onChange={(event) =>
+                          setLimits((current) => ({
+                            ...current,
+                            maxFileSizeMb: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">{t("av.limits.scanSize")}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={16384}
+                        value={limits.maxScanSizeMb}
+                        disabled={scanning}
+                        onChange={(event) =>
+                          setLimits((current) => ({
+                            ...current,
+                            maxScanSizeMb: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">{t("av.limits.maxFiles")}</span>
+                      <input
+                        type="number"
+                        min={100}
+                        max={2000000}
+                        value={limits.maxFiles}
+                        disabled={scanning}
+                        onChange={(event) =>
+                          setLimits((current) => ({
+                            ...current,
+                            maxFiles: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">{t("av.limits.recursion")}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={limits.maxRecursion}
+                        disabled={scanning}
+                        onChange={(event) =>
+                          setLimits((current) => ({
+                            ...current,
+                            maxRecursion: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">{t("av.limits.duration")}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={limits.maxDurationMinutes}
+                        disabled={scanning}
+                        onChange={(event) =>
+                          setLimits((current) => ({
+                            ...current,
+                            maxDurationMinutes: Number(event.target.value),
+                          }))
+                        }
+                      />
+                      <span className="field__hint">{t("av.limits.durationHint")}</span>
+                    </label>
+                  </div>
+                  <p className="panel__note">{t("av.limits.rangeHint")}</p>
+                </details>
+
+                <div className="scan-controls">
                   <button
                     type="button"
-                    className="button button--ghost button--subtle"
-                    onClick={() => setTargets([])}
-                    disabled={scanning}
+                    className="button button--primary button--lg"
+                    onClick={startScan}
+                    disabled={!canStart}
                   >
-                    Tout retirer
+                    {scanning || preparing ? (
+                      <LoaderCircle size={18} className="spin" />
+                    ) : (
+                      <Play size={18} />
+                    )}
+                    {preparing
+                      ? t("av.preparing")
+                      : scanning
+                        ? t("av.scanning")
+                        : t("av.start")}
                   </button>
+                  {scanning && (
+                    <button
+                      type="button"
+                      className="button button--danger button--lg"
+                      onClick={cancelScan}
+                      disabled={cancelRequested}
+                    >
+                      <Square size={16} />
+                      {cancelRequested ? t("av.cancelling") : t("common.cancel")}
+                    </button>
+                  )}
+                  <span className="scan-controls__hint">
+                    {t("av.firstLoadHint")}
+                  </span>
                 </div>
               </>
             )}
 
-            <div className="options">
-              <label className="switch-row">
-                <input
-                  type="checkbox"
-                  checked={recursive}
-                  onChange={(event) => setRecursive(event.target.checked)}
-                  disabled={scanning}
-                />
-                <span>
-                  <strong>Analyse récursive</strong>
-                  <small>Inclure les sous-dossiers des cibles sélectionnées.</small>
-                </span>
-              </label>
-              <label className="switch-row">
-                <input
-                  type="checkbox"
-                  checked={includePua}
-                  onChange={(event) => setIncludePua(event.target.checked)}
-                  disabled={scanning}
-                />
-                <span>
-                  <strong>Détecter les PUA</strong>
-                  <small>Logiciels potentiellement indésirables (option ClamAV).</small>
-                </span>
-              </label>
-            </div>
+            {tab === "results" && (
+              <>
+                {!report ? (
+                  <EmptyState
+                    icon={FileSearch}
+                    title={t("av.results.emptyTitle")}
+                    description={t("av.results.emptyBody")}
+                    action={
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="button button--primary"
+                          onClick={() => setTab("quick")}
+                        >
+                          <Play size={16} />
+                          {t("av.tabs.quick")}
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost"
+                          onClick={() => onNavigate("history")}
+                        >
+                          {t("av.results.openHistory")}
+                        </button>
+                      </div>
+                    }
+                  />
+                ) : (
+                  <div className={`result result--${outcomeTone(report.outcome)}`}>
+                    <div className="panel__head">
+                      <div className="result__title">
+                        {report.outcome === "clean" ? (
+                          <CircleCheck size={22} />
+                        ) : report.outcome === "detected" ? (
+                          <CircleAlert size={22} />
+                        ) : (
+                          <TriangleAlert size={22} />
+                        )}
+                        <div>
+                          <span className="panel__eyebrow">
+                            {profileLabel(report.profile)} · {t("av.result.title")}
+                          </span>
+                          <h2>{outcomeLabel(report.outcome)}</h2>
+                        </div>
+                      </div>
+                      <div className="button-row">
+                        {result?.recordId && (
+                          <button
+                            type="button"
+                            className="button button--ghost button--small"
+                            onClick={() => setExportOpen(true)}
+                          >
+                            <Download size={14} />
+                            {t("av.result.export")}
+                          </button>
+                        )}
+                        <Badge tone={outcomeTone(report.outcome)} dot>
+                          {report.cancelled
+                            ? t("av.result.interrupted")
+                            : formatDuration(report.durationMs)}
+                        </Badge>
+                      </div>
+                    </div>
 
-            <div className="scan-controls">
-              <button
-                type="button"
-                className="button button--primary button--lg"
-                onClick={startScan}
-                disabled={scanning || targets.length === 0 || !engine?.installed}
-              >
-                {scanning ? <LoaderCircle size={18} className="spin" /> : <Play size={18} />}
-                {scanning ? "Analyse en cours…" : "Lancer le scan"}
-              </button>
-              {scanning && (
-                <button
-                  type="button"
-                  className="button button--danger button--lg"
-                  onClick={cancelScan}
-                  disabled={cancelRequested}
-                >
-                  <Square size={16} />
-                  {cancelRequested ? "Annulation…" : "Annuler"}
-                </button>
-              )}
-              <span className="scan-controls__hint">
-                ClamAV charge sa base en mémoire : le premier résultat peut prendre plusieurs secondes.
-              </span>
-            </div>
+                    {report.fatalError && (
+                      <div className="callout callout--danger">
+                        <strong>{t("av.result.fatal")}</strong>
+                        <span>{report.fatalError}</span>
+                      </div>
+                    )}
+
+                    {result?.persistenceError && (
+                      <div className="callout callout--warning">
+                        <strong>{t("av.toast.historyNotSaved")}</strong>
+                        <span>{result.persistenceError}</span>
+                      </div>
+                    )}
+
+                    <div className="result-stats">
+                      <div>
+                        <span>{t("av.result.files")}</span>
+                        <strong>{formatNumber(report.filesScanned)}</strong>
+                      </div>
+                      <div>
+                        <span>{t("av.result.threats")}</span>
+                        <strong className={report.infectedFiles > 0 ? "text-danger" : ""}>
+                          {formatNumber(report.infectedFiles)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>{t("av.result.errors")}</span>
+                        <strong>{formatNumber(report.errorCount)}</strong>
+                      </div>
+                      <div>
+                        <span>{t("av.result.duration")}</span>
+                        <strong>{formatDuration(report.durationMs)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="result-meta">
+                      <span>
+                        <Clock size={14} /> {formatDateTime(report.startedAt)}
+                      </span>
+                      <span>
+                        <ShieldCheck size={14} /> ClamAV {report.engineVersion ?? "—"}
+                      </span>
+                      <span>
+                        <Database size={14} /> {t("av.result.cvdVersion")}{" "}
+                        {report.signatureVersion ?? "—"}
+                      </span>
+                      <span>
+                        <FileSearch size={14} /> {report.targets.length}{" "}
+                        {t("av.targets.unit")}
+                      </span>
+                      {report.indexedFiles !== null && (
+                        <span>
+                          <ScanLine size={14} /> {t("av.progress.indexed")}{" "}
+                          {formatNumber(report.indexedFiles)}
+                        </span>
+                      )}
+                    </div>
+
+                    {displayDetections.length > 0 ? (
+                      <div className="detections">
+                        <div className="detections__head">
+                          <h3>
+                            {t("av.result.detections")} ({displayDetections.length})
+                          </h3>
+                          <span>{t("av.result.detectionsHint")}</span>
+                        </div>
+                        <div className="table-wrap">
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th>{t("av.table.threat")}</th>
+                                <th>{t("av.table.file")}</th>
+                                <th className="num">{t("av.table.size")}</th>
+                                <th>SHA-256</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {displayDetections.map((detection) => (
+                                <tr key={`${detection.filePath}-${detection.threatName}`}>
+                                  <td>
+                                    <Badge tone="danger">{detection.threatName}</Badge>
+                                  </td>
+                                  <td title={detection.filePath}>
+                                    {truncateMiddle(detection.filePath, 52)}
+                                  </td>
+                                  <td className="num">
+                                    {formatBytes(detection.fileSizeBytes)}
+                                  </td>
+                                  <td
+                                    className="mono"
+                                    title={detection.sha256 ?? undefined}
+                                  >
+                                    {detection.sha256
+                                      ? `${detection.sha256.slice(0, 16)}…`
+                                      : "—"}
+                                  </td>
+                                  <td>
+                                    {isQuarantined(detection) ? (
+                                      <Badge tone="ok" dot>
+                                        {t("av.result.quarantined")}
+                                      </Badge>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="button button--small button--danger-ghost button--icon"
+                                        onClick={() => setPendingDetection(detection)}
+                                        title={t("av.result.quarantine")}
+                                        aria-label={t("av.result.quarantine")}
+                                      >
+                                        <Archive size={14} />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="result-clean">
+                        <CircleCheck size={20} />
+                        <div>
+                          <strong>{t("av.result.cleanTitle")}</strong>
+                          <span>{t("av.result.cleanBody")}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {report.targets.length > 0 && (
+                      <details className="details">
+                        <summary>{t("av.result.targets")}</summary>
+                        <ul className="rule-list rule-list--compact">
+                          {report.targets.map((target) => (
+                            <li key={target}>
+                              <span className="mono">{truncateMiddle(target, 100)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+
+                    {displayErrors.length > 0 && (
+                      <details className="details">
+                        <summary>
+                          <CircleAlert size={15} />
+                          {displayErrors.length} {t("av.result.errorsTitle")}
+                        </summary>
+                        <ul className="error-list">
+                          {displayErrors.slice(0, 25).map((error, index) => (
+                            <li key={`${error.path}-${index}`}>
+                              <span className="mono">
+                                {truncateMiddle(error.path || "—", 60)}
+                              </span>
+                              <span>{error.message}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {displayErrors.length > 25 && (
+                          <p className="muted">
+                            {displayErrors.length - 25} {t("av.result.moreErrors")}
+                          </p>
+                        )}
+                      </details>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
-          {scanning && (
+          {(scanning || preparing) && (
             <section className="panel panel--live" aria-live="polite">
               <div className="panel__head">
                 <div>
-                  <span className="panel__eyebrow">En cours</span>
-                  <h2>Analyse ClamAV</h2>
+                  <span className="panel__eyebrow">{t("av.live.eyebrow")}</span>
+                  <h2>{t("av.live.title")}</h2>
                 </div>
                 <Badge tone="info" dot>
                   {formatDuration(elapsed)}
                 </Badge>
               </div>
 
-              <div className="progress-rail">
-                <div className="progress-rail__bar" />
+              <div
+                className={`progress-rail${percent === null ? " progress-rail--indeterminate" : ""}`}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent ?? undefined}
+              >
+                <div
+                  className="progress-rail__bar"
+                  style={percent === null ? undefined : { width: `${percent}%` }}
+                />
+              </div>
+              <div className="progress-caption">
+                {percent === null
+                  ? t("av.progress.estimating")
+                  : `${percent}% · ${formatNumber(progress.filesScanned)} / ${formatNumber(totalFiles ?? 0)}`}
+                {indexTruncated && ` · ${t("av.progress.truncated")}`}
               </div>
 
               <div className="live-grid">
                 <div>
-                  <span className="live-grid__label">Fichiers analysés</span>
+                  <span className="live-grid__label">{t("av.progress.files")}</span>
                   <strong>{formatNumber(progress.filesScanned)}</strong>
                 </div>
                 <div>
-                  <span className="live-grid__label">Détections</span>
-                  <strong className={progress.threatsFound > 0 ? "text-danger" : ""}>
+                  <span className="live-grid__label">{t("av.progress.threats")}</span>
+                  <strong
+                    className={progress.threatsFound > 0 ? "text-danger" : ""}
+                  >
                     {formatNumber(progress.threatsFound)}
                   </strong>
                 </div>
                 <div>
-                  <span className="live-grid__label">Erreurs</span>
+                  <span className="live-grid__label">{t("av.progress.errors")}</span>
                   <strong>{formatNumber(liveErrors.length)}</strong>
                 </div>
               </div>
@@ -610,17 +1269,24 @@ export function Antivirus({
               {progress.currentFile && (
                 <div className="current-file">
                   <ScanLine size={15} />
-                  <span title={progress.currentFile}>{truncateMiddle(progress.currentFile, 96)}</span>
+                  <span title={progress.currentFile}>
+                    {truncateMiddle(progress.currentFile, 96)}
+                  </span>
                 </div>
               )}
 
               {liveDetections.length > 0 && (
                 <div className="live-detections">
                   {liveDetections.slice(-4).map((detection) => (
-                    <div key={detection.filePath} className="live-detection">
+                    <div
+                      key={`${detection.filePath}-${detection.threatName}`}
+                      className="live-detection"
+                    >
                       <Bug size={15} />
                       <strong>{detection.threatName}</strong>
-                      <span title={detection.filePath}>{truncateMiddle(detection.filePath, 64)}</span>
+                      <span title={detection.filePath}>
+                        {truncateMiddle(detection.filePath, 64)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -632,173 +1298,10 @@ export function Antivirus({
             <div className="banner banner--danger">
               <CircleAlert size={19} aria-hidden="true" />
               <div>
-                <strong>Le scan n'a pas pu démarrer</strong>
+                <strong>{t("av.result.fatal")}</strong>
                 <span>{scanError}</span>
               </div>
             </div>
-          )}
-
-          {report && (
-            <section className={`panel result result--${outcomeTone(report.outcome)}`}>
-              <div className="panel__head">
-                <div className="result__title">
-                  {report.outcome === "clean" ? (
-                    <CircleCheck size={22} />
-                  ) : report.outcome === "detected" ? (
-                    <CircleAlert size={22} />
-                  ) : (
-                    <TriangleAlert size={22} />
-                  )}
-                  <div>
-                    <span className="panel__eyebrow">Rapport</span>
-                    <h2>{outcomeLabel(report.outcome)}</h2>
-                  </div>
-                </div>
-                <Badge tone={outcomeTone(report.outcome)} dot>
-                  {report.cancelled ? "Interrompu" : formatDuration(report.durationMs)}
-                </Badge>
-              </div>
-
-              {report.fatalError && (
-                <div className="callout callout--danger">
-                  <strong>Échec du moteur</strong>
-                  <span>{report.fatalError}</span>
-                </div>
-              )}
-
-              {result?.persistenceError && (
-                <div className="callout callout--warning">
-                  <strong>Historique non enregistré</strong>
-                  <span>{result.persistenceError}</span>
-                </div>
-              )}
-
-              <div className="result-stats">
-                <div>
-                  <span>Fichiers analysés</span>
-                  <strong>{formatNumber(report.filesScanned)}</strong>
-                </div>
-                <div>
-                  <span>Menaces</span>
-                  <strong className={report.infectedFiles > 0 ? "text-danger" : ""}>
-                    {formatNumber(report.infectedFiles)}
-                  </strong>
-                </div>
-                <div>
-                  <span>Erreurs</span>
-                  <strong>{formatNumber(report.errorCount)}</strong>
-                </div>
-                <div>
-                  <span>Durée</span>
-                  <strong>{formatDuration(report.durationMs)}</strong>
-                </div>
-              </div>
-
-              <div className="result-meta">
-                <span>
-                  <Clock size={14} /> {formatDateTime(report.startedAt)}
-                </span>
-                <span>
-                  <ShieldCheck size={14} /> ClamAV {report.engineVersion ?? "—"}
-                </span>
-                <span>
-                  <Database size={14} /> Signatures {report.signatureVersion ?? "—"}
-                </span>
-                <span>
-                  <FileSearch size={14} /> {report.targets.length} cible
-                  {report.targets.length > 1 ? "s" : ""}
-                </span>
-              </div>
-
-              {displayDetections.length > 0 ? (
-                <div className="detections">
-                  <div className="detections__head">
-                    <h3>Détections ({displayDetections.length})</h3>
-                    <span>Chaque déplacement exige votre confirmation explicite.</span>
-                  </div>
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Menace</th>
-                          <th>Fichier</th>
-                          <th className="num">Taille</th>
-                          <th>SHA-256</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayDetections.map((detection) => (
-                          <tr key={`${detection.filePath}-${detection.threatName}`}>
-                            <td>
-                              <Badge tone="danger">{detection.threatName}</Badge>
-                            </td>
-                            <td title={detection.filePath}>
-                              {truncateMiddle(detection.filePath, 52)}
-                            </td>
-                            <td className="num">{formatBytes(detection.fileSizeBytes)}</td>
-                            <td className="mono" title={detection.sha256 ?? undefined}>
-                              {detection.sha256
-                                ? `${detection.sha256.slice(0, 16)}…`
-                                : "—"}
-                            </td>
-                            <td>
-                              {isQuarantined(detection) ? (
-                                <Badge tone="ok" dot>
-                                  En quarantaine
-                                </Badge>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="button button--small button--danger-ghost"
-                                  onClick={() => setPendingDetection(detection)}
-                                >
-                                  <Archive size={14} />
-                                  Mettre en quarantaine
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="result-clean">
-                  <CircleCheck size={20} />
-                  <div>
-                    <strong>Aucune détection sur les cibles analysées</strong>
-                    <span>
-                      Cela ne garantit pas l'absence de menace : seules les signatures
-                      ClamAV chargées ont été appliquées.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {displayErrors.length > 0 && (
-                <details className="details">
-                  <summary>
-                    <CircleAlert size={15} />
-                    {displayErrors.length} erreur
-                    {displayErrors.length > 1 ? "s" : ""} non bloquante
-                    {displayErrors.length > 1 ? "s" : ""}
-                  </summary>
-                  <ul className="error-list">
-                    {displayErrors.slice(0, 25).map((error, index) => (
-                      <li key={`${error.path}-${index}`}>
-                        <span className="mono">{truncateMiddle(error.path || "—", 60)}</span>
-                        <span>{error.message}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {displayErrors.length > 25 && (
-                    <p className="muted">{displayErrors.length - 25} erreurs supplémentaires non affichées.</p>
-                  )}
-                </details>
-              )}
-            </section>
           )}
         </div>
 
@@ -806,46 +1309,71 @@ export function Antivirus({
           <section className="panel">
             <div className="panel__head">
               <div>
-                <span className="panel__eyebrow">Moteur</span>
+                <span className="panel__eyebrow">{t("av.engine.eyebrow")}</span>
                 <h2>ClamAV</h2>
               </div>
-              <Badge tone={signatureStateTone(engine?.signatureState ?? "unknown")} dot>
+              <Badge
+                tone={signatureStateTone(engine?.signatureState ?? "unknown")}
+                dot
+              >
                 {signatureStateLabel(engine?.signatureState ?? "unknown")}
               </Badge>
             </div>
 
             <dl className="detail-list detail-list--compact">
               <div>
-                <dt>Version</dt>
+                <dt>{t("av.engine.version")}</dt>
                 <dd>{engine?.engineVersion ?? "—"}</dd>
               </div>
               <div>
-                <dt>Signatures</dt>
-                <dd>{engine?.signatureVersion ?? "Absentes"}</dd>
+                <dt>{t("av.engine.cvd")}</dt>
+                <dd>{engine?.signatureVersion ?? t("signature.missing")}</dd>
               </div>
               <div>
-                <dt>Publication</dt>
-                <dd>{engine?.signatureDate ?? "—"}</dd>
-              </div>
-              <div>
-                <dt>Âge</dt>
+                <dt>{t("av.engine.signatures")}</dt>
                 <dd>
-                  {engine?.signatureAgeDays !== null && engine?.signatureAgeDays !== undefined
-                    ? `${engine.signatureAgeDays} jour(s)`
+                  {inventory && inventory.officialSignatures > 0
+                    ? formatNumber(inventory.officialSignatures)
                     : "—"}
                 </dd>
               </div>
               <div>
-                <dt>Fichiers de base</dt>
+                <dt>{t("av.engine.date")}</dt>
+                <dd>{formatDateTime(engine?.signatureDate)}</dd>
+              </div>
+              <div>
+                <dt>{t("av.engine.age")}</dt>
+                <dd>
+                  {engine?.signatureAgeDays !== null &&
+                  engine?.signatureAgeDays !== undefined
+                    ? `${engine.signatureAgeDays} ${t("av.engine.days")}`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("av.engine.files")}</dt>
                 <dd>{formatNumber(engine?.databaseFileCount ?? 0)}</dd>
               </div>
             </dl>
 
-            <p className="panel__note">{engine?.message ?? "Diagnostic en cours…"}</p>
+            <p className="panel__note">
+              {engine?.installed
+                ? freshnessText(
+                    engine.signatureState,
+                    engine.signatureAgeDays,
+                    settings?.signatureMaxAgeDays,
+                  )
+                : (engine?.message ?? t("common.loading"))}
+            </p>
 
             <div className="path-box" title={engine?.databasePath ?? undefined}>
               <KeyRound size={14} />
-              <span>{truncateMiddle(engine?.databasePath ?? "Base introuvable", 44)}</span>
+              <span>
+                {truncateMiddle(
+                  engine?.databasePath ?? t("av.engine.notFound"),
+                  44,
+                )}
+              </span>
             </div>
 
             <div className="button-col">
@@ -855,22 +1383,28 @@ export function Antivirus({
                 onClick={recheckEngine}
                 disabled={checking}
               >
-                {checking ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
-                Revérifier le moteur
+                {checking ? (
+                  <LoaderCircle size={15} className="spin" />
+                ) : (
+                  <RefreshCw size={15} />
+                )}
+                {t("av.engine.recheck")}
               </button>
               <button
                 type="button"
                 className="button button--ghost button--full"
-                onClick={openUpdate}
-                disabled={!engine?.freshclamPath}
-                title={
-                  engine?.freshclamPath
-                    ? "Télécharger les signatures avec freshclam"
-                    : "freshclam.exe introuvable"
-                }
+                onClick={() => onNavigate("updates")}
               >
                 <Database size={15} />
-                Mettre à jour les signatures
+                {t("av.engine.update")}
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--full"
+                onClick={() => onNavigate("quarantine")}
+              >
+                <Archive size={15} />
+                {t("av.engine.quarantine")}
               </button>
             </div>
           </section>
@@ -878,133 +1412,85 @@ export function Antivirus({
           <section className="panel panel--muted">
             <div className="panel__head">
               <div>
-                <span className="panel__eyebrow">Périmètre</span>
-                <h2>Limites de cette version</h2>
+                <span className="panel__eyebrow">{t("av.scope.eyebrow")}</span>
+                <h2>{t("av.scope.title")}</h2>
               </div>
             </div>
             <ul className="rule-list rule-list--compact">
-              <li>Pas de protection en temps réel ni de surveillance de processus.</li>
-              <li>Pas de suppression automatique : la quarantaine est toujours confirmée.</li>
-              <li>Pas de moteur YARA-X actif en Phase 1.</li>
-              <li>Les limites d'archives et de taille sont celles de ClamAV.</li>
-              <li>Un scan propre ne prouve pas l'absence totale de malware.</li>
+              <li>{t("av.scope.item1")}</li>
+              <li>{t("av.scope.item2")}</li>
+              <li>{t("av.scope.item3")}</li>
+              <li>{t("av.scope.item4")}</li>
+              <li>{t("av.scope.item5")}</li>
             </ul>
           </section>
         </aside>
       </div>
 
       <Modal
-        open={updateOpen}
-        title="Mettre à jour les signatures ClamAV"
-        eyebrow="freshclam"
-        tone={updateResult && !updateResult.success ? "danger" : "warning"}
-        onClose={() => setUpdateOpen(false)}
-        busy={updating}
-        wide
+        open={exportOpen}
+        title={t("av.export.title")}
+        eyebrow={t("av.export.eyebrow")}
+        tone="info"
+        onClose={() => setExportOpen(false)}
+        busy={exporting}
         footer={
           <>
             <button
               type="button"
               className="button button--ghost"
-              onClick={() => setUpdateOpen(false)}
-              disabled={updating}
+              onClick={() => setExportOpen(false)}
+              disabled={exporting}
             >
-              Fermer
+              {t("common.cancel")}
             </button>
             <button
               type="button"
               className="button button--primary"
-              onClick={updateSignatures}
-              disabled={updating}
+              onClick={exportReport}
+              disabled={exporting}
             >
-              {updating ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}
-              {updating ? "Téléchargement…" : "Lancer la mise à jour"}
+              {exporting ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              {t("av.export.action")}
             </button>
           </>
         }
       >
-        <p>
-          CBS Shield exécute <code className="inline-code">freshclam.exe</code> pour
-          télécharger les signatures officielles depuis <code className="inline-code">database.clamav.net</code>.
-          Le premier téléchargement peut représenter plus de 100 Mo et prendre plusieurs
-          minutes.
-        </p>
-        <dl className="detail-list detail-list--compact">
-          <div>
-            <dt>Dossier cible</dt>
-            <dd className="mono">
-              {settings?.databasePath || settings?.signatureDbPath || "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>freshclam</dt>
-            <dd className="mono">{engine?.freshclamPath ?? "Introuvable"}</dd>
-          </div>
-        </dl>
-        <div className="callout callout--info">
-          <strong>Aucune élévation demandée par CBS Shield</strong>
-          <span>
-            Le dossier cible est dans votre profil utilisateur. Si vous avez configuré un
-            dossier système (Program Files), freshclam peut nécessiter des droits
-            administrateur et échouer ici : le message d'erreur sera affiché tel quel.
-          </span>
-        </div>
-
-        {updateLog.length > 0 && (
-          <pre className="log-box" ref={updateLogRef}>
-            {updateLog.join("\n")}
-          </pre>
-        )}
-
-        {updateResult && (
-          <div className={`callout ${updateResult.success ? "callout--success" : "callout--danger"}`}>
-            <strong>{updateResult.success ? "Mise à jour terminée" : "Mise à jour incomplète"}</strong>
-            <span>{updateResult.message}</span>
-          </div>
-        )}
+        <p>{t("av.export.body")}</p>
+        <label className="field">
+          <span className="field__label">{t("av.export.format")}</span>
+          <select
+            value={exportFormat}
+            onChange={(event) => setExportFormat(event.target.value)}
+            disabled={exporting}
+          >
+            <option value="json">JSON</option>
+            <option value="csv">CSV</option>
+            <option value="md">Markdown</option>
+            <option value="txt">Texte</option>
+          </select>
+        </label>
+        <p className="panel__note">{t("av.export.hint")}</p>
       </Modal>
 
       <ConfirmDialog
-        open={pendingDetection !== null}
-        title="Déplacer ce fichier en quarantaine ?"
-        eyebrow="Action sensible"
+        open={Boolean(pendingDetection)}
+        title={t("av.confirm.title")}
         tone="danger"
         description={
-          <div className="confirm__stack">
-            <div className="callout callout--danger">
-              <strong>Ce fichier a été signalé par ClamAV</strong>
-              <span>
-                CBS Shield va le déplacer hors de son emplacement d'origine et le chiffrer
-                avec AES-256-GCM. La clé est protégée par Windows DPAPI pour votre compte.
-              </span>
-            </div>
-            {pendingDetection && (
-              <dl className="detail-list detail-list--compact">
-                <div>
-                  <dt>Fichier</dt>
-                  <dd className="mono">{pendingDetection.filePath}</dd>
-                </div>
-                <div>
-                  <dt>Détection</dt>
-                  <dd>{pendingDetection.threatName}</dd>
-                </div>
-                <div>
-                  <dt>SHA-256</dt>
-                  <dd className="mono">{pendingDetection.sha256 ?? "Non calculé"}</dd>
-                </div>
-              </dl>
-            )}
-            <p className="muted">
-              Vous pourrez restaurer le fichier depuis la section Quarantaine. Il ne sera
-              jamais exécuté ni supprimé automatiquement.
-            </p>
-          </div>
+          pendingDetection
+            ? `${fileBaseName(pendingDetection.filePath)} — ${pendingDetection.threatName}. ${t("av.confirm.body")}`
+            : ""
         }
-        requireCheckbox="Je comprends que le fichier sera déplacé et ne sera plus à son emplacement d'origine."
-        confirmLabel="Mettre en quarantaine"
+        confirmLabel={t("av.result.quarantine")}
+        cancelLabel={t("common.cancel")}
         busy={quarantining}
-        onConfirm={quarantineDetection}
         onClose={() => setPendingDetection(null)}
+        onConfirm={quarantineDetection}
       />
     </div>
   );

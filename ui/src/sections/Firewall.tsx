@@ -11,27 +11,30 @@ import { Badge } from "../components/Badge";
 import { EmptyState } from "../components/EmptyState";
 import { api, errorMessage } from "../lib/api";
 import { formatDateTime, formatNumber, truncateMiddle } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type {
   FirewallObservation,
   FirewallRuleSummary,
   FirewallStatus,
 } from "../types";
 
-function directionBadge(rule: FirewallRuleSummary) {
+type Localize = (fr: string, en: string) => string;
+
+function directionBadge(rule: FirewallRuleSummary, L: Localize) {
   return rule.direction === "entrant" ? (
-    <Badge tone="info" dot>Entrant</Badge>
+    <Badge tone="info" dot>{L("Entrant", "Inbound")}</Badge>
   ) : rule.direction === "sortant" ? (
-    <Badge tone="warning" dot>Sortant</Badge>
+    <Badge tone="warning" dot>{L("Sortant", "Outbound")}</Badge>
   ) : (
     <Badge tone="neutral" dot>{rule.direction || "?"}</Badge>
   );
 }
 
-function actionBadge(rule: FirewallRuleSummary) {
+function actionBadge(rule: FirewallRuleSummary, L: Localize) {
   return rule.action === "bloquer" ? (
-    <Badge tone="danger" dot>Bloquer</Badge>
+    <Badge tone="danger" dot>{L("Bloquer", "Block")}</Badge>
   ) : rule.action === "autoriser" ? (
-    <Badge tone="ok" dot>Autoriser</Badge>
+    <Badge tone="ok" dot>{L("Autoriser", "Allow")}</Badge>
   ) : (
     <Badge tone="neutral" dot>{rule.action || "?"}</Badge>
   );
@@ -52,6 +55,35 @@ function ruleMatches(rule: FirewallRuleSummary, query: string): boolean {
 }
 
 export function Firewall() {
+  const { language } = useI18n();
+  const L = (fr: string, en: string) => (language === "en" ? en : fr);
+  const actionLabel = (value: string) =>
+    value === "bloquer"
+      ? L("Bloquer", "Block")
+      : value === "autoriser"
+        ? L("Autoriser", "Allow")
+        : value;
+  const profileLabel = (value: string) =>
+    value === "domaine"
+      ? L("Domaine", "Domain")
+      : value === "privé"
+        ? L("Privé", "Private")
+        : value === "public"
+          ? L("Public", "Public")
+          : value === "tous"
+            ? L("Tous", "All")
+            : value;
+  const profilesLabel = (value: string) =>
+    value
+      .split(",")
+      .map((part) => profileLabel(part.trim()))
+      .join(", ");
+  const protocolLabel = (value: string) =>
+    value.toLowerCase() === "tout" ? L("Tout", "Any") : value.toUpperCase();
+  const portLabel = (value: string) =>
+    value.toLowerCase() === "tout" || value.toLowerCase() === "tous"
+      ? L("Tout", "Any")
+      : value;
   const [observation, setObservation] = useState<FirewallObservation | null>(null);
   const [status, setStatus] = useState<FirewallStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,13 +118,22 @@ export function Firewall() {
       <div className="banner banner--info">
         <ShieldCheck size={19} aria-hidden="true" />
         <div>
-          <strong>Observation lecture seule — aucune règle modifiée</strong>
+          <strong>
+            {L(
+              "Observation lecture seule — aucune règle modifiée",
+              "Read-only observation — no rule modified",
+            )}
+          </strong>
           <span>
-            Cette section lit l'état des profils et des règles du Pare-feu
-            Windows via l'API documentée <code>INetFwPolicy2</code>. Aucune règle
-            n'est ajoutée, supprimée, activée ou désactivée ; aucun pilote ni
-            filtre réseau n'est installé ; Microsoft Defender n'est pas touché.
-            Appliquer des règles reste du ressort de Windows.
+            {L(
+              "Cette section lit l'état des profils et des règles du Pare-feu Windows via l'API documentée",
+              "This section reads the state of Windows Firewall profiles and rules through the documented",
+            )}{" "}
+            <code>INetFwPolicy2</code>
+            {L(
+              ". Aucune règle n'est ajoutée, supprimée, activée ou désactivée ; aucun pilote ni filtre réseau n'est installé ; Microsoft Defender n'est pas touché. Appliquer des règles reste du ressort de Windows.",
+              " API. No rule is added, removed, enabled or disabled; no driver or network filter is installed; Microsoft Defender is not touched. Applying rules remains Windows' responsibility.",
+            )}
           </span>
         </div>
       </div>
@@ -100,7 +141,7 @@ export function Firewall() {
       {error && (
         <div className="banner banner--danger">
           <div>
-            <strong>Pare-feu Windows indisponible</strong>
+            <strong>{L("Pare-feu Windows indisponible", "Windows firewall unavailable")}</strong>
             <span>{error}</span>
             <div className="banner__actions">
               <button
@@ -109,7 +150,7 @@ export function Firewall() {
                 onClick={() => void inspect()}
               >
                 <RefreshCw size={15} />
-                Réessayer
+                {L("Réessayer", "Retry")}
               </button>
             </div>
           </div>
@@ -120,13 +161,27 @@ export function Firewall() {
         <div className="banner banner--warning">
           <TriangleAlert size={19} aria-hidden="true" />
           <div>
-            <strong>Configuration différente depuis la dernière observation</strong>
+            <strong>
+              {L(
+                "Configuration différente depuis la dernière observation",
+                "Configuration different since the last observation",
+              )}
+            </strong>
             <span>
               {observation.previousCheckedAt
-                ? `La dernière observation datée du ${formatDateTime(observation.previousCheckedAt)} a constaté un autre jeu de règles.`
-                : "Une observation précédente a constaté un autre jeu de règles."}
-              {" "}CBS Shield ne modifie rien : la vérification de la source du
-              changement vous appartient.
+                ? L(
+                    `La dernière observation datée du ${formatDateTime(observation.previousCheckedAt)} a constaté un autre jeu de règles.`,
+                    `The last observation, dated ${formatDateTime(observation.previousCheckedAt)}, found a different rule set.`,
+                  )
+                : L(
+                    "Une observation précédente a constaté un autre jeu de règles.",
+                    "A previous observation found a different rule set.",
+                  )}
+              {" "}
+              {L(
+                "CBS Shield ne modifie rien : la vérification de la source du changement vous appartient.",
+                "CBS Shield changes nothing: verifying the source of the change is up to you.",
+              )}
             </span>
           </div>
         </div>
@@ -135,13 +190,14 @@ export function Firewall() {
       <section className="panel">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Profils</span>
-            <h2>État par profil</h2>
+            <span className="panel__eyebrow">{L("Profils", "Profiles")}</span>
+            <h2>{L("État par profil", "Status by profile")}</h2>
           </div>
           <div className="row-actions">
             {status && status.activeProfiles.length > 0 && (
               <Badge tone="info" dot>
-                Actif : {status.activeProfiles.join(" + ")}
+                {L("Actif : ", "Active: ")}
+                {status.activeProfiles.map((value) => profileLabel(value)).join(" + ")}
               </Badge>
             )}
             <button
@@ -150,7 +206,7 @@ export function Firewall() {
               onClick={() => void inspect()}
             >
               {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
-              Actualiser
+              {L("Actualiser", "Refresh")}
             </button>
           </div>
         </div>
@@ -158,7 +214,7 @@ export function Firewall() {
         {loading && !status ? (
           <div className="loading-row">
             <LoaderCircle size={18} className="spin" />
-            Lecture de la configuration du pare-feu…
+            {L("Lecture de la configuration du pare-feu…", "Reading firewall configuration…")}
           </div>
         ) : status ? (
           <>
@@ -168,21 +224,24 @@ export function Firewall() {
                   <div className="module-card__top">
                     <Flame size={20} />
                     <Badge tone={profile.enabled ? "ok" : "danger"} dot>
-                      {profile.enabled ? "Activé" : "Désactivé"}
+                      {profile.enabled ? L("Activé", "Enabled") : L("Désactivé", "Disabled")}
                     </Badge>
                   </div>
-                  <strong>{profile.profile}</strong>
+                  <strong>{profileLabel(profile.profile)}</strong>
                   <span>
-                    Connexions entrantes par défaut : {profile.inboundDefault} ·
-                    sortantes : {profile.outboundDefault}
+                    {L(
+                      `Connexions entrantes par défaut : ${actionLabel(profile.inboundDefault)} · sortantes : ${actionLabel(profile.outboundDefault)}`,
+                      `Default inbound connections: ${actionLabel(profile.inboundDefault)} · outbound: ${actionLabel(profile.outboundDefault)}`,
+                    )}
                   </span>
                 </article>
               ))}
             </div>
             <p className="panel__note">
-              Observé à {formatDateTime(status.checkedAt)} ·{" "}
-              {formatNumber(status.rulesTotalCount)} règle
-              {status.rulesTotalCount > 1 ? "s" : ""} dans la stratégie.
+              {L(
+                `Observé à ${formatDateTime(status.checkedAt)} · ${formatNumber(status.rulesTotalCount)} règle${status.rulesTotalCount > 1 ? "s" : ""} dans la stratégie.`,
+                `Observed at ${formatDateTime(status.checkedAt)} · ${formatNumber(status.rulesTotalCount)} rule${status.rulesTotalCount > 1 ? "s" : ""} in the policy.`,
+              )}
             </p>
           </>
         ) : null}
@@ -191,14 +250,20 @@ export function Firewall() {
       <section className="panel">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Règles</span>
+            <span className="panel__eyebrow">{L("Règles", "Rules")}</span>
             <h2>
-              Règles existantes{" "}
+              {L("Règles existantes", "Existing rules")}{" "}
               <span className="muted">
                 {status
                   ? visibleRules.length === status.rules.length
-                    ? `(${formatNumber(status.rules.length)} affichées)`
-                    : `(${formatNumber(visibleRules.length)} sur ${formatNumber(status.rules.length)} affichées)`
+                    ? L(
+                        `(${formatNumber(status.rules.length)} affichées)`,
+                        `(${formatNumber(status.rules.length)} shown)`,
+                      )
+                    : L(
+                        `(${formatNumber(visibleRules.length)} sur ${formatNumber(status.rules.length)} affichées)`,
+                        `(${formatNumber(visibleRules.length)} of ${formatNumber(status.rules.length)} shown)`,
+                      )
                   : ""}
               </span>
             </h2>
@@ -208,13 +273,16 @@ export function Firewall() {
         <div className="filter-row">
           <div className="field field--grow">
             <label className="field__label" htmlFor="firewall-search">
-              Recherche locale
+              {L("Recherche locale", "Local search")}
             </label>
             <input
               id="firewall-search"
               className="input"
               type="search"
-              placeholder="Nom, programme, protocole, port, groupe…"
+              placeholder={L(
+                "Nom, programme, protocole, port, groupe…",
+                "Name, program, protocol, port, group…",
+              )}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -223,20 +291,31 @@ export function Firewall() {
 
         {observation?.listedTruncated && (
           <p className="panel__note">
-            Affichage limité aux 1 000 premières règles par taille d'affichage ;
-            le compteur de règles et l'empreinte de configuration portent sur
-            l'intégralité.
+            {L(
+              "Affichage limité aux 1 000 premières règles par taille d'affichage ; le compteur de règles et l'empreinte de configuration portent sur l'intégralité.",
+              "Display limited to the first 1,000 rules to keep the view light; the rule count and configuration fingerprint cover the entire set.",
+            )}
           </p>
         )}
 
         {!status ? null : visibleRules.length === 0 ? (
           <EmptyState
             icon={Flame}
-            title={status.rules.length === 0 ? "Aucune règle déclarée" : "Aucune règle correspondante"}
+            title={
+              status.rules.length === 0
+                ? L("Aucune règle déclarée", "No rule declared")
+                : L("Aucune règle correspondante", "No matching rule")
+            }
             description={
               status.rules.length === 0
-                ? "La stratégie du pare-feu Windows ne contient pas de règle personnalisée."
-                : "Modifiez la recherche pour élargir les résultats."
+                ? L(
+                    "La stratégie du pare-feu Windows ne contient pas de règle personnalisée.",
+                    "The Windows firewall policy contains no custom rule.",
+                  )
+                : L(
+                    "Modifiez la recherche pour élargir les résultats.",
+                    "Change the search to broaden the results.",
+                  )
             }
           />
         ) : (
@@ -244,15 +323,15 @@ export function Firewall() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Nom</th>
-                  <th>Direction</th>
-                  <th>Action</th>
-                  <th>État</th>
-                  <th>Proto</th>
-                  <th>Ports</th>
-                  <th>Profil</th>
-                  <th>Programme</th>
-                  <th>Groupe</th>
+                  <th>{L("Nom", "Name")}</th>
+                  <th>{L("Direction", "Direction")}</th>
+                  <th>{L("Action", "Action")}</th>
+                  <th>{L("État", "State")}</th>
+                  <th>{L("Proto", "Proto")}</th>
+                  <th>{L("Ports", "Ports")}</th>
+                  <th>{L("Profil", "Profile")}</th>
+                  <th>{L("Programme", "Program")}</th>
+                  <th>{L("Groupe", "Group")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -261,24 +340,29 @@ export function Firewall() {
                     <td title={rule.description || rule.name}>
                       {truncateMiddle(rule.name, 42)}
                     </td>
-                    <td>{directionBadge(rule)}</td>
-                    <td>{actionBadge(rule)}</td>
+                    <td>{directionBadge(rule, L)}</td>
+                    <td>{actionBadge(rule, L)}</td>
                     <td>
                       <Badge tone={rule.enabled ? "ok" : "neutral"} dot>
-                        {rule.enabled ? "Activée" : "Désactivée"}
+                        {rule.enabled ? L("Activée", "Enabled") : L("Désactivée", "Disabled")}
                       </Badge>
                     </td>
-                    <td className="mono">{rule.protocol}</td>
+                    <td className="mono">{protocolLabel(rule.protocol)}</td>
                     <td className="mono">
                       {rule.localPorts ? (
-                        <span title={`distant : ${rule.remotePorts || "tout"}`}>
-                          {truncateMiddle(rule.localPorts, 18)}
+                        <span
+                          title={L(
+                            `distant : ${portLabel(rule.remotePorts || "tout")}`,
+                            `remote: ${portLabel(rule.remotePorts || "tout")}`,
+                          )}
+                        >
+                          {truncateMiddle(portLabel(rule.localPorts), 18)}
                         </span>
                       ) : (
-                        <span className="muted">tout</span>
+                        <span className="muted">{L("tout", "all")}</span>
                       )}
                     </td>
-                    <td>{rule.profiles}</td>
+                    <td>{profilesLabel(rule.profiles)}</td>
                     <td title={rule.applicationName || undefined}>
                       {rule.applicationName
                         ? truncateMiddle(rule.applicationName, 34)
@@ -296,20 +380,41 @@ export function Firewall() {
       <section className="panel">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Garde-fous</span>
-            <h2>Ce que CBS Shield ne fait pas</h2>
+            <span className="panel__eyebrow">{L("Garde-fous", "Safeguards")}</span>
+            <h2>{L("Ce que CBS Shield ne fait pas", "What CBS Shield does not do")}</h2>
           </div>
         </div>
         <ul className="rule-list">
-          <li>Aucune règle de pare-feu ajoutée, supprimée ou modifiée — jamais.</li>
-          <li>Aucun pilote noyau, aucun filtre WFP, aucun pare-feu tiers (Portmaster…).</li>
-          <li>Aucune modification de Microsoft Defender (ni exclusion, ni état).</li>
-          <li>Aucune élévation de privilèges demandée pour cette lecture.</li>
+          <li>
+            {L(
+              "Aucune règle de pare-feu ajoutée, supprimée ou modifiée — jamais.",
+              "No firewall rule added, removed or modified — ever.",
+            )}
+          </li>
+          <li>
+            {L(
+              "Aucun pilote noyau, aucun filtre WFP, aucun pare-feu tiers (Portmaster…).",
+              "No kernel driver, no WFP filter, no third-party firewall (Portmaster…).",
+            )}
+          </li>
+          <li>
+            {L(
+              "Aucune modification de Microsoft Defender (ni exclusion, ni état).",
+              "No change to Microsoft Defender (neither exclusions nor state).",
+            )}
+          </li>
+          <li>
+            {L(
+              "Aucune élévation de privilèges demandée pour cette lecture.",
+              "No privilege elevation requested for this read.",
+            )}
+          </li>
         </ul>
         <p className="panel__note">
-          Fondation Phase 2 : observation uniquement. La détection de
-          modification repose sur une empreinte SHA-256 du jeu de règles stockée
-          localement, comparée à chaque observation.
+          {L(
+            "Fondation Phase 2 : observation uniquement. La détection de modification repose sur une empreinte SHA-256 du jeu de règles stockée localement, comparée à chaque observation.",
+            "Phase 2 foundation: observation only. Change detection relies on a locally stored SHA-256 fingerprint of the rule set, compared on every observation.",
+          )}
         </p>
       </section>
     </div>

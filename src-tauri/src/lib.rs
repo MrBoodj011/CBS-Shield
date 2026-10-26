@@ -38,6 +38,7 @@ pub fn run() {
                 .and_then(|map| map.get("language").cloned())
                 .unwrap_or_else(|| "fr".to_string());
             tray::setup(app.handle(), &language);
+            commands::engine::spawn_auto_update_scheduler(app.handle().clone());
 
             Ok(())
         })
@@ -50,6 +51,12 @@ pub fn run() {
             commands::scans::list_scans,
             commands::scans::get_scan_details,
             commands::scans::dashboard_stats,
+            commands::scans::resolve_scan_targets,
+            commands::reports::export_scan_report,
+            commands::signatures::signature_inventory,
+            commands::signatures::update_logs,
+            commands::signatures::provisioning_status,
+            commands::signatures::open_documentation,
             commands::vault::quarantine_file,
             commands::vault::list_quarantine,
             commands::vault::restore_quarantine,

@@ -9,6 +9,7 @@ const installedEngine: EngineStatus = {
   installed: true,
   clamscanPath: "C:\\Program Files\\ClamAV\\clamscan.exe",
   freshclamPath: "C:\\Program Files\\ClamAV\\freshclam.exe",
+  sigtoolPath: "C:\\Program Files\\ClamAV\\sigtool.exe",
   engineVersion: "1.4.3",
   signatureVersion: "27000",
   signatureDate: "2026-10-25",

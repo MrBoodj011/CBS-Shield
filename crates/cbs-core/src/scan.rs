@@ -85,9 +85,67 @@ impl Scanner {
         let targets = prepare_targets(&request.paths, self.forbidden_root.as_deref())?;
         let started_at = Utc::now();
         let timer = Instant::now();
+        let limits = request.limits.clone().sanitized();
+
+        sink(ScanEvent::Preparing {
+            scan_id: scan_id.to_string(),
+            profile: request.profile.as_str().to_string(),
+            target_count: targets.len(),
+        });
+
+        // Bound the pre-scan index so a multi-million-file volume can never
+        // delay the actual scan. The count is used only as a progress
+        // denominator when it is complete.
+        let index_targets = targets.clone();
+        let index_excluded = request.excluded_paths.clone();
+        let index_budget = if request.profile == crate::model::ScanProfile::Full {
+            Duration::from_secs(12)
+        } else {
+            Duration::from_secs(6)
+        };
+        let index = tokio::task::spawn_blocking(move || {
+            crate::targets::index_files(&index_targets, &index_excluded, 500_000, index_budget)
+        })
+        .await
+        .unwrap_or_default();
+        let total_files = if index.truncated || index.total_files == 0 {
+            None
+        } else {
+            Some(index.total_files)
+        };
 
         let mut command = Command::new(&self.executable);
         command.arg("--stdout");
+        command.arg(format!("--max-filesize={}", limits.max_file_size_bytes()));
+        command.arg(format!("--max-scansize={}", limits.max_scan_size_bytes()));
+        command.arg(format!("--max-files={}", limits.max_files));
+        command.arg(format!("--max-recursion={}", limits.max_recursion));
+        command.arg(format!(
+            "--scan-archive={}",
+            if limits.scan_archives { "yes" } else { "no" }
+        ));
+        command.arg(if request.follow_symlinks {
+            "--follow-dir-symlinks=1"
+        } else {
+            "--follow-dir-symlinks=0"
+        });
+        command.arg(if request.follow_symlinks {
+            "--follow-file-symlinks=1"
+        } else {
+            "--follow-file-symlinks=0"
+        });
+        if limits.max_duration_minutes > 0 {
+            command.arg(format!(
+                "--max-scantime={}",
+                u64::from(limits.max_duration_minutes) * 60_000
+            ));
+        }
+        for excluded in &request.excluded_paths {
+            command.arg(format!(
+                "--exclude-dir={}",
+                regex_escape(&excluded.display().to_string())
+            ));
+        }
         if request.recursive {
             command.arg("-r");
         }
@@ -104,7 +162,7 @@ impl Scanner {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        hide_console(&mut command);
+        hide_console(&mut command, limits.low_priority);
 
         let mut child = command
             .spawn()
@@ -115,6 +173,9 @@ impl Scanner {
             target_count: targets.len(),
             engine_version: self.engine_version.clone(),
             signature_version: self.signature_version.clone(),
+            profile: request.profile.as_str().to_string(),
+            total_files,
+            index_truncated: index.truncated,
         });
 
         let stdout = child.stdout.take().expect("stdout piped");
@@ -280,12 +341,16 @@ impl Scanner {
         let summary = parse_summary(&recent_lines.iter().cloned().collect::<Vec<_>>());
         let mut finished_at = Utc::now();
 
-        // Fingerprint detections (SHA-256 + size) without loading whole files in memory.
-        for detection in &mut detections {
-            let path = PathBuf::from(&detection.file_path);
-            if let Some((size, hash)) = fingerprint_file(&path).await {
-                detection.file_size_bytes = Some(size);
-                detection.sha256 = Some(hash);
+        // Fingerprint detections (SHA-256 + size) without loading whole files in
+        // memory. A cancelled scan must return promptly: hashing hundreds of
+        // large files after the user pressed Stop would look like a hang.
+        if !cancelled {
+            for detection in &mut detections {
+                let path = PathBuf::from(&detection.file_path);
+                if let Some((size, hash)) = fingerprint_file(&path).await {
+                    detection.file_size_bytes = Some(size);
+                    detection.sha256 = Some(hash);
+                }
             }
         }
 
@@ -365,6 +430,15 @@ impl Scanner {
                 .iter()
                 .map(|path| path.display().to_string())
                 .collect(),
+            profile: request.profile.as_str().to_string(),
+            excluded: request
+                .excluded_paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+            indexed_files: total_files,
+            index_truncated: index.truncated,
+            limits,
             files_scanned,
             infected_files,
             error_count: errors.len() as u64,
@@ -471,14 +545,33 @@ fn truncate(value: &str, max: usize) -> String {
     }
 }
 
+/// Escape a Windows path for ClamAV's `--exclude-dir=REGEX` option.
+fn regex_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 8);
+    for character in value.chars() {
+        if "\\^$.|?*+()[]{}".contains(character) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
 #[cfg(windows)]
-fn hide_console(command: &mut Command) {
+fn hide_console(command: &mut Command, low_priority: bool) {
     use std::os::windows::process::CommandExt;
-    command.as_std_mut().creation_flags(0x0800_0000);
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const IDLE_PRIORITY_CLASS: u32 = 0x0000_0040;
+    let flags = if low_priority {
+        CREATE_NO_WINDOW | IDLE_PRIORITY_CLASS
+    } else {
+        CREATE_NO_WINDOW
+    };
+    command.as_std_mut().creation_flags(flags);
 }
 
 #[cfg(not(windows))]
-fn hide_console(_command: &mut Command) {}
+fn hide_console(_command: &mut Command, _low_priority: bool) {}
 
 #[cfg(test)]
 mod tests {

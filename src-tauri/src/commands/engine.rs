@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cbs_core::{detect_engine, EngineStatus, SignatureState};
+use cbs_core::{detect_engine, read_inventory, EngineStatus, SignatureInventory, SignatureState};
+use chrono::Utc;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
 
@@ -100,6 +101,11 @@ pub struct SignatureUpdateResult {
     pub message: String,
     pub log: Vec<String>,
     pub engine: EngineStatus,
+    pub inventory: SignatureInventory,
+    pub offline: bool,
+    pub database_verified: bool,
+    pub stale_temp_removed: u32,
+    pub automatic: bool,
 }
 
 #[tauri::command]
@@ -122,9 +128,25 @@ pub async fn update_signatures(
             "Un scan est en cours : attendez la fin du scan avant de mettre à jour les signatures.",
         ));
     }
-
     let settings = state.store.settings()?;
-    let status = probe_with_settings(&state, &settings);
+    let Some(_lease) = state.begin_update() else {
+        return Err(CommandError::new(
+            "updateInProgress",
+            "Une mise à jour des signatures est déjà en cours.",
+        ));
+    };
+    run_freshclam(&app, &state, &settings, false).await
+}
+
+/// Shared by the manual command and the automatic scheduler. The caller owns
+/// the `UpdateLease` and has already checked that no scan is running.
+pub async fn run_freshclam(
+    app: &AppHandle,
+    state: &AppState,
+    settings: &HashMap<String, String>,
+    automatic: bool,
+) -> Result<SignatureUpdateResult, CommandError> {
+    let status = probe_with_settings(state, settings);
     let Some(freshclam) = status.freshclam_path.clone() else {
         return Err(CommandError::new(
             "freshclamMissing",
@@ -137,6 +159,11 @@ pub async fn update_signatures(
         .unwrap_or_else(|| state.paths.signature_db.clone());
     std::fs::create_dir_all(&target_db)?;
     std::fs::create_dir_all(&state.paths.clamav_dir)?;
+
+    // Recover from a previously interrupted download (power loss, kill,
+    // network cut). freshclam writes `<name>.cvd.tmp` then renames it; a stale
+    // `.tmp` older than an hour cannot be part of a live transfer.
+    let stale_temp_removed = cleanup_stale_temp(&target_db, Duration::from_secs(60 * 60));
 
     // freshclam requires a configuration file on Windows. It lives inside the
     // application data directory and is regenerated on every update.
@@ -217,8 +244,19 @@ pub async fn update_signatures(
     } else {
         summary
     };
+    let offline = is_offline(&lines);
 
-    let engine = probe_with_settings(&state, &settings);
+    let engine = probe_with_settings(state, settings);
+    let inventory = read_inventory(
+        engine.database_path.as_deref(),
+        engine.sigtool_path.as_deref(),
+    );
+    let database_verified = success
+        && !inventory.official_components.is_empty()
+        && inventory
+            .official_components
+            .iter()
+            .all(|component| component.verified);
     let log_tail = lines
         .into_iter()
         .rev()
@@ -228,13 +266,141 @@ pub async fn update_signatures(
         .rev()
         .collect();
 
+    append_update_log(
+        state,
+        &format!(
+            "{} update automatic={automatic} success={success} exit={exit_code:?} offline={offline} temp_removed={stale_temp_removed} message={message}",
+            Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        ),
+    );
+
     Ok(SignatureUpdateResult {
         success,
         exit_code,
         message,
         log: log_tail,
         engine,
+        inventory,
+        offline,
+        database_verified,
+        stale_temp_removed,
+        automatic,
     })
+}
+
+/// Remove interrupted download leftovers. Only `*.tmp` files older than `age`
+/// are touched; a live freshclam transfer is never deleted.
+pub fn cleanup_stale_temp(dir: &PathBuf, age: Duration) -> u32 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let now = std::time::SystemTime::now();
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("tmp") {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .map(|elapsed| elapsed >= age)
+            .unwrap_or(false);
+        if stale && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+pub fn is_offline(lines: &[String]) -> bool {
+    let lower = lines.join("\n").to_ascii_lowercase();
+    lower.contains("can't resolve")
+        || lower.contains("ip address not resolvable")
+        || lower.contains("can't connect")
+        || lower.contains("connection timed out")
+        || lower.contains("network is unreachable")
+        || lower.contains("temporary failure in name resolution")
+}
+
+fn append_update_log(state: &AppState, line: &str) {
+    let path = state.paths.data_dir.join("updates.log");
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        if metadata.len() > 512 * 1024 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// Automatic update loop. Runs every five minutes while the app is open, but
+/// only when the user enabled it and the signature age exceeds the configured
+/// interval. A manual update and the scheduler share the same exclusive slot.
+pub fn spawn_auto_update_scheduler(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(5 * 60));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            ticker.tick().await;
+            let state = app.state::<AppState>();
+            let settings = match state.store.settings() {
+                Ok(settings) => settings,
+                Err(_) => continue,
+            };
+            if settings.get("autoUpdate").map(String::as_str) != Some("true")
+                || state.is_scanning()
+                || state.is_updating()
+            {
+                continue;
+            }
+            let interval_hours = settings
+                .get("autoUpdateHours")
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(24)
+                .clamp(6, 168);
+            let status = probe_with_settings(&state, &settings);
+            if !status.installed || status.freshclam_path.is_none() {
+                continue;
+            }
+            let due = match status.signature_age_days {
+                Some(age) => age * 24 >= interval_hours,
+                None => status.signature_state != SignatureState::UpToDate,
+            };
+            if !due {
+                continue;
+            }
+            // Throttle retries: at most one automatic attempt per hour.
+            if let Some(last) = settings.get("lastAutoUpdateAt") {
+                if let Ok(last) = chrono::DateTime::parse_from_rfc3339(last) {
+                    if Utc::now()
+                        .signed_duration_since(last.with_timezone(&Utc))
+                        .num_minutes()
+                        < 60
+                    {
+                        continue;
+                    }
+                }
+            }
+            let Some(_lease) = state.begin_update() else {
+                continue;
+            };
+            let _ = state.store.set_setting(
+                "lastAutoUpdateAt",
+                &Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            );
+            let result = run_freshclam(&app, &state, &settings, true).await;
+            let _ = app.emit("signatures:autoUpdate", &result);
+        }
+    });
 }
 
 async fn stream_output<R>(
@@ -417,5 +583,37 @@ mod tests {
             summarize_update_run(&[line("Trying to download daily.cvd")], true, None);
         assert!(!success);
         assert!(message.contains("interrompue"), "message: {message}");
+    }
+
+    #[test]
+    fn detects_network_failures_as_offline() {
+        assert!(is_offline(&[line(
+            "ERROR: Can't connect to database.clamav.net: Network is unreachable"
+        )]));
+        assert!(is_offline(&[line("Temporary failure in name resolution")]));
+        assert!(!is_offline(&[line("daily.cvd updated (version: 28164)")]));
+    }
+
+    #[test]
+    fn removes_only_stale_tmp_downloads() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbs-shield-cleanup-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join("daily.cvd.tmp");
+        let live = dir.join("main.cvd");
+        std::fs::write(&stale, b"partial").unwrap();
+        std::fs::write(&live, b"complete").unwrap();
+
+        // A zero age treats every existing `.tmp` as stale. In production the
+        // one-hour guard protects a live transfer.
+        assert_eq!(cleanup_stale_temp(&dir, Duration::ZERO), 1);
+        assert!(!stale.exists());
+        assert!(live.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

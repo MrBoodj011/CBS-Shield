@@ -22,6 +22,7 @@ import type {
   ScanRecord,
   SectionId,
   SettingsView,
+  SignatureInventory,
 } from "./types";
 
 const SECTION_META: Record<SectionId, { title: TranslationKey; subtitle: TranslationKey }> = {
@@ -69,6 +70,7 @@ export default function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [engineLoading, setEngineLoading] = useState(true);
+  const [inventory, setInventory] = useState<SignatureInventory | null>(null);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [scans, setScans] = useState<ScanRecord[]>([]);
@@ -85,6 +87,10 @@ export default function App() {
         const status = await api.engineStatus();
         setEngine(status);
         setOffline(null);
+        api
+          .signatureInventory()
+          .then(setInventory)
+          .catch(() => undefined);
         if (notify) {
           toast({
             tone: status.installed ? "success" : "error",
@@ -139,7 +145,7 @@ export default function App() {
     let cancelled = false;
 
     const boot = async () => {
-      const [infoResult, engineResult, settingsResult, statsResult, scansResult, quarantineResult] =
+      const [infoResult, engineResult, settingsResult, statsResult, scansResult, quarantineResult, inventoryResult] =
         await Promise.allSettled([
           api.appInfo(),
           api.engineStatus(),
@@ -147,6 +153,7 @@ export default function App() {
           api.dashboardStats(),
           api.listScans(20),
           api.listQuarantine(),
+          api.signatureInventory(),
         ]);
       if (cancelled) return;
 
@@ -156,6 +163,7 @@ export default function App() {
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
       if (scansResult.status === "fulfilled") setScans(scansResult.value);
       if (quarantineResult.status === "fulfilled") setQuarantine(quarantineResult.value);
+      if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
 
       const failure = [engineResult, settingsResult, statsResult, scansResult, quarantineResult].find(
         (result) => result.status === "rejected",
@@ -262,6 +270,7 @@ export default function App() {
               {section === "dashboard" && (
                 <Dashboard
                   engine={engine}
+                  inventory={inventory}
                   stats={stats}
                   scans={scans}
                   quarantine={quarantine}
@@ -276,6 +285,7 @@ export default function App() {
                   engine={engine}
                   engineLoading={engineLoading}
                   settings={settings}
+                  inventory={inventory}
                   onEngineChanged={(status) => setEngine(status)}
                   onHistoryChanged={() => {
                     void handleDataChanged();

@@ -4,16 +4,23 @@ import type {
   AppInfo,
   DashboardStats,
   EngineStatus,
+  ExportResult,
   FirewallObservation,
   NetmonSnapshotPayload,
   NetmonSnapshotRecord,
+  ProvisioningStatus,
   QuarantineRecord,
+  ResolvedTargets,
   ScanDetails,
+  ScanLimits,
+  ScanProfile,
   ScanRecord,
   ScanResultPayload,
   SettingsPatch,
   SettingsView,
+  SignatureInventory,
   SignatureUpdateResult,
+  UpdateLogs,
 } from "../types";
 
 export const api = {
@@ -23,9 +30,24 @@ export const api = {
   updateSignatures: (confirm: boolean) =>
     invoke<SignatureUpdateResult>("update_signatures", { confirm }),
 
-  startScan: (paths: string[], recursive: boolean, includePua: boolean) =>
-    invoke<ScanResultPayload>("start_scan", { paths, recursive, includePua }),
+  startScan: (input: {
+    paths: string[];
+    recursive: boolean;
+    includePua: boolean;
+    profile: ScanProfile;
+    limits: ScanLimits;
+    followSymlinks?: boolean;
+  }) => invoke<ScanResultPayload>("start_scan", input),
   cancelScan: () => invoke<boolean>("cancel_scan"),
+  resolveScanTargets: (profile: ScanProfile) =>
+    invoke<ResolvedTargets>("resolve_scan_targets", { profile }),
+  exportScanReport: (scanId: number, format: string, path: string) =>
+    invoke<ExportResult>("export_scan_report", { scanId, format, path }),
+
+  signatureInventory: () => invoke<SignatureInventory>("signature_inventory"),
+  updateLogs: () => invoke<UpdateLogs>("update_logs"),
+  provisioningStatus: () => invoke<ProvisioningStatus>("provisioning_status"),
+  openDocumentation: (url: string) => invoke<void>("open_documentation", { url }),
 
   listScans: (limit = 20) => invoke<ScanRecord[]>("list_scans", { limit }),
   getScanDetails: (scanId: number) =>

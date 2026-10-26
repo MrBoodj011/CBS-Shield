@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cbs_netmon::InterfaceTraffic;
@@ -42,6 +43,18 @@ pub struct AppState {
     /// Last observed interface counters, used to compute measured traffic
     /// deltas between two Network Monitor captures.
     netmon_last: Arc<Mutex<Option<Vec<InterfaceTraffic>>>>,
+    update_running: Arc<AtomicBool>,
+}
+
+/// Releases the single update slot on every exit path (success, error, panic).
+pub struct UpdateLease {
+    flag: Arc<AtomicBool>,
+}
+
+impl Drop for UpdateLease {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
 }
 
 impl AppState {
@@ -52,7 +65,28 @@ impl AppState {
             quarantine,
             scan_slot: Arc::new(Mutex::new(None)),
             netmon_last: Arc::new(Mutex::new(None)),
+            update_running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Acquire the exclusive freshclam slot. Manual and automatic updates share
+    /// it so two freshclam processes can never rewrite the database at once.
+    pub fn begin_update(&self) -> Option<UpdateLease> {
+        if self
+            .update_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            Some(UpdateLease {
+                flag: self.update_running.clone(),
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn is_updating(&self) -> bool {
+        self.update_running.load(Ordering::SeqCst)
     }
 
     /// Only one ClamAV process at a time: simpler cancellation and predictable

@@ -7,6 +7,7 @@ import {
   formatNumber,
   outcomeLabel,
   outcomeTone,
+  setFormatLanguage,
   signatureStateLabel,
   signatureStateTone,
   truncateMiddle,
@@ -24,9 +25,17 @@ describe("format helpers", () => {
 
   it("formats byte sizes in French units", () => {
     expect(formatBytes(68)).toBe("68 o");
-    expect(formatBytes(2048)).toBe("2,00 Ko");
-    expect(formatBytes(5 * 1024 * 1024)).toBe("5,00 Mo");
+    expect(formatBytes(2048)).toBe("2 Ko");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5 Mo");
     expect(formatBytes(undefined)).toBe("—");
+  });
+
+  it("switches numbers, dates and labels to English", () => {
+    setFormatLanguage("en");
+    expect(formatNumber(12_345)).toMatch(/12,345/);
+    expect(formatBytes(2048)).toBe("2 KB");
+    expect(outcomeLabel("clean")).toBe("No threat");
+    setFormatLanguage("fr");
   });
 
   it("labels scan outcomes honestly", () => {

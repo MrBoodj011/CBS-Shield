@@ -19,6 +19,7 @@ import {
   formatNumber,
   truncateMiddle,
 } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type {
   NetmonConnection,
   NetmonSnapshotPayload,
@@ -30,12 +31,12 @@ const HISTORY_ROWS_FETCHED = 30;
 
 type TransportFilter = "all" | "tcp" | "udp" | "established";
 
-const FILTER_LABELS: Record<TransportFilter, string> = {
-  all: "Tout",
-  tcp: "TCP",
-  udp: "UDP",
-  established: "TCP établies",
-};
+const TRANSPORT_FILTERS: readonly TransportFilter[] = [
+  "all",
+  "tcp",
+  "udp",
+  "established",
+];
 
 function matchesQuery(connection: NetmonConnection, query: string): boolean {
   if (!query) return true;
@@ -85,6 +86,9 @@ function connectionBadge(connection: NetmonConnection) {
 }
 
 export function NetworkMonitor() {
+  const { language } = useI18n();
+  const L = (fr: string, en: string) => (language === "en" ? en : fr);
+
   const [payload, setPayload] = useState<NetmonSnapshotPayload | null>(null);
   const [history, setHistory] = useState<NetmonSnapshotRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +97,13 @@ export function NetworkMonitor() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransportFilter>("all");
   const captureBusy = useRef(false);
+
+  const filterLabels: Record<TransportFilter, string> = {
+    all: L("Tout", "All"),
+    tcp: "TCP",
+    udp: "UDP",
+    established: L("TCP établies", "Established TCP"),
+  };
 
   const capture = useCallback(async () => {
     // Overlap guard: a manual refresh while the 5-second timer fires must not
@@ -146,14 +157,17 @@ export function NetworkMonitor() {
       <div className="banner banner--info">
         <Eye size={19} aria-hidden="true" />
         <div>
-          <strong>Observation lecture seule — aucune capture de contenu</strong>
+          <strong>
+            {L(
+              "Observation lecture seule — aucune capture de contenu",
+              "Read-only observation — no content capture",
+            )}
+          </strong>
           <span>
-            Ce module lit les connexions et ports via les API Windows documentées
-            (tables IP Helper) et compte les octets cumulés par interface. Rien
-            n'est bloqué, filtré ni intercepté ; aucun contenu de communication
-            n'est lu. Les résumés restent dans la base locale de votre profil
-            utilisateur (2 000 lignes maximum, purge automatique) et ne quittent
-            jamais votre poste.
+            {L(
+              "Ce module lit les connexions et ports via les API Windows documentées (tables IP Helper) et compte les octets cumulés par interface. Rien n'est bloqué, filtré ni intercepté ; aucun contenu de communication n'est lu. Les résumés restent dans la base locale de votre profil utilisateur (2 000 lignes maximum, purge automatique) et ne quittent jamais votre poste.",
+              "This module reads connections and ports through documented Windows APIs (IP Helper tables) and counts cumulative bytes per interface. Nothing is blocked, filtered or intercepted; no communication content is read. Summaries stay in the local database of your user profile (2,000 rows maximum, automatic purge) and never leave your machine.",
+            )}
           </span>
         </div>
       </div>
@@ -161,7 +175,7 @@ export function NetworkMonitor() {
       {error && (
         <div className="banner banner--danger">
           <div>
-            <strong>Capture réseau indisponible</strong>
+            <strong>{L("Capture réseau indisponible", "Network capture unavailable")}</strong>
             <span>{error}</span>
             <div className="banner__actions">
               <button
@@ -170,7 +184,7 @@ export function NetworkMonitor() {
                 onClick={() => void capture()}
               >
                 <RefreshCw size={15} />
-                Réessayer
+                {L("Réessayer", "Retry")}
               </button>
             </div>
           </div>
@@ -180,7 +194,12 @@ export function NetworkMonitor() {
       {payload?.persistenceError && (
         <div className="banner banner--warning">
           <div>
-            <strong>Historique local momentanément indisponible</strong>
+            <strong>
+              {L(
+                "Historique local momentanément indisponible",
+                "Local history temporarily unavailable",
+              )}
+            </strong>
             <span>{payload.persistenceError}</span>
           </div>
         </div>
@@ -189,9 +208,14 @@ export function NetworkMonitor() {
       <section className="panel">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Instantané</span>
+            <span className="panel__eyebrow">{L("Instantané", "Snapshot")}</span>
             <h2>
-              {payload ? `Capturé à ${formatDateTime(payload.snapshot.capturedAt)}` : "Capture réseau"}
+              {payload
+                ? L(
+                    `Capturé à ${formatDateTime(payload.snapshot.capturedAt)}`,
+                    `Captured at ${formatDateTime(payload.snapshot.capturedAt)}`,
+                  )
+                : L("Capture réseau", "Network capture")}
             </h2>
           </div>
           <div className="row-actions">
@@ -202,8 +226,13 @@ export function NetworkMonitor() {
                 onChange={(event) => setAutoRefresh(event.target.checked)}
               />
               <span>
-                <strong>Rafraîchissement auto 5 s</strong>
-                <small>Mesure nouvelle toutes les 5 secondes, uniquement au premier plan.</small>
+                <strong>{L("Rafraîchissement auto 5 s", "Auto-refresh 5 s")}</strong>
+                <small>
+                  {L(
+                    "Mesure nouvelle toutes les 5 secondes, uniquement au premier plan.",
+                    "New measurement every 5 seconds, foreground only.",
+                  )}
+                </small>
               </span>
             </label>
             <button
@@ -212,18 +241,21 @@ export function NetworkMonitor() {
               onClick={() => void capture()}
             >
               {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
-              Actualiser
+              {L("Actualiser", "Refresh")}
             </button>
           </div>
         </div>
 
-        <div className="stat-grid" aria-label="Métriques mesurées de l'instantané">
+        <div
+          className="stat-grid"
+          aria-label={L("Métriques mesurées de l'instantané", "Measured snapshot metrics")}
+        >
           <article className="stat">
             <div className="stat__icon stat__icon--blue">
               <Activity size={19} />
             </div>
             <div>
-              <span className="stat__label">Connexions TCP</span>
+              <span className="stat__label">{L("Connexions TCP", "TCP connections")}</span>
               <strong>{formatNumber(payload?.tcpTotal ?? 0)}</strong>
             </div>
           </article>
@@ -232,7 +264,7 @@ export function NetworkMonitor() {
               <Eye size={19} />
             </div>
             <div>
-              <span className="stat__label">TCP établies</span>
+              <span className="stat__label">{L("TCP établies", "Established TCP")}</span>
               <strong>{formatNumber(payload?.tcpEstablished ?? 0)}</strong>
             </div>
           </article>
@@ -241,7 +273,7 @@ export function NetworkMonitor() {
               <Activity size={19} />
             </div>
             <div>
-              <span className="stat__label">Ports UDP liés</span>
+              <span className="stat__label">{L("Ports UDP liés", "Bound UDP ports")}</span>
               <strong>{formatNumber(payload?.udpTotal ?? 0)}</strong>
             </div>
           </article>
@@ -250,7 +282,7 @@ export function NetworkMonitor() {
               <Database size={19} />
             </div>
             <div>
-              <span className="stat__label">Historique local</span>
+              <span className="stat__label">{L("Historique local", "Local history")}</span>
               <strong>{formatNumber(payload?.historyRows ?? 0)}</strong>
             </div>
           </article>
@@ -260,9 +292,12 @@ export function NetworkMonitor() {
           <dl className="detail-list">
             <div>
               <dt
-                title="Delta d'octets reçus mesuré entre cette capture et la précédente"
+                title={L(
+                  "Delta d'octets reçus mesuré entre cette capture et la précédente",
+                  "Received byte delta measured between this capture and the previous one",
+                )}
               >
-                Octets reçus (delta mesuré)
+                {L("Octets reçus (delta mesuré)", "Bytes received (measured delta)")}
               </dt>
               <dd className="mono">
                 <ArrowDown size={13} /> {formatBytes(payload.rxBytesDelta)}
@@ -270,29 +305,37 @@ export function NetworkMonitor() {
             </div>
             <div>
               <dt
-                title="Delta d'octets émis mesuré entre cette capture et la précédente"
+                title={L(
+                  "Delta d'octets émis mesuré entre cette capture et la précédente",
+                  "Sent byte delta measured between this capture and the previous one",
+                )}
               >
-                Octets émis (delta mesuré)
+                {L("Octets émis (delta mesuré)", "Bytes sent (measured delta)")}
               </dt>
               <dd className="mono">
                 <ArrowUp size={13} /> {formatBytes(payload.txBytesDelta)}
               </dd>
             </div>
             <div>
-              <dt>Interfaces actives</dt>
+              <dt>{L("Interfaces actives", "Active interfaces")}</dt>
               <dd>
                 {payload.snapshot.interfaces.length === 0
-                  ? "aucune interface opérationnelle relevée"
+                  ? L(
+                      "aucune interface opérationnelle relevée",
+                      "no operational interface found",
+                    )
                   : payload.snapshot.interfaces
                       .map((interface_) => interface_.alias)
                       .join(", ")}
               </dd>
             </div>
             <div>
-              <dt>Processus les plus connectés</dt>
+              <dt>
+                {L("Processus les plus connectés", "Most connected processes")}
+              </dt>
               <dd>
                 {payload.topProcesses.length === 0
-                  ? "aucun processus identifiable"
+                  ? L("aucun processus identifiable", "no identifiable process")
                   : payload.topProcesses
                       .map(
                         (entry) => `${entry.name} (${formatNumber(entry.connections)})`,
@@ -304,10 +347,10 @@ export function NetworkMonitor() {
         )}
         {payload && (
           <p className="panel__note">
-            Les deltas ci-dessus comparent deux captures successives des compteurs
-            cumulés de chaque interface : ce sont des mesures réelles, pas des
-            estimations. À la première capture de cette session, aucun delta
-            n'existe encore, il vaut 0.
+            {L(
+              "Les deltas ci-dessus comparent deux captures successives des compteurs cumulés de chaque interface : ce sont des mesures réelles, pas des estimations. À la première capture de cette session, aucun delta n'existe encore, il vaut 0.",
+              "The deltas above compare two successive captures of each interface's cumulative counters: these are real measurements, not estimates. On the first capture of a session no delta exists yet, and it is 0.",
+            )}
           </p>
         )}
       </section>
@@ -315,13 +358,16 @@ export function NetworkMonitor() {
       <section className="panel">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Connexions</span>
+            <span className="panel__eyebrow">{L("Connexions", "Connections")}</span>
             <h2>
-              Connexions de cette capture{" "}
+              {L("Connexions de cette capture", "Connections in this capture")}{" "}
               <span className="muted">
                 {rows.length === totalRows
                   ? `(${formatNumber(totalRows)})`
-                  : `(${formatNumber(rows.length)} affichées sur ${formatNumber(totalRows)})`}
+                  : L(
+                      `(${formatNumber(rows.length)} affichées sur ${formatNumber(totalRows)})`,
+                      `(${formatNumber(rows.length)} shown of ${formatNumber(totalRows)})`,
+                    )}
               </span>
             </h2>
           </div>
@@ -330,26 +376,33 @@ export function NetworkMonitor() {
         <div className="filter-row">
           <div className="field field--grow">
             <label className="field__label" htmlFor="netmon-search">
-              Recherche locale
+              {L("Recherche locale", "Local search")}
             </label>
             <input
               id="netmon-search"
               className="input"
               type="search"
-              placeholder="Processus, adresse, port, état…"
+              placeholder={L(
+                "Processus, adresse, port, état…",
+                "Process, address, port, state…",
+              )}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <div className="segmented" role="tablist" aria-label="Filtrer par transport">
-            {(Object.keys(FILTER_LABELS) as TransportFilter[]).map((value) => (
+          <div
+            className="segmented"
+            role="tablist"
+            aria-label={L("Filtrer par transport", "Filter by transport")}
+          >
+            {TRANSPORT_FILTERS.map((value) => (
               <button
                 key={value}
                 type="button"
                 className={filter === value ? "is-active" : ""}
                 onClick={() => setFilter(value)}
               >
-                {FILTER_LABELS[value]}
+                {filterLabels[value]}
               </button>
             ))}
           </div>
@@ -358,24 +411,27 @@ export function NetworkMonitor() {
         {loading && !payload ? (
           <div className="loading-row">
             <LoaderCircle size={18} className="spin" />
-            Capture des tables réseau…
+            {L("Capture des tables réseau…", "Capturing network tables…")}
           </div>
         ) : rows.length === 0 ? (
           <EmptyState
             icon={EyeOff}
-            title="Aucune connexion correspondante"
-            description="Modifiez la recherche ou relancez une capture pour actualiser la liste."
+            title={L("Aucune connexion correspondante", "No matching connection")}
+            description={L(
+              "Modifiez la recherche ou relancez une capture pour actualiser la liste.",
+              "Change the search or run a new capture to refresh the list.",
+            )}
           />
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Transport</th>
-                  <th>Processus</th>
-                  <th>Local</th>
-                  <th>Distant</th>
-                  <th>État</th>
+                  <th>{L("Transport", "Transport")}</th>
+                  <th>{L("Processus", "Process")}</th>
+                  <th>{L("Local", "Local")}</th>
+                  <th>{L("Distant", "Remote")}</th>
+                  <th>{L("État", "State")}</th>
                   <th className="num">PID</th>
                 </tr>
               </thead>
@@ -385,7 +441,7 @@ export function NetworkMonitor() {
                     <td>{connectionBadge(connection)}</td>
                     <td title={connection.processName ?? undefined}>
                       {connection.processName ?? (
-                        <span className="muted">inconnu</span>
+                        <span className="muted">{L("inconnu", "unknown")}</span>
                       )}
                     </td>
                     <td className="mono">
@@ -407,28 +463,34 @@ export function NetworkMonitor() {
       <section className="panel panel--muted">
         <div className="panel__head">
           <div>
-            <span className="panel__eyebrow">Historique</span>
-            <h2>{HISTORY_ROWS_FETCHED} dernières mesures locales</h2>
+            <span className="panel__eyebrow">{L("Historique", "History")}</span>
+            <h2>
+              {L(
+                `${HISTORY_ROWS_FETCHED} dernières mesures locales`,
+                `Last ${HISTORY_ROWS_FETCHED} local measurements`,
+              )}
+            </h2>
           </div>
         </div>
         {history.length === 0 ? (
           <p className="panel__note">
-            Aucune mesure stockée pour l'instant. L'historique se remplit à chaque
-            capture (manuellement ou toutes les 5 secondes) et reste limité à
-            2 000 lignes, purgées automatiquement.
+            {L(
+              "Aucune mesure stockée pour l'instant. L'historique se remplit à chaque capture (manuellement ou toutes les 5 secondes) et reste limité à 2 000 lignes, purgées automatiquement.",
+              "No measurement stored yet. History fills up on every capture (manually or every 5 seconds) and is capped at 2,000 rows, purged automatically.",
+            )}
           </p>
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Heure</th>
+                  <th>{L("Heure", "Time")}</th>
                   <th className="num">TCP</th>
-                  <th className="num">Établies</th>
+                  <th className="num">{L("Établies", "Established")}</th>
                   <th className="num">UDP</th>
-                  <th className="num">↓ octets</th>
-                  <th className="num">↑ octets</th>
-                  <th>Processus dominants</th>
+                  <th className="num">{L("↓ octets", "↓ bytes")}</th>
+                  <th className="num">{L("↑ octets", "↑ bytes")}</th>
+                  <th>{L("Processus dominants", "Top processes")}</th>
                 </tr>
               </thead>
               <tbody>

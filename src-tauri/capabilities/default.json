@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Capacité par défaut de la fenêtre principale : IPC, événements et sélecteurs de fichiers.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
 }

@@ -2,6 +2,7 @@ import { LoaderCircle } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { Tone } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import { Modal } from "./Modal";
 
 interface ConfirmDialogProps {
@@ -28,7 +29,7 @@ export function ConfirmDialog({
   tone = "warning",
   description,
   confirmLabel,
-  cancelLabel = "Annuler",
+  cancelLabel,
   busy = false,
   onConfirm,
   onClose,
@@ -37,6 +38,7 @@ export function ConfirmDialog({
   phraseLabel,
   children,
 }: ConfirmDialogProps) {
+  const { t } = useI18n();
   const [checked, setChecked] = useState(false);
   const [phrase, setPhrase] = useState("");
 
@@ -67,7 +69,7 @@ export function ConfirmDialog({
             onClick={onClose}
             disabled={busy}
           >
-            {cancelLabel}
+            {cancelLabel ?? t("common.cancel")}
           </button>
           <button
             type="button"
@@ -96,7 +98,9 @@ export function ConfirmDialog({
       )}
       {requirePhrase && (
         <label className="field">
-          <span className="field__label">{phraseLabel ?? `Saisissez « ${requirePhrase} » pour confirmer`}</span>
+          <span className="field__label">
+            {phraseLabel ?? t("confirm.typePhrase", { phrase: requirePhrase })}
+          </span>
           <input
             className="input"
             value={phrase}

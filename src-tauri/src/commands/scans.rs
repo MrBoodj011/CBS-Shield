@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use cbs_core::{ScanEvent, ScanReport, ScanRequest, Scanner};
+use cbs_core::{
+    default_exclusions, resolve_profile, ScanEvent, ScanLimits, ScanProfile, ScanReport,
+    ScanRequest, Scanner,
+};
 use cbs_store::{DashboardStats, ScanDetails, ScanRecord};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -17,6 +20,7 @@ pub struct ScanResultPayload {
     pub persistence_error: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn start_scan(
     app: AppHandle,
@@ -24,13 +28,40 @@ pub async fn start_scan(
     paths: Vec<String>,
     recursive: bool,
     include_pua: bool,
+    profile: Option<String>,
+    limits: Option<ScanLimits>,
+    follow_symlinks: Option<bool>,
 ) -> Result<ScanResultPayload, CommandError> {
-    if paths.is_empty() {
-        return Err(CommandError::new(
-            "noTargets",
-            "Sélectionnez au moins un fichier ou un dossier à analyser.",
-        ));
-    }
+    let profile = match profile.as_deref() {
+        Some("quick") => ScanProfile::Quick,
+        Some("full") => ScanProfile::Full,
+        _ => ScanProfile::Custom,
+    };
+
+    let resolved = resolve_profile(profile, &state.paths.data_dir);
+    let (paths, excluded) = match profile {
+        ScanProfile::Custom => {
+            if paths.is_empty() {
+                return Err(CommandError::new(
+                    "noTargets",
+                    "Sélectionnez au moins un fichier ou un dossier à analyser.",
+                ));
+            }
+            (paths, Vec::new())
+        }
+        _ => {
+            if resolved.targets.is_empty() {
+                return Err(CommandError::new(
+                    "noTargets",
+                    "Aucune cible n'a pu être résolue pour ce profil.",
+                ));
+            }
+            (
+                resolved.targets.clone(),
+                default_exclusions(&state.paths.data_dir),
+            )
+        }
+    };
     if paths.len() > 64 {
         return Err(CommandError::new(
             "tooManyTargets",
@@ -55,6 +86,10 @@ pub async fn start_scan(
         paths: paths.into_iter().map(PathBuf::from).collect(),
         recursive,
         include_pua,
+        profile,
+        limits: limits.unwrap_or_default().sanitized(),
+        follow_symlinks: follow_symlinks.unwrap_or(false),
+        excluded_paths: excluded,
     };
 
     let (scan_id, cancel, lease) = state.begin_scan()?;
@@ -92,6 +127,29 @@ pub async fn start_scan(
         record_id,
         persistence_error,
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedTargetsPayload {
+    pub profile: String,
+    pub targets: Vec<String>,
+    pub excluded: Vec<String>,
+}
+
+#[tauri::command]
+pub fn resolve_scan_targets(state: State<'_, AppState>, profile: String) -> ResolvedTargetsPayload {
+    let profile = match profile.as_str() {
+        "quick" => ScanProfile::Quick,
+        "full" => ScanProfile::Full,
+        _ => ScanProfile::Custom,
+    };
+    let resolved = resolve_profile(profile, &state.paths.data_dir);
+    ResolvedTargetsPayload {
+        profile: resolved.profile,
+        targets: resolved.targets,
+        excluded: resolved.excluded,
+    }
 }
 
 #[tauri::command]

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   Check,
-  CircleAlert,
-  CircleCheck,
   Copy,
   Database,
   Download,
+  FileText,
+  RefreshCw,
   ServerCog,
+  Settings2,
   ShieldCheck,
   Terminal,
 } from "lucide-react";
@@ -18,11 +19,19 @@ import { api, errorMessage } from "../lib/api";
 import {
   formatDateTime,
   formatNumber,
+  freshnessText,
   signatureStateTone,
   truncateMiddle,
 } from "../lib/format";
 import { useI18n, type TranslationKey } from "../lib/i18n";
-import type { EngineStatus, SettingsView } from "../types";
+import type {
+  EngineStatus,
+  ProvisioningStatus,
+  SettingsView,
+  SignatureInventory,
+  SignatureUpdateResult,
+  UpdateLogs,
+} from "../types";
 
 interface UpdatesProps {
   engine: EngineStatus | null;
@@ -36,8 +45,36 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
   const [confirming, setConfirming] = useState(false);
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
-  const [result, setResult] = useState<"success" | "failure" | null>(null);
+  const [result, setResult] = useState<SignatureUpdateResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [inventory, setInventory] = useState<SignatureInventory | null>(null);
+  const [logs, setLogs] = useState<UpdateLogs | null>(null);
+  const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
+  const [logSource, setLogSource] = useState<"app" | "freshclam">("app");
+  const [autoUpdate, setAutoUpdate] = useState(settings?.autoUpdate ?? false);
+  const [autoHours, setAutoHours] = useState(String(settings?.autoUpdateHours ?? 24));
+  const [savingAuto, setSavingAuto] = useState(false);
+
+  const refreshMetadata = async () => {
+    const [inventoryResult, logsResult, provisioningResult] = await Promise.allSettled([
+      api.signatureInventory(),
+      api.updateLogs(),
+      api.provisioningStatus(),
+    ]);
+    if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
+    if (logsResult.status === "fulfilled") setLogs(logsResult.value);
+    if (provisioningResult.status === "fulfilled") setProvisioning(provisioningResult.value);
+  };
+
+  useEffect(() => {
+    void refreshMetadata();
+  }, [engine?.checkedAt]);
+
+  useEffect(() => {
+    if (!settings) return;
+    setAutoUpdate(settings.autoUpdate);
+    setAutoHours(String(settings.autoUpdateHours));
+  }, [settings]);
 
   useEffect(() => {
     if (!copied) return;
@@ -71,8 +108,9 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
     try {
       const update = await api.updateSignatures(true);
       setLog(update.log);
-      setResult(update.success ? "success" : "failure");
+      setResult(update);
       onEngineChanged(update.engine);
+      void refreshMetadata();
       toast({
         tone: update.success ? "success" : "error",
         title: update.success ? t("updates.success") : t("updates.failure"),
@@ -80,11 +118,54 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
       });
     } catch (failure) {
       const message = errorMessage(failure);
-      setResult("failure");
+      setResult(null);
       setLog([message]);
       toast({ tone: "error", title: t("updates.failure"), message });
     } finally {
       setRunning(false);
+    }
+  };
+
+  const saveAutoUpdate = async () => {
+    const hours = Number(autoHours);
+    if (!Number.isFinite(hours) || hours < 6 || hours > 168) {
+      toast({
+        tone: "error",
+        title: t("common.error"),
+        message: t("updates.auto.invalid"),
+      });
+      return;
+    }
+    setSavingAuto(true);
+    try {
+      await api.updateSettings({ autoUpdate, autoUpdateHours: hours });
+      toast({
+        tone: "success",
+        title: t("updates.auto.saved"),
+        message: autoUpdate
+          ? t("updates.auto.savedOn", { count: hours })
+          : t("updates.auto.savedOff"),
+      });
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: t("common.error"),
+        message: errorMessage(error),
+      });
+    } finally {
+      setSavingAuto(false);
+    }
+  };
+
+  const openDocs = async () => {
+    try {
+      await api.openDocumentation("https://docs.clamav.net/");
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: t("common.error"),
+        message: errorMessage(error),
+      });
     }
   };
 
@@ -152,7 +233,13 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
             </div>
           ) : (
             <p className="panel__note" style={{ marginTop: 12 }}>
-              {engine?.message}
+              {engine?.installed
+                ? freshnessText(
+                    engine.signatureState,
+                    engine.signatureAgeDays,
+                    settings?.signatureMaxAgeDays,
+                  )
+                : engine?.message}
             </p>
           )}
         </section>
@@ -175,7 +262,7 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
             </div>
             <div>
               <dt>{t("updates.signatureDate")}</dt>
-              <dd>{engine?.signatureDate ?? "—"}</dd>
+              <dd>{formatDateTime(engine?.signatureDate)}</dd>
             </div>
             <div>
               <dt>{t("updates.freshness")}</dt>
@@ -190,6 +277,70 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
               <dd>{t("common.days", { count: threshold })}</dd>
             </div>
           </dl>
+
+          <div className="callout callout--info" style={{ marginTop: 12 }}>
+            <strong>{t("updates.count.title")}</strong>
+            <span>
+              {inventory
+                ? t("updates.count.body", {
+                    count: formatNumber(inventory.officialSignatures),
+                    version: engine?.signatureVersion ?? "—",
+                  })
+                : t("common.loading")}
+            </span>
+          </div>
+
+          {inventory && inventory.officialComponents.length > 0 && (
+            <details className="details" open>
+              <summary>
+                <Database size={15} />
+                {t("updates.components.title")} ({inventory.officialComponents.length})
+              </summary>
+              <div className="table-wrap">
+                <table className="table table--compact">
+                  <thead>
+                    <tr>
+                      <th>{t("updates.components.file")}</th>
+                      <th>{t("updates.components.version")}</th>
+                      <th className="num">{t("updates.components.signatures")}</th>
+                      <th>{t("updates.components.verified")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory.officialComponents.map((component) => (
+                      <tr key={component.file}>
+                        <td className="mono">{component.file}</td>
+                        <td>{component.version ?? "—"}</td>
+                        <td className="num">{formatNumber(component.signatures)}</td>
+                        <td>
+                          <Badge tone={component.verified ? "ok" : "warning"} dot>
+                            {component.verified
+                              ? t("updates.components.ok")
+                              : t("updates.components.unverified")}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {inventory.customSignatureFiles.length > 0 && (
+                <div className="callout callout--warning" style={{ marginTop: 10 }}>
+                  <strong>{t("updates.custom.title")}</strong>
+                  <span>
+                    {inventory.customSignatureFiles
+                      .map((file) => `${file.file} (${file.signatures})`)
+                      .join(", ")}
+                  </span>
+                </div>
+              )}
+              {inventory.notes.map((note) => (
+                <p className="panel__note" key={note}>
+                  {note}
+                </p>
+              ))}
+            </details>
+          )}
 
           {ageRatio !== null ? (
             <div style={{ marginTop: 12 }}>
@@ -240,38 +391,185 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
       <section className="panel">
         <div className="panel__head">
           <div>
+            <span className="panel__eyebrow">{t("updates.auto.eyebrow")}</span>
+            <h2>{t("updates.auto.title")}</h2>
+          </div>
+          <Badge tone={autoUpdate ? "ok" : "neutral"} dot>
+            {autoUpdate ? t("updates.auto.on") : t("updates.auto.off")}
+          </Badge>
+        </div>
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            checked={autoUpdate}
+            onChange={(event) => setAutoUpdate(event.target.checked)}
+          />
+          <span>
+            <strong>{t("updates.auto.enable")}</strong>
+            <small>{t("updates.auto.enableHint")}</small>
+          </span>
+        </label>
+        <div className="limits-grid" style={{ marginTop: 12 }}>
+          <label className="field">
+            <span className="field__label">{t("updates.auto.interval")}</span>
+            <input
+              type="number"
+              min={6}
+              max={168}
+              value={autoHours}
+              onChange={(event) => setAutoHours(event.target.value)}
+            />
+            <span className="field__hint">{t("updates.auto.intervalHint")}</span>
+          </label>
+          <div className="field">
+            <span className="field__label">&nbsp;</span>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={saveAutoUpdate}
+              disabled={savingAuto}
+            >
+              {savingAuto ? <RefreshCw size={15} className="spin" /> : <Settings2 size={15} />}
+              {t("updates.auto.save")}
+            </button>
+          </div>
+        </div>
+        <p className="panel__note">{t("updates.auto.note")}</p>
+      </section>
+
+      <section className="panel">
+        <div className="panel__head">
+          <div>
+            <span className="panel__eyebrow">{t("updates.provision.eyebrow")}</span>
+            <h2>{t("updates.provision.title")}</h2>
+          </div>
+          <Badge tone={provisioning?.wingetAvailable ? "ok" : "warning"} dot>
+            {provisioning?.wingetAvailable
+              ? t("updates.provision.wingetOk")
+              : t("updates.provision.wingetMissing")}
+          </Badge>
+        </div>
+        <dl className="detail-list detail-list--compact">
+          <div>
+            <dt>winget</dt>
+            <dd>{provisioning?.wingetVersion ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>{t("updates.provision.clamav")}</dt>
+            <dd>
+              {provisioning?.clamavInstalled
+                ? t("about.status.available")
+                : t("about.status.unavailable")}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("updates.provision.command")}</dt>
+            <dd className="mono">
+              {provisioning?.installCommand ?? "winget install --id Cisco.ClamAV --exact"}
+            </dd>
+          </div>
+        </dl>
+        <div className="button-row" style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            onClick={() =>
+              navigator.clipboard
+                .writeText(
+                  provisioning?.installCommand ??
+                    "winget install --id Cisco.ClamAV --exact --accept-package-agreements --accept-source-agreements",
+                )
+                .then(() => setCopied(true))
+                .catch(() => undefined)
+            }
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? t("common.copied") : t("common.copy")}
+          </button>
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            onClick={openDocs}
+          >
+            <FileText size={14} />
+            {t("updates.provision.docs")}
+          </button>
+        </div>
+        <p className="panel__note">{t("updates.provision.license")}</p>
+      </section>
+
+      <section className="panel">
+        <div className="panel__head">
+          <div>
             <span className="panel__eyebrow">freshclam</span>
             <h2>{t("updates.logTitle")}</h2>
           </div>
-          {result ? (
-            <Badge tone={result === "success" ? "ok" : "danger"} dot>
-              {result === "success" ? (
-                <>
-                  <CircleCheck size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />
-                  {t("updates.success")}
-                </>
-              ) : (
-                <>
-                  <CircleAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />
-                  {t("updates.failure")}
-                </>
-              )}
-            </Badge>
-          ) : (
-            <Badge tone="neutral">{t("common.localOnly")}</Badge>
-          )}
+          <div className="button-row">
+            <button
+              type="button"
+              className={`button button--small ${logSource === "app" ? "button--primary" : "button--ghost"}`}
+              onClick={() => setLogSource("app")}
+            >
+              {t("updates.log.app")}
+            </button>
+            <button
+              type="button"
+              className={`button button--small ${logSource === "freshclam" ? "button--primary" : "button--ghost"}`}
+              onClick={() => setLogSource("freshclam")}
+            >
+              {t("updates.log.freshclam")}
+            </button>
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => void refreshMetadata()}
+            >
+              <RefreshCw size={14} />
+              {t("common.retry")}
+            </button>
+          </div>
         </div>
 
-        {log.length === 0 ? (
-          <p className="panel__note">{t("updates.noLog")}</p>
-        ) : (
-          <pre className="log-view">{log.join("\n")}</pre>
+        {result ? (
+          <Badge tone={result.success ? "ok" : "danger"} dot>
+            {result.success ? t("updates.success") : t("updates.failure")}
+          </Badge>
+        ) : null}
+
+        {result && (
+          <p className="panel__note" style={{ marginTop: 8 }}>
+            {result.success
+              ? t("updates.result.success", {
+                  path: result.engine.databasePath ?? "—",
+                })
+              : result.offline
+                ? t("updates.result.offline")
+                : t("updates.result.failure", { detail: result.message })}
+            {result.offline ? ` — ${t("updates.offline")}` : ""}
+            {result.databaseVerified ? ` — ${t("updates.verified")}` : ""}
+            {result.staleTempRemoved > 0
+              ? ` — ${t("updates.recovered", { count: result.staleTempRemoved })}`
+              : ""}
+          </p>
         )}
+
+        {(() => {
+          const stored =
+            logSource === "app" ? (logs?.appLines ?? []) : (logs?.freshclamLines ?? []);
+          const combined = stored.length > 0 ? stored : log;
+          return combined.length === 0 ? (
+            <p className="panel__note">{t("updates.noLog")}</p>
+          ) : (
+            <pre className="log-view">{combined.join("\n")}</pre>
+          );
+        })()}
 
         <p className="panel__note" style={{ marginTop: 10 }}>
           <ShieldCheck size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />
           database.clamav.net · {t("common.localOnly")} ·{" "}
-          {installed ? t("updates.status.configured") : t("updates.status.auto")}
+          {logSource === "app"
+            ? logs?.appLogPath ?? "—"
+            : logs?.freshclamLogPath ?? "—"}
         </p>
       </section>
 

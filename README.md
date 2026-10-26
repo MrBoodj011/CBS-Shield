@@ -1,7 +1,7 @@
 # CBS Shield
 
 > **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.3.0-dev (Phase 3, sprint 3)**.
+> Édité par **Cybrense** — version expérimentale **0.4.0-dev (Phase 4, sprint 4)**.
 
 CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
 une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
@@ -19,11 +19,22 @@ Le Sprint 3 transforme l'interface en produit : **design system « Midnight
 Navy »** (thèmes sombre/clair), **tableau de bord temps réel** alimenté
 exclusivement par le backend local, **pages Historique, Mises à jour et À
 propos & diagnostic**, **architecture de localisation FR/EN** (le shell, le
-tableau de bord et les nouveaux modules sont traduits ; les modules historiques
-restent en français jusqu'à leur migration), et **icône de zone de
+tableau de bord et les nouveaux modules sont traduits ; la couverture a été
+étendue à toute l'interface au sprint 4), et **icône de zone de
 notification** minimale (ouvrir/quitter). Les compteurs réseau ont été corrigés :
 les sous-couches de filtres NDIS ne sont plus additionnées (mesure contrôlée de
 20 Mio : 160 Mo avant, 24,6 Mo après).
+
+Le Sprint 4 livre l'**antivirus avancé** : profils **Rapide / Complète /
+Personnalisée**, cibles et exclusions documentées, progression mesurable,
+annulation sans corruption, limites de ressources, gestion **FreshClam**
+(manuelle et automatique, vérification, reprise, mode hors ligne), explication
+du compteur CVD **28 164**, **interface entièrement FR/EN**, export de rapports
+et **installeur NSIS 0.4.0-dev**. ClamAV reste un composant officiel externe
+(GPLv2) : il n'est ni embarqué ni installé silencieusement. Les limites et les
+tests non exécutés sont documentés dans
+[SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md) ; la validation sur VM
+propre reste **non exécutée**.
 
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
@@ -52,16 +63,20 @@ les sous-couches de filtres NDIS ne sont plus additionnées (mesure contrôlée 
 
 | Élément | État |
 | --- | --- |
-| Interface React/Tauri (9 sections) | Fonctionnelle, design system 0.3.0 |
+| Interface React/Tauri (9 sections) | Fonctionnelle, design system 0.4.0 |
 | Moteur Rust (`cbs-core`) | Fonctionnel |
 | Scan réel ClamAV (fichier/dossier) | Fonctionnel, vérifié |
-| Mise à jour des signatures (`freshclam`) | Fonctionnelle, sans élévation |
+| Profils Rapide / Complète / Personnalisée | Livrés ; Complète non exécutée de bout en bout |
+| Progression, annulation, erreurs par fichier | Fonctionnelles, vérifiées |
+| Export JSON / CSV / Markdown / TXT | Fonctionnel, testé |
+| Mise à jour des signatures (`freshclam`) | Manuelle + automatique, vérifiée |
+| Inventaire des signatures (`sigtool`) | Fonctionnel, vérifié (3 642 895 officielles + test séparé) |
 | Historique SQLite + page dédiée | Fonctionnel |
-| Quarantaine AES-256-GCM + clé DPAPI | Fonctionnelle |
+| Quarantaine AES-256-GCM + clé DPAPI | Fonctionnelle (restauration et purge vérifiées) |
 | Tableau de bord (données réelles) | Fonctionnel, vérifié |
-| Localisation FR/EN | Architecture livrée, couverture partielle documentée |
+| Localisation FR/EN | Complète (interface, dates, nombres, dialogues) |
 | Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
-| Installeur NSIS `currentUser` | Généré (2,42 Mo), vérifié sans Vite |
+| Installeur NSIS `currentUser` | Généré pour 0.4.0-dev, sans ClamAV ni signatures |
 | Firewall Windows | **Lecture seule** (profils + règles) |
 | Network Monitor | **Lecture seule** (métadonnées, volumes mesurés) |
 | Protection temps réel / pilote noyau | **Hors périmètre** |
@@ -188,7 +203,7 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.3.0-dev_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.4.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
@@ -285,6 +300,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SECURITY.md](SECURITY.md) — modèle de menace, chiffrement, signalement de vulnérabilité.
 - [LICENSES.md](LICENSES.md) — licences du code et des composants tiers.
 - [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) — état vérifié, tests, limites, feuille de route.
+- [SPRINT4_ANTIVIRUS.md](docs/SPRINT4_ANTIVIRUS.md) — profils, cibles, limites, signatures, mises à jour.
+- [SPRINT4_INSTALLER_AUDIT.md](docs/SPRINT4_INSTALLER_AUDIT.md) — contenu NSIS, dépendances, provisionnement ClamAV.
+- [SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md) — tests exécutés, non exécutés et captures.
+- [SPRINT4_SECURITY_REGRESSION.md](docs/SPRINT4_SECURITY_REGRESSION.md) — garanties sécurité et non-régression.
+- [SPRINT4_CLEAN_INSTALL.md](docs/SPRINT4_CLEAN_INSTALL.md) — validation VM propre (non exécutée).
 
 ## Licences
 

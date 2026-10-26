@@ -18,6 +18,8 @@ pub struct SettingsView {
     pub clamscan_path: Option<String>,
     pub database_path: Option<String>,
     pub signature_max_age_days: i64,
+    pub auto_update: bool,
+    pub auto_update_hours: i64,
     pub data_dir: String,
     pub history_path: String,
     pub quarantine_path: String,
@@ -36,6 +38,8 @@ pub struct SettingsPatch {
     pub clamscan_path: Option<String>,
     pub database_path: Option<String>,
     pub signature_max_age_days: Option<i64>,
+    pub auto_update: Option<bool>,
+    pub auto_update_hours: Option<i64>,
 }
 
 /// Supported interface languages. Stored as a plain `settings` key/value entry:
@@ -130,6 +134,12 @@ fn build_view(state: &AppState, map: &HashMap<String, String>) -> SettingsView {
             .and_then(|value| value.parse::<i64>().ok())
             .filter(|value| (1..=365).contains(value))
             .unwrap_or(7),
+        auto_update: parse_bool(map.get("autoUpdate"), false),
+        auto_update_hours: map
+            .get("autoUpdateHours")
+            .and_then(|value| value.parse::<i64>().ok())
+            .filter(|value| (6..=168).contains(value))
+            .unwrap_or(24),
         data_dir: state.paths.data_dir.display().to_string(),
         history_path: state.paths.history_db.display().to_string(),
         quarantine_path: state.paths.quarantine_dir.display().to_string(),
@@ -172,6 +182,18 @@ pub fn update_settings(
     }
     if let Some(include_pua) = patch.include_pua {
         updates.push(("includePua", include_pua.to_string()));
+    }
+    if let Some(auto_update) = patch.auto_update {
+        updates.push(("autoUpdate", auto_update.to_string()));
+    }
+    if let Some(hours) = patch.auto_update_hours {
+        if !(6..=168).contains(&hours) {
+            return Err(CommandError::new(
+                "invalidSetting",
+                "L'intervalle de mise à jour doit être compris entre 6 et 168 heures.",
+            ));
+        }
+        updates.push(("autoUpdateHours", hours.to_string()));
     }
 
     if let Some(raw) = patch.clamscan_path {

@@ -35,6 +35,7 @@ pub struct EngineStatus {
     pub installed: bool,
     pub clamscan_path: Option<PathBuf>,
     pub freshclam_path: Option<PathBuf>,
+    pub sigtool_path: Option<PathBuf>,
     pub engine_version: Option<String>,
     pub signature_version: Option<String>,
     pub signature_date: Option<String>,
@@ -52,6 +53,7 @@ impl Default for EngineStatus {
             installed: false,
             clamscan_path: None,
             freshclam_path: None,
+            sigtool_path: None,
             engine_version: None,
             signature_version: None,
             signature_date: None,
@@ -66,6 +68,95 @@ impl Default for EngineStatus {
 }
 
 /// Requested scan. `paths` are canonicalized by the engine before use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ScanProfile {
+    Quick,
+    Full,
+    #[default]
+    Custom,
+}
+
+impl ScanProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Quick => "quick",
+            Self::Full => "full",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+/// Resource limits applied to the ClamAV child process. Values are clamped by
+/// [`ScanLimits::sanitized`] before they reach the command line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanLimits {
+    #[serde(default = "default_max_file_mb")]
+    pub max_file_size_mb: u32,
+    #[serde(default = "default_max_scan_mb")]
+    pub max_scan_size_mb: u32,
+    #[serde(default = "default_max_files")]
+    pub max_files: u32,
+    #[serde(default = "default_max_recursion")]
+    pub max_recursion: u32,
+    /// 0 means no time limit.
+    #[serde(default)]
+    pub max_duration_minutes: u32,
+    #[serde(default = "default_true")]
+    pub scan_archives: bool,
+    #[serde(default = "default_true")]
+    pub low_priority: bool,
+}
+
+fn default_max_file_mb() -> u32 {
+    200
+}
+fn default_max_scan_mb() -> u32 {
+    2_000
+}
+fn default_max_files() -> u32 {
+    100_000
+}
+fn default_max_recursion() -> u32 {
+    10
+}
+
+impl Default for ScanLimits {
+    fn default() -> Self {
+        Self {
+            max_file_size_mb: default_max_file_mb(),
+            max_scan_size_mb: default_max_scan_mb(),
+            max_files: default_max_files(),
+            max_recursion: default_max_recursion(),
+            max_duration_minutes: 0,
+            scan_archives: true,
+            low_priority: true,
+        }
+    }
+}
+
+impl ScanLimits {
+    /// Bound every value to a documented, safe range. The UI exposes the same
+    /// ranges; this is the authoritative enforcement before spawning ClamAV.
+    pub fn sanitized(mut self) -> Self {
+        self.max_file_size_mb = self.max_file_size_mb.clamp(1, 4_096);
+        self.max_scan_size_mb = self.max_scan_size_mb.clamp(self.max_file_size_mb, 16_384);
+        self.max_files = self.max_files.clamp(100, 2_000_000);
+        self.max_recursion = self.max_recursion.clamp(1, 100);
+        self.max_duration_minutes = self.max_duration_minutes.min(1_440);
+        self
+    }
+
+    pub fn max_file_size_bytes(&self) -> u64 {
+        u64::from(self.max_file_size_mb) * 1024 * 1024
+    }
+
+    pub fn max_scan_size_bytes(&self) -> u64 {
+        u64::from(self.max_scan_size_mb) * 1024 * 1024
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanRequest {
@@ -75,6 +166,18 @@ pub struct ScanRequest {
     /// Include possibly unwanted applications. Off by default.
     #[serde(default)]
     pub include_pua: bool,
+    #[serde(default)]
+    pub profile: ScanProfile,
+    #[serde(default)]
+    pub limits: ScanLimits,
+    /// Symlinks/reparse points are never followed by default: they can escape
+    /// the selected target or create cycles. Kept as an explicit field so the
+    /// behaviour is part of the documented request contract.
+    #[serde(default)]
+    pub follow_symlinks: bool,
+    /// Directories skipped by ClamAV and by the progress indexer.
+    #[serde(default)]
+    pub excluded_paths: Vec<PathBuf>,
 }
 
 fn default_true() -> bool {
@@ -87,6 +190,10 @@ impl Default for ScanRequest {
             paths: Vec::new(),
             recursive: true,
             include_pua: false,
+            profile: ScanProfile::Custom,
+            limits: ScanLimits::default(),
+            follow_symlinks: false,
+            excluded_paths: Vec::new(),
         }
     }
 }
@@ -139,6 +246,16 @@ pub struct ScanReport {
     pub finished_at: String,
     pub duration_ms: u64,
     pub targets: Vec<String>,
+    #[serde(default)]
+    pub profile: String,
+    #[serde(default)]
+    pub excluded: Vec<String>,
+    #[serde(default)]
+    pub indexed_files: Option<u64>,
+    #[serde(default)]
+    pub index_truncated: bool,
+    #[serde(default)]
+    pub limits: ScanLimits,
     pub files_scanned: u64,
     pub infected_files: u64,
     pub error_count: u64,
@@ -160,11 +277,21 @@ pub struct ScanReport {
     rename_all_fields = "camelCase"
 )]
 pub enum ScanEvent {
+    Preparing {
+        scan_id: String,
+        profile: String,
+        target_count: usize,
+    },
     Started {
         scan_id: String,
         target_count: usize,
         engine_version: Option<String>,
         signature_version: Option<String>,
+        profile: String,
+        /// Number of files indexed before the scan, when the count completed
+        /// within the indexing budget. `None` means progress is indeterminate.
+        total_files: Option<u64>,
+        index_truncated: bool,
     },
     Progress {
         scan_id: String,

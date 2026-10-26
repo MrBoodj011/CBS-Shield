@@ -38,7 +38,7 @@ export function TopBar({ title, subtitle, engine, engineLoading, onRefresh }: To
               </strong>
               <span>
                 {engine.installed
-                  ? `${t("updates.signaturesTitle")} ${engine.signatureVersion ?? t("signature.missing")}`
+                  ? `${t("av.engine.cvd")} ${engine.signatureVersion ?? t("signature.missing")}`
                   : t("updates.engineMissing")}
               </span>
             </div>

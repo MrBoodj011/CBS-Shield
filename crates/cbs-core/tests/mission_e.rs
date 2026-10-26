@@ -81,6 +81,7 @@ async fn scans_large_recursive_directory_completely() {
         paths: vec![corpus],
         recursive: true,
         include_pua: false,
+        ..ScanRequest::default()
     };
 
     let report = scanner
@@ -129,6 +130,7 @@ async fn locked_file_reported_as_error_not_crash() {
         paths: vec![scan_path],
         recursive: false,
         include_pua: false,
+        ..ScanRequest::default()
     };
 
     let report = scanner

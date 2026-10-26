@@ -4,6 +4,7 @@ export interface EngineStatus {
   installed: boolean;
   clamscanPath: string | null;
   freshclamPath: string | null;
+  sigtoolPath: string | null;
   engineVersion: string | null;
   signatureVersion: string | null;
   signatureDate: string | null;
@@ -21,6 +22,24 @@ export type ScanOutcome =
   | "cancelled"
   | "completedWithErrors"
   | "failed";
+
+export type ScanProfile = "quick" | "full" | "custom";
+
+export interface ScanLimits {
+  maxFileSizeMb: number;
+  maxScanSizeMb: number;
+  maxFiles: number;
+  maxRecursion: number;
+  maxDurationMinutes: number;
+  scanArchives: boolean;
+  lowPriority: boolean;
+}
+
+export interface ResolvedTargets {
+  profile: ScanProfile;
+  targets: string[];
+  excluded: string[];
+}
 
 export interface Detection {
   filePath: string;
@@ -49,6 +68,11 @@ export interface ScanReport {
   finishedAt: string;
   durationMs: number;
   targets: string[];
+  profile: string;
+  excluded: string[];
+  indexedFiles: number | null;
+  indexTruncated: boolean;
+  limits: ScanLimits;
   filesScanned: number;
   infectedFiles: number;
   errorCount: number;
@@ -70,11 +94,20 @@ export interface ScanResultPayload {
 
 export type ScanEvent =
   | {
+      kind: "preparing";
+      scanId: string;
+      profile: string;
+      targetCount: number;
+    }
+  | {
       kind: "started";
       scanId: string;
       targetCount: number;
       engineVersion: string | null;
       signatureVersion: string | null;
+      profile: string;
+      totalFiles: number | null;
+      indexTruncated: boolean;
     }
   | {
       kind: "progress";
@@ -166,6 +199,8 @@ export interface SettingsView {
   clamscanPath: string | null;
   databasePath: string | null;
   signatureMaxAgeDays: number;
+  autoUpdate: boolean;
+  autoUpdateHours: number;
   dataDir: string;
   historyPath: string;
   quarantinePath: string;
@@ -182,6 +217,8 @@ export interface SettingsPatch {
   clamscanPath?: string;
   databasePath?: string;
   signatureMaxAgeDays?: number;
+  autoUpdate?: boolean;
+  autoUpdateHours?: number;
 }
 
 export interface AppInfo {
@@ -204,6 +241,62 @@ export interface SignatureUpdateResult {
   message: string;
   log: string[];
   engine: EngineStatus;
+  inventory: SignatureInventory;
+  offline: boolean;
+  databaseVerified: boolean;
+  staleTempRemoved: number;
+  automatic: boolean;
+}
+
+export interface SignatureComponent {
+  file: string;
+  version: string | null;
+  signatures: number | null;
+  buildTime: string | null;
+  verified: boolean;
+  md5: string | null;
+}
+
+export interface CustomSignatureFile {
+  file: string;
+  signatures: number;
+}
+
+export interface SignatureInventory {
+  databaseDir: string | null;
+  sigtoolAvailable: boolean;
+  officialComponents: SignatureComponent[];
+  officialSignatures: number;
+  customSignatureFiles: CustomSignatureFile[];
+  customSignatures: number;
+  checkedAt: string;
+  notes: string[];
+}
+
+export interface UpdateLogs {
+  appLogPath: string;
+  freshclamLogPath: string;
+  appLines: string[];
+  freshclamLines: string[];
+}
+
+export interface ProvisioningStatus {
+  wingetAvailable: boolean;
+  wingetVersion: string | null;
+  clamavInstalled: boolean;
+  clamscanPath: string | null;
+  databasePath: string | null;
+  installCommand: string;
+  probeCommand: string;
+  docsUrl: string;
+  licenseNote: string;
+  checkedAt: string;
+}
+
+export interface ExportResult {
+  path: string;
+  format: string;
+  bytes: number;
 }
 
 export interface CommandError {

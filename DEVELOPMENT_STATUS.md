@@ -1,9 +1,10 @@
-# État du développement — CBS Shield 0.3.0-dev (Phase 3, sprint 3)
+# État du développement — CBS Shield 0.4.0-dev (Phase 4, sprint 4)
 
 **Date de vérification :** 26 octobre 2026
-**Branche :** `sprint-3` (base `a2cc990`, sprint 2 revalidé avant modification)
-**Nature :** version expérimentale — protection manuelle, tableau de bord réel,
-design system, localisation FR/EN, observation réseau et pare-feu en lecture seule.
+**Branche :** `sprint-4` (base `b2033a3`, sprint 3 validé avant modification)
+**Nature :** version expérimentale — antivirus manuel avancé, profils de scan,
+signatures FreshClam, localisation FR/EN complète, observation réseau et pare-feu
+en lecture seule.
 
 Ce document décrit ce qui a été **réellement implémenté et vérifié**, ce qui ne l'est
 pas, et les limites connues. Aucune fonctionnalité non testée n'est présentée comme
@@ -21,7 +22,7 @@ opérationnelle. Les détails de recette et les captures sont dans
 | Node.js / npm | 24.18 / 12 |
 | WebView2 | Runtime 155 |
 | ClamAV | 1.5.4 (`winget`, `Cisco.ClamAV`) |
-| Base de signatures | version `28164`, âge 1 jour lors de la recette |
+| Base de signatures | CVD `28165` après mise à jour réelle ; `28164` au début de la recette |
 | Emplacement des signatures | `%LOCALAPPDATA%\Cybrense\CBS Shield\clamav\database` |
 | Pare-feu Windows (OS) | **désactivé sur les 3 profils** — état constaté, non modifié par CBS Shield |
 | Visual Studio | 2022 Build Tools (C++) |
@@ -30,7 +31,32 @@ opérationnelle. Les détails de recette et les captures sont dans
 
 ---
 
-## 2. Ce que le sprint 3 a livré
+## 2. Ce que le sprint 4 a livré
+
+- Profils **Rapide / Complète / Personnalisée** avec cibles et exclusions
+  résolues côté backend ; analyse complète limitée aux volumes fixes locaux.
+- Progression réelle indexée, annulation, erreurs par fichier, limites de
+  ressources bornées, priorité basse, chemins longs, points d'analyse ignorés.
+- Export JSON / CSV / Markdown / TXT et rapport enrichi.
+- Inventaire `sigtool` (officiel vs signatures personnalisées), explication de
+  la révision CVD `28 164` / `28 165`, total officiel **3 642 895** signatures.
+- FreshClam manuel et automatique (application ouverte uniquement), vérification,
+  nettoyage des `.tmp`, classification hors ligne, journal persistant.
+- Interface antivirus en cinq vues et localisation FR/EN de toute l'interface,
+  y compris dates, nombres, dialogues et notifications.
+- Installeur NSIS `0.4.0-dev` sans ClamAV ni signatures ; provisionnement officiel
+  guidé par winget.
+- Tests : **79 Rust réussis, 1 ignoré ; 18 UI réussis** ; E2E natif pour scan,
+  annulation, détection synthétique, quarantaine, restauration, purge, mise à jour
+  et bascule EN. Détail et limites : [SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md).
+
+**Non exécuté :** analyse complète de bout en bout, échec réseau FreshClam natif,
+installation/désinstallation sur VM propre. Voir
+[SPRINT4_CLEAN_INSTALL.md](docs/SPRINT4_CLEAN_INSTALL.md).
+
+---
+
+## 3. Ce que le sprint 3 a livré
 
 ### 2.1 Design system « Midnight Navy » et interface
 
@@ -380,7 +406,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\vm-validate.ps1
 
 ## 10. Avertissement final
 
-CBS Shield 0.3.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
+CBS Shield 0.4.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
 Defender, qui doit rester actif. Il ne fournit aucune protection automatique,
 aucune modification de configuration pare-feu, aucune capture de contenu réseau, et
 ne doit pas être présenté comme un antivirus complet.
