@@ -123,6 +123,9 @@ pub fn provisioning_status(state: State<'_, AppState>) -> Result<ProvisioningSta
 pub struct ClamavInstallResult {
     pub attempted: bool,
     pub success: bool,
+    /// Stable UI outcome: `alreadyInstalled`, `installed`, `notDetected` or
+    /// `wingetFailed`. The UI owns the French/English wording.
+    pub outcome: String,
     pub exit_code: Option<i32>,
     pub installed: bool,
     pub message: String,
@@ -201,6 +204,7 @@ pub async fn install_clamav(
         return Ok(ClamavInstallResult {
             attempted: false,
             success: true,
+            outcome: "alreadyInstalled".to_string(),
             exit_code: None,
             installed: true,
             message: "ClamAV est déjà détecté ; aucune installation n'a été lancée.".to_string(),
@@ -214,7 +218,12 @@ pub async fn install_clamav(
         Ok::<_, std::io::Error>(status)
     })
     .await
-    .map_err(|err| CommandError::internal(format!("installation interrompue : {err}")))?;
+    .map_err(|err| {
+        CommandError::new(
+            "installInterrupted",
+            format!("installation interrompue : {err}"),
+        )
+    })?;
 
     let status = match started {
         Ok(status) => status,
@@ -222,6 +231,12 @@ pub async fn install_clamav(
             return Err(CommandError::new(
                 "wingetUnavailable",
                 "winget est introuvable. Utilisez la page officielle ClamAV pour installer le moteur, puis revenez dans l'assistant.",
+            ));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::TimedOut => {
+            return Err(CommandError::new(
+                "installTimedOut",
+                "L'installation a dépassé le délai de 20 minutes. Vérifiez la console Windows et l'état de ClamAV, puis réessayez.",
             ));
         }
         Err(err) => {
@@ -233,19 +248,29 @@ pub async fn install_clamav(
     };
 
     let after = probe_with_settings(&state, &settings);
+    let (outcome, message) = if after.installed {
+        (
+            "installed",
+            "ClamAV est maintenant détecté. Vérifiez les signatures à l'étape suivante.",
+        )
+    } else if status.success() {
+        (
+            "notDetected",
+            "L'installation s'est terminée, mais ClamAV n'est pas encore détecté. Redémarrez CBS Shield ou sélectionnez manuellement clamscan.exe.",
+        )
+    } else {
+        (
+            "wingetFailed",
+            "L'installation n'a pas abouti. Consultez la fenêtre Windows et les journaux de diagnostic, puis réessayez.",
+        )
+    };
     Ok(ClamavInstallResult {
         attempted: true,
         success: status.success() && after.installed,
+        outcome: outcome.to_string(),
         exit_code: status.code(),
         installed: after.installed,
-        message: if after.installed {
-            "ClamAV est maintenant détecté. Vérifiez les signatures à l'étape suivante.".to_string()
-        } else if status.success() {
-            "winget a terminé, mais ClamAV n'est pas encore détecté. Redémarrez CBS Shield ou sélectionnez manuellement clamscan.exe.".to_string()
-        } else {
-            "winget a signalé un échec. Consultez la console et les journaux de diagnostic."
-                .to_string()
-        },
+        message: message.to_string(),
         engine: after,
     })
 }

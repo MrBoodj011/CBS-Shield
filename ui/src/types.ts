@@ -295,9 +295,16 @@ export interface ProvisioningStatus {
   checkedAt: string;
 }
 
+export type ClamavInstallOutcome =
+  | "alreadyInstalled"
+  | "installed"
+  | "notDetected"
+  | "wingetFailed";
+
 export interface ClamavInstallResult {
   attempted: boolean;
   success: boolean;
+  outcome?: ClamavInstallOutcome;
   exitCode: number | null;
   installed: boolean;
   message: string;
@@ -445,12 +452,20 @@ export interface FirewallChange {
   profile: string | null;
 }
 
+export interface FirewallServiceHealth {
+  mpsSvc: string;
+  bfe: string;
+  observed: boolean;
+  checkedAt: string;
+}
+
 export interface FirewallObservation {
   status: FirewallStatus;
   previousCheckedAt: string | null;
   changedSinceLast: boolean;
   changes: FirewallChange[];
   alerts: FirewallAlert[];
+  service?: FirewallServiceHealth;
   listedTruncated: boolean;
 }
 
@@ -487,11 +502,23 @@ export interface FirewallSnapshotExport {
   rulesTotalCount: number;
   truncated: boolean;
   checkedAt: string;
+  readOnly: boolean;
+  restoreSupported: boolean;
+  sha256: string;
 }
 
 export interface RuleManagementGate {
   code: string;
   satisfied: boolean;
+}
+
+export interface RuleRecoveryPlan {
+  state: string;
+  snapshotReadOnly: boolean;
+  restoreExposed: boolean;
+  rollbackRehearsed: boolean;
+  isolationRequired: boolean;
+  designedVersion: string;
 }
 
 export interface RuleManagementStatus {
@@ -502,4 +529,5 @@ export interface RuleManagementStatus {
   lastSnapshotAt: string | null;
   gates: RuleManagementGate[];
   rollbackDesignVersion: string;
+  recovery?: RuleRecoveryPlan;
 }

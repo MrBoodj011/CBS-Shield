@@ -6,7 +6,6 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
-  Copy,
   Database,
   ExternalLink,
   Flame,
@@ -27,14 +26,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "./Badge";
 import { useToast } from "./Toasts";
-import { api, errorMessage } from "../lib/api";
+import { api, errorCode, errorMessage } from "../lib/api";
 import {
   formatBytes,
   formatDateTime,
   formatNumber,
+  freshnessText,
   truncateMiddle,
 } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import type {
   ClamavInstallResult,
   EngineStatus,
@@ -126,6 +127,7 @@ export function SetupWizard({
   const toast = useToast();
   const { language } = useI18n();
   const L = (fr: string, en: string) => (language === "en" ? en : fr);
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   const [step, setStep] = useState<StepId>(0);
   const [inventory, setInventory] = useState<SignatureInventory | null>(null);
@@ -139,6 +141,8 @@ export function SetupWizard({
   const [installAuthorized, setInstallAuthorized] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installResult, setInstallResult] = useState<ClamavInstallResult | null>(null);
+  const [installError, setInstallError] = useState<{ code: string; message: string } | null>(null);
+  const [installElapsed, setInstallElapsed] = useState(0);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState<SignatureUpdateResult | null>(null);
@@ -146,7 +150,6 @@ export function SetupWizard({
   const [autoUpdateHours, setAutoUpdateHours] = useState(24);
   const [savingAutoUpdate, setSavingAutoUpdate] = useState(false);
   const [completing, setCompleting] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const refreshDiagnostics = useCallback(async () => {
     setLoading(true);
@@ -196,10 +199,11 @@ export function SetupWizard({
     setStep(0);
     setActionError(null);
     setInstallResult(null);
+    setInstallError(null);
+    setInstallElapsed(0);
     setUpdateResult(null);
     setConfirmUpdate(false);
     setInstallAuthorized(false);
-    setCopied(false);
     setAutoUpdate(settings?.autoUpdate ?? false);
     setAutoUpdateHours(settings?.autoUpdateHours ?? 24);
     void refreshDiagnostics();
@@ -272,10 +276,55 @@ export function SetupWizard({
     }
   };
 
+  useEffect(() => {
+    if (!installing) return;
+    setInstallElapsed(0);
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setInstallElapsed(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [installing]);
+
+  const installFailure = (code: string | null) => {
+    const message =
+      code === "wingetUnavailable"
+        ? L(
+            "Le composant Windows qui installe les applications (winget) est indisponible. Utilisez la page officielle ClamAV, puis déclarez l'installation existante ci-dessous.",
+            "The Windows app installer component (winget) is unavailable. Use the official ClamAV page, then declare the existing installation below.",
+          )
+        : code === "installTimedOut"
+          ? L(
+              "L'installation a dépassé 20 minutes. Vérifiez la fenêtre Windows, puis réessayez ou déclarez une installation existante.",
+              "The installation exceeded 20 minutes. Check the Windows window, then retry or declare an existing installation.",
+            )
+          : code === "installInterrupted"
+            ? L(
+                "Le suivi de l'installation a été interrompu. Vérifiez l'état de ClamAV avant de réessayer.",
+                "Installation monitoring was interrupted. Check ClamAV status before retrying.",
+              )
+            : code === "confirmationRequired"
+              ? L(
+                  "L'autorisation explicite n'a pas été transmise. Cochez la case d'accord, puis réessayez.",
+                  "Explicit authorization was not provided. Tick the consent box, then retry.",
+                )
+              : L(
+                  "L'installation officielle n'a pas abouti. Consultez la fenêtre Windows ouverte par l'installateur, puis réessayez.",
+                  "The official installation did not complete. Review the Windows window opened by the installer, then retry.",
+                );
+    setInstallError({ code: code ?? "installFailed", message });
+    toast({
+      tone: "error",
+      title: L("Installation non terminée", "Installation not completed"),
+      message,
+    });
+  };
+
   const installClamav = async () => {
     if (!installAuthorized || installing) return;
     setInstalling(true);
     setActionError(null);
+    setInstallError(null);
     setInstallResult(null);
     try {
       const result = await api.installClamav(true);
@@ -283,39 +332,26 @@ export function SetupWizard({
       onEngineChanged(result.engine);
       setInventory(await api.signatureInventory());
       setProvisioning(await api.provisioningStatus());
+      const detected = result.outcome === "installed" || result.outcome === "alreadyInstalled";
       toast({
-        tone: result.success ? "success" : "error",
-        title: result.success
+        tone: detected ? "success" : "error",
+        title: detected
           ? L("ClamAV détecté", "ClamAV detected")
           : L("Installation à vérifier", "Installation needs review"),
-        message: result.message,
+        message: detected
+          ? L(
+              "Le moteur est présent. CBS Shield a vérifié automatiquement son état.",
+              "The engine is present. CBS Shield verified its state automatically.",
+            )
+          : L(
+              "L'installation s'est terminée sans permettre de détecter ClamAV. Utilisez la vérification ou localisez clamscan.exe.",
+              "The installation finished without ClamAV being detected. Recheck or locate clamscan.exe.",
+            ),
       });
     } catch (error) {
-      setActionError(errorMessage(error));
+      installFailure(errorCode(error));
     } finally {
       setInstalling(false);
-    }
-  };
-
-  const copyCommand = async () => {
-    if (!provisioning) return;
-    try {
-      await navigator.clipboard.writeText(provisioning.installCommand);
-      setCopied(true);
-      toast({
-        tone: "success",
-        title: L("Commande copiée", "Command copied"),
-        message: L(
-          "Collez-la dans un terminal si l'installation guidée n'est pas disponible.",
-          "Paste it in a terminal if the guided installation is unavailable.",
-        ),
-      });
-    } catch {
-      toast({
-        tone: "error",
-        title: L("Copie impossible", "Copy failed"),
-        message: L("Sélectionnez la commande manuellement.", "Select the command manually."),
-      });
     }
   };
 
@@ -383,6 +419,7 @@ export function SetupWizard({
   };
 
   const goTo = (next: StepId) => {
+    if (installing || updating) return;
     setStep(next);
     setActionError(null);
     if (next === 3 && !firewall) void refreshDiagnostics();
@@ -406,10 +443,58 @@ export function SetupWizard({
   if (!open) return null;
 
   const finalStep = step === 4;
+  const elapsedLabel = `${String(Math.floor(installElapsed / 60)).padStart(2, "0")}:${String(
+    installElapsed % 60,
+  ).padStart(2, "0")}`;
+  const outcome = installResult
+    ? installResult.outcome ?? (installResult.success ? "installed" : "wingetFailed")
+    : null;
+  const outcomeDetected = outcome === "installed" || outcome === "alreadyInstalled";
+  const outcomeText =
+    outcome === "alreadyInstalled"
+      ? {
+          title: L("ClamAV était déjà installé", "ClamAV was already installed"),
+          detail: L(
+            "Aucune installation n'a été lancée. Le moteur détecté a été vérifié.",
+            "No installation was launched. The detected engine was verified.",
+          ),
+        }
+      : outcome === "installed"
+        ? {
+            title: L("Installation terminée et vérifiée", "Installation completed and verified"),
+            detail: L(
+              "CBS Shield a détecté ClamAV après l'installation. Vérifiez maintenant les signatures.",
+              "CBS Shield detected ClamAV after installation. Now verify the signatures.",
+            ),
+          }
+        : outcome === "notDetected"
+          ? {
+              title: L("Installation terminée, moteur non détecté", "Installation finished, engine not detected"),
+              detail: L(
+                "La fenêtre d'installation s'est terminée, mais ClamAV n'est pas encore visible. Redémarrez CBS Shield ou localisez clamscan.exe.",
+                "The installation window finished, but ClamAV is not visible yet. Restart CBS Shield or locate clamscan.exe.",
+              ),
+            }
+          : outcome === "wingetFailed"
+            ? {
+                title: L("L'installateur a signalé un échec", "The installer reported a failure"),
+                detail: L(
+                  "La fenêtre Windows contient le détail. Corrigez la cause, puis réessayez. Aucun échec n'est masqué.",
+                  "The Windows window contains the details. Fix the cause, then retry. No failure is hidden.",
+                ),
+              }
+            : null;
 
   return (
-    <div className="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
-      <div className="setup-shell">
+    <div className="setup-overlay">
+      <div
+        ref={dialogRef}
+        className="setup-shell"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="setup-title"
+        tabIndex={-1}
+      >
         <aside className="setup-nav">
           <div className="setup-brand">
             <div className="setup-brand__mark">
@@ -427,7 +512,12 @@ export function SetupWizard({
               const done = item.id < step;
               return (
                 <li key={item.id} className={active ? "is-active" : done ? "is-done" : ""}>
-                  <button type="button" onClick={() => goTo(item.id)}>
+                  <button
+                    type="button"
+                    onClick={() => goTo(item.id)}
+                    disabled={installing || updating}
+                    aria-current={active ? "step" : undefined}
+                  >
                     <span className="setup-step__icon">
                       {done ? <Check size={16} /> : <Icon size={16} />}
                     </span>
@@ -562,8 +652,8 @@ export function SetupWizard({
                   <h2>{L("Moteur antivirus", "Antivirus engine")}</h2>
                   <p>
                     {L(
-                      "CBS Shield utilise ClamAV comme moteur externe. Vous pouvez installer le paquet officiel via winget, ou sélectionner une installation existante.",
-                      "CBS Shield uses ClamAV as an external engine. You can install the official winget package, or select an existing installation.",
+                      "CBS Shield utilise ClamAV comme moteur externe. L'assistant peut lancer l'installation officielle après votre accord, sans commande à saisir, ou utiliser une installation déjà présente.",
+                      "CBS Shield uses ClamAV as an external engine. The assistant can launch the official installation after your consent, with no command to type, or use an existing installation.",
                     )}
                   </p>
                 </div>
@@ -577,7 +667,18 @@ export function SetupWizard({
                           ? L("ClamAV détecté", "ClamAV detected")
                           : L("ClamAV absent — analyses manuelles indisponibles", "ClamAV missing — manual scans unavailable")}
                       </strong>
-                      <span>{engine?.message ?? L("Aucun diagnostic disponible.", "No diagnostic available.")}</span>
+                      <span>
+                        {engine?.installed
+                          ? freshnessText(
+                              engine.signatureState,
+                              engine.signatureAgeDays,
+                              settings?.signatureMaxAgeDays,
+                            )
+                          : L(
+                              "Aucun exécutable ClamAV n'a été trouvé. Les analyses manuelles resteront indisponibles jusqu'à l'installation.",
+                              "No ClamAV executable was found. Manual scans remain unavailable until installation.",
+                            )}
+                      </span>
                     </div>
                     <Badge tone={engine?.installed ? "ok" : "danger"} dot>
                       {engine?.installed ? L("Prêt", "Ready") : L("Absent", "Missing")}
@@ -630,34 +731,88 @@ export function SetupWizard({
                 </div>
 
                 {!engine?.installed && (
-                  <div className="setup-install">
+                  <div className={`setup-install${installing ? " is-busy" : ""}`} aria-busy={installing}>
                     <div className="setup-install__head">
                       <HardDriveDownload size={20} />
                       <div>
                         <strong>{L("Installation officielle guidée", "Guided official installation")}</strong>
                         <span>
                           {L(
-                            "Le paquet Cisco.ClamAV est lancé dans une console visible. Windows peut demander une élévation : elle reste explicite et contrôlée par vous.",
-                            "The Cisco.ClamAV package is launched in a visible console. Windows may ask for elevation: it remains explicit and controlled by you.",
+                            "CBS Shield peut lancer le paquet ClamAV du catalogue officiel Windows. Aucune commande à saisir, aucun téléchargement direct, aucune installation silencieuse.",
+                            "CBS Shield can launch the ClamAV package from the official Windows catalogue. No command to type, no direct download, no silent installation.",
                           )}
                         </span>
                       </div>
                     </div>
-                    {provisioning && (
-                      <div className="setup-install__meta">
-                        <Badge tone={provisioning.wingetAvailable ? "ok" : "warning"} dot>
-                          winget {provisioning.wingetAvailable ? L("disponible", "available") : L("indisponible", "unavailable")}
-                        </Badge>
-                        {provisioning.wingetVersion && <span className="mono">{provisioning.wingetVersion}</span>}
+
+                    <div className="setup-install__source">
+                      <div>
+                        <span className="field__label">{L("Source", "Source")}</span>
+                        <strong>Catalogue officiel Windows · Cisco Talos</strong>
                       </div>
-                    )}
-                    <div className="setup-command">
-                      <Terminal size={16} />
-                      <code>{provisioning?.installCommand ?? "winget install --id Cisco.ClamAV --exact --source winget --interactive"}</code>
-                      <button type="button" className="button button--ghost button--icon" onClick={() => void copyCommand()} aria-label={L("Copier la commande", "Copy command")}>
-                        {copied ? <Check size={15} /> : <Copy size={15} />}
-                      </button>
+                      <div>
+                        <span className="field__label">{L("Disponibilité", "Availability")}</span>
+                        <Badge tone={provisioning?.wingetAvailable ? "ok" : "warning"} dot>
+                          {provisioning
+                            ? provisioning.wingetAvailable
+                              ? L("Installateur disponible", "Installer available")
+                              : L("Installateur indisponible", "Installer unavailable")
+                            : L("Vérification…", "Checking…")}
+                        </Badge>
+                      </div>
                     </div>
+
+                    <ol className="setup-install-steps">
+                      <li>
+                        <span className="setup-install-steps__num">1</span>
+                        <div>
+                          <strong>{L("Vous donnez votre accord", "You give consent")}</strong>
+                          <small>
+                            {L(
+                              "Rien n'est lancé avant que vous ayez coché la case ci-dessous.",
+                              "Nothing starts until you tick the box below.",
+                            )}
+                          </small>
+                        </div>
+                      </li>
+                      <li>
+                        <span className="setup-install-steps__num">2</span>
+                        <div>
+                          <strong>{L("Windows peut demander une autorisation", "Windows may request authorization")}</strong>
+                          <small>
+                            {L(
+                              "La demande d'élévation reste celle de Windows. Lisez-la et acceptez-la uniquement si vous reconnaissez le programme.",
+                              "The elevation prompt remains Windows'. Read it and accept only if you recognise the program.",
+                            )}
+                          </small>
+                        </div>
+                      </li>
+                      <li>
+                        <span className="setup-install-steps__num">3</span>
+                        <div>
+                          <strong>{L("Une fenêtre d'installation visible s'ouvre", "A visible installation window opens")}</strong>
+                          <small>
+                            {L(
+                              "Sa progression détaillée appartient à l'installateur ; CBS Shield ne peut pas lire son pourcentage.",
+                              "Its detailed progress belongs to the installer; CBS Shield cannot read its percentage.",
+                            )}
+                          </small>
+                        </div>
+                      </li>
+                      <li>
+                        <span className="setup-install-steps__num">4</span>
+                        <div>
+                          <strong>{L("CBS Shield vérifie automatiquement", "CBS Shield verifies automatically")}</strong>
+                          <small>
+                            {L(
+                              "Le moteur et ses signatures sont relus dans l'état réel du système.",
+                              "The engine and its signatures are re-read from the real system state.",
+                            )}
+                          </small>
+                        </div>
+                      </li>
+                    </ol>
+
                     <label className="confirm__check">
                       <input
                         type="checkbox"
@@ -667,11 +822,24 @@ export function SetupWizard({
                       />
                       <span>
                         {L(
-                          "J'autorise CBS Shield à lancer l'installation officielle de ClamAV via winget. Aucun téléchargement direct ni installation silencieuse.",
-                          "I authorize CBS Shield to launch the official ClamAV installation through winget. No direct download and no silent installation.",
+                          "J'autorise CBS Shield à lancer l'installation officielle de ClamAV depuis le catalogue Windows. Je comprends que Windows peut afficher une demande d'élévation et que l'installateur ouvrira une fenêtre visible.",
+                          "I authorize CBS Shield to launch the official ClamAV installation from the Windows catalogue. I understand Windows may show an elevation prompt and the installer will open a visible window.",
                         )}
                       </span>
                     </label>
+
+                    {provisioning && !provisioning.wingetAvailable && (
+                      <div className="callout callout--warning">
+                        <strong>{L("Installation automatique indisponible", "Automatic installation unavailable")}</strong>
+                        <span>
+                          {L(
+                            "Le composant Windows d'installation d'applications est absent. Utilisez la page officielle ClamAV, puis déclarez l'installation existante. Aucune commande ne vous est imposée.",
+                            "The Windows app installation component is missing. Use the official ClamAV page, then declare the existing installation. No command is imposed on you.",
+                          )}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="row-actions">
                       <button
                         type="button"
@@ -680,7 +848,9 @@ export function SetupWizard({
                         onClick={() => void installClamav()}
                       >
                         {installing ? <LoaderCircle size={15} className="spin" /> : <HardDriveDownload size={15} />}
-                        {L("Lancer l'installation officielle", "Run official installation")}
+                        {installing
+                          ? L("Installation en cours…", "Installation in progress…")
+                          : L("Installer ClamAV avec mon accord", "Install ClamAV with my consent")}
                       </button>
                       <button
                         type="button"
@@ -690,30 +860,115 @@ export function SetupWizard({
                         <ExternalLink size={15} />
                         {L("Page officielle ClamAV", "Official ClamAV page")}
                       </button>
+                      <button
+                        type="button"
+                        className="button button--ghost"
+                        onClick={() => void refreshEngineAndInventory()}
+                        disabled={installing}
+                      >
+                        <RefreshCw size={15} />
+                        {L("J'ai déjà installé ClamAV", "I already installed ClamAV")}
+                      </button>
                     </div>
-                    {installResult && (
-                      <div className={`banner ${installResult.success ? "banner--info" : "banner--warning"}`}>
+
+                    {installing && (
+                      <div className="setup-install-progress" role="status" aria-live="polite">
+                        <div className="setup-install-progress__head">
+                          <span>
+                            <LoaderCircle size={15} className="spin" />
+                            {L("Installation officielle en cours", "Official installation in progress")}
+                          </span>
+                          <strong>{elapsedLabel}</strong>
+                        </div>
+                        <div className="progress-rail" aria-hidden="true">
+                          <span className="progress-rail__bar" />
+                        </div>
+                        <p>
+                          {L(
+                            "Suivez la fenêtre Windows ouverte par l'installateur. Ne fermez pas CBS Shield pendant cette étape.",
+                            "Follow the Windows window opened by the installer. Do not close CBS Shield during this step.",
+                          )}
+                        </p>
+                      </div>
+                    )}
+
+                    {installResult && outcomeText && (
+                      <div
+                        className={`banner ${outcomeDetected ? "banner--info" : "banner--warning"}`}
+                        role="status"
+                        aria-live="polite"
+                      >
                         <div>
-                          <strong>
-                            {installResult.success
-                              ? L("Installation détectée", "Installation detected")
-                              : L("Installation non confirmée", "Installation not confirmed")}
-                          </strong>
-                          <span>{installResult.message}</span>
+                          <strong>{outcomeText.title}</strong>
+                          <span>{outcomeText.detail}</span>
                           {installResult.exitCode !== null && (
                             <span className="mono">
-                              {L("Code de sortie", "Exit code")}: {installResult.exitCode}
+                              {L("Code de sortie de l'installateur", "Installer exit code")}: {installResult.exitCode}
                             </span>
                           )}
+                          <div className="banner__actions">
+                            {outcomeDetected ? (
+                              <button type="button" className="button button--ghost button--small" onClick={() => goTo(2)}>
+                                <ArrowRight size={14} />
+                                {L("Vérifier les signatures", "Verify signatures")}
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="button button--ghost button--small"
+                                  onClick={() => {
+                                    setInstallResult(null);
+                                    setInstallError(null);
+                                  }}
+                                >
+                                  <RefreshCw size={14} />
+                                  {L("Réessayer", "Retry")}
+                                </button>
+                                <button type="button" className="button button--ghost button--small" onClick={() => void pickClamscan()}>
+                                  <FolderSearch size={14} />
+                                  {L("Localiser clamscan.exe", "Locate clamscan.exe")}
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
+
+                    {installError && (
+                      <div className="banner banner--danger" role="alert">
+                        <CircleAlert size={18} aria-hidden="true" />
+                        <div>
+                          <strong>{L("Installation à reprendre", "Installation needs another attempt")}</strong>
+                          <span>{installError.message}</span>
+                          <div className="banner__actions">
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => {
+                                setInstallError(null);
+                                void installClamav();
+                              }}
+                              disabled={installing || !provisioning?.wingetAvailable}
+                            >
+                              <RefreshCw size={14} />
+                              {L("Réessayer", "Retry")}
+                            </button>
+                            <button type="button" className="button button--ghost button--small" onClick={() => void pickClamscan()}>
+                              <FolderSearch size={14} />
+                              {L("Localiser clamscan.exe", "Locate clamscan.exe")}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <p className="panel__note">
-                      {provisioning?.licenseNote ??
-                        L(
-                          "ClamAV est publié sous licence GPLv2. CBS Shield ne redistribue ni le moteur ni les bases.",
-                          "ClamAV is published under GPLv2. CBS Shield redistributes neither the engine nor the databases.",
-                        )}
+                      {L(
+                        "ClamAV est publié sous licence GPLv2. CBS Shield ne redistribue ni le moteur ni les bases. La source officielle et l'état réel sont toujours affichés.",
+                        "ClamAV is published under GPLv2. CBS Shield redistributes neither the engine nor the databases. The official source and real state are always shown.",
+                      )}
                     </p>
                   </div>
                 )}
@@ -868,7 +1123,22 @@ export function SetupWizard({
                           ? L("Mise à jour vérifiée", "Update verified")
                           : L("Mise à jour incomplète", "Update incomplete")}
                       </strong>
-                      <span>{updateResult.message}</span>
+                      <span>
+                        {updateResult.success
+                          ? L(
+                              "Les signatures ont été relues et la base a été vérifiée.",
+                              "The signatures were re-read and the database was verified.",
+                            )
+                          : updateResult.offline
+                            ? L(
+                                "Les serveurs officiels sont inaccessibles. La base existante n'a pas été modifiée.",
+                                "The official servers are unreachable. The existing database was left unchanged.",
+                              )
+                            : L(
+                                `La mise à jour n'a pas abouti (code ${updateResult.exitCode ?? "—"}). Consultez le journal de diagnostic pour le détail.`,
+                                `The update did not complete (code ${updateResult.exitCode ?? "—"}). Review the diagnostic log for details.`,
+                              )}
+                      </span>
                       <span>
                         {L("Base vérifiée : ", "Database verified: ")}
                         {updateResult.databaseVerified ? L("oui", "yes") : L("non", "no")} ·{" "}

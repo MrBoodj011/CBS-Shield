@@ -1,6 +1,6 @@
 # CBS Shield — Design System
 
-**Version 0.5.0-dev (Sprint 5)** · Dark-first "Midnight Navy" interface for Windows 11.
+**Version 0.6.0-dev (Sprint 6)** · Dark-first "Midnight Navy" interface for Windows 11.
 
 This document is the reference for every visual decision in the interface. It is
 implemented twice:
@@ -8,7 +8,7 @@ implemented twice:
 | Layer | File | Role |
 | --- | --- | --- |
 | Legacy base | `ui/src/styles.css` | Layout primitives from phases 1–2 (kept to avoid regressions). |
-| Sprint 3–5 layer | `ui/src/theme.css` | Design tokens, premium navy palette, new components, wizard, motion. |
+| Sprint 3-6 layer | `ui/src/theme.css` | Design tokens, premium navy palette, new components, wizard, snapshot/recovery, motion. |
 
 `theme.css` is imported after `styles.css` in `ui/src/main.tsx` and overrides the
 legacy palette through CSS custom properties. No component hard-codes a colour.

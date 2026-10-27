@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-core"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-firewall"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-netmon"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-quarantine"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "aes-gcm",
  "chrono",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-shield"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "cbs-core",
  "cbs-firewall",
@@ -367,6 +367,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -377,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "cbs-store"
-version = "0.5.0-dev"
+version = "0.6.0-dev"
 dependencies = [
  "cbs-core",
  "chrono",

@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Check,
-  Copy,
   Database,
   Download,
   FileText,
@@ -10,7 +8,7 @@ import {
   ServerCog,
   Settings2,
   ShieldCheck,
-  Terminal,
+  TriangleAlert,
 } from "lucide-react";
 
 import { Badge } from "../components/Badge";
@@ -49,7 +47,6 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [result, setResult] = useState<SignatureUpdateResult | null>(null);
-  const [copied, setCopied] = useState(false);
   const [inventory, setInventory] = useState<SignatureInventory | null>(null);
   const [logs, setLogs] = useState<UpdateLogs | null>(null);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
@@ -79,12 +76,6 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
     setAutoHours(String(settings.autoUpdateHours));
   }, [settings]);
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
   const installed = Boolean(engine?.installed);
   const state = engine?.signatureState ?? "unknown";
   const stateLabel = t(`signature.${state}` as TranslationKey);
@@ -93,15 +84,6 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
     engine?.signatureAgeDays !== null && engine?.signatureAgeDays !== undefined
       ? Math.min(engine.signatureAgeDays / threshold, 1)
       : null;
-
-  const copyInstallCommand = async () => {
-    try {
-      await navigator.clipboard.writeText(t("updates.installCommand"));
-      setCopied(true);
-    } catch (error) {
-      toast({ tone: "error", title: t("common.error"), message: errorMessage(error) });
-    }
-  };
 
   const runUpdate = async () => {
     setConfirming(false);
@@ -177,12 +159,21 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
       <div className="banner banner--neutral">
         <ListChecks size={19} aria-hidden="true" />
         <div>
-          <strong>{L("Moteur et signatures non configurés ?", "Engine or signatures not configured?")}</strong>
+          <strong>
+            {installed
+              ? L("Vérifier ou réparer l'installation", "Verify or repair the installation")
+              : L("Moteur et signatures non configurés ?", "Engine or signatures not configured?")}
+          </strong>
           <span>
-            {L(
-              "L'assistant de préparation vérifie la présence de ClamAV, l'intégrité des bases officielles et les mises à jour automatiques. Aucune installation silencieuse.",
-              "The setup assistant checks ClamAV availability, official database integrity and automatic updates. No silent installation.",
-            )}
+            {installed
+              ? L(
+                  "L'assistant revalide le moteur, l'intégrité des bases officielles et les mises à jour automatiques. Il ne lance rien sans votre accord.",
+                  "The assistant revalidates the engine, official database integrity and automatic updates. It starts nothing without your consent.",
+                )
+              : L(
+                  "L'assistant de préparation vérifie la présence de ClamAV, l'intégrité des bases officielles et les mises à jour automatiques. Aucune installation silencieuse.",
+                  "The setup assistant checks ClamAV availability, official database integrity and automatic updates. No silent installation.",
+                )}
           </span>
           <div className="banner__actions">
             <button type="button" className="button button--ghost" onClick={onOpenSetup}>
@@ -239,28 +230,25 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
 
           {!installed ? (
             <div className="banner banner--warning" style={{ marginTop: 14 }}>
-              <Terminal size={18} aria-hidden="true" />
+              <TriangleAlert size={18} aria-hidden="true" />
               <div>
                 <strong>{t("updates.engineMissing")}</strong>
                 <span>{t("updates.installHint")}</span>
                 <div className="banner__actions">
-                  <code className="inline-code">{t("updates.installCommand")}</code>
-                  <button type="button" className="button button--ghost button--small" onClick={copyInstallCommand}>
-                    {copied ? <Check size={14} /> : <Copy size={14} />}
-                    {copied ? t("common.copied") : t("common.copy")}
+                  <button type="button" className="button button--ghost button--small" onClick={onOpenSetup}>
+                    <ListChecks size={14} />
+                    {L("Ouvrir l'assistant", "Open setup assistant")}
                   </button>
                 </div>
               </div>
             </div>
           ) : (
             <p className="panel__note" style={{ marginTop: 12 }}>
-              {engine?.installed
-                ? freshnessText(
-                    engine.signatureState,
-                    engine.signatureAgeDays,
-                    settings?.signatureMaxAgeDays,
-                  )
-                : engine?.message}
+              {freshnessText(
+                engine?.signatureState ?? "unknown",
+                engine?.signatureAgeDays ?? null,
+                settings?.signatureMaxAgeDays,
+              )}
             </p>
           )}
         </section>
@@ -484,28 +472,18 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
             </dd>
           </div>
           <div>
-            <dt>{t("updates.provision.command")}</dt>
-            <dd className="mono">
-              {provisioning?.installCommand ?? "winget install --id Cisco.ClamAV --exact"}
-            </dd>
+            <dt>{t("updates.provision.method")}</dt>
+            <dd>{t("updates.provision.guided")}</dd>
           </div>
         </dl>
         <div className="button-row" style={{ marginTop: 10 }}>
           <button
             type="button"
-            className="button button--ghost button--small"
-            onClick={() =>
-              navigator.clipboard
-                .writeText(
-                  provisioning?.installCommand ??
-                    "winget install --id Cisco.ClamAV --exact --accept-package-agreements --accept-source-agreements",
-                )
-                .then(() => setCopied(true))
-                .catch(() => undefined)
-            }
+            className="button button--primary button--small"
+            onClick={onOpenSetup}
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? t("common.copied") : t("common.copy")}
+            <ListChecks size={14} />
+            {t("updates.provision.openSetup")}
           </button>
           <button
             type="button"
@@ -565,7 +543,9 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
                 })
               : result.offline
                 ? t("updates.result.offline")
-                : t("updates.result.failure", { detail: result.message })}
+                : t("updates.result.failure", {
+                    detail: String(result.exitCode ?? "—"),
+                  })}
             {result.offline ? ` — ${t("updates.offline")}` : ""}
             {result.databaseVerified ? ` — ${t("updates.verified")}` : ""}
             {result.staleTempRemoved > 0

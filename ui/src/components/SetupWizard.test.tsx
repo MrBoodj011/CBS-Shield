@@ -54,7 +54,7 @@ const settings: SettingsView = {
   quarantinePath: "C:\\quarantine",
   signatureDbPath: "C:\\database",
   freshclamConfPath: "C:\\freshclam.conf",
-  appVersion: "0.5.0-dev",
+  appVersion: "0.6.0-dev",
 };
 
 const inventory = {
@@ -128,6 +128,7 @@ vi.mock("../lib/api", () => ({
     installClamav: vi.fn(async () => ({
       attempted: true,
       success: true,
+      outcome: "installed",
       exitCode: 0,
       installed: true,
       message: "ClamAV est maintenant détecté.",
@@ -136,7 +137,14 @@ vi.mock("../lib/api", () => ({
     updateSignatures: vi.fn(),
     openDocumentation: vi.fn(),
   },
-  errorMessage: (error: unknown) => String(error),
+  errorMessage: (error: unknown) =>
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message: unknown }).message)
+      : String(error),
+  errorCode: (error: unknown) =>
+    typeof error === "object" && error && "code" in error
+      ? String((error as { code: unknown }).code)
+      : null,
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -171,15 +179,35 @@ describe("SetupWizard", () => {
       await screen.findByText("ClamAV absent — analyses manuelles indisponibles"),
     ).toBeInTheDocument();
     const installButton = screen.getByRole("button", {
-      name: /Lancer l'installation officielle/,
+      name: /Installer ClamAV avec mon accord/,
     });
     expect(installButton).toBeDisabled();
+    expect(screen.queryByText(/winget install/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/terminal/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox"));
     expect(installButton).toBeEnabled();
     fireEvent.click(installButton);
 
     await waitFor(() => expect(api.installClamav).toHaveBeenCalledWith(true));
+  });
+
+  it("maps an unavailable installer to a friendly recovery path", async () => {
+    vi.mocked(api.installClamav).mockRejectedValueOnce({
+      code: "wingetUnavailable",
+      message: "winget introuvable",
+    });
+    renderWizard(missingEngine);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Continuer/ }));
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Installer ClamAV avec mon accord/ }));
+
+    expect(
+      await screen.findByText(/composant Windows qui installe les applications \(winget\) est indisponible/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/winget introuvable/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Localiser clamscan.exe/ }).length).toBeGreaterThan(0);
   });
 
   it("shows the real verified signature inventory", async () => {

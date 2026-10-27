@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { useI18n } from "../lib/i18n";
 import type { Tone } from "../lib/format";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 interface ModalProps {
   open: boolean;
@@ -28,6 +29,7 @@ export function Modal({
   wide = false,
 }: ModalProps) {
   const { t } = useI18n();
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!open) return;
@@ -48,10 +50,12 @@ export function Modal({
       }}
     >
       <div
+        ref={dialogRef}
         className={`modal modal--${tone} ${wide ? "modal--wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        tabIndex={-1}
       >
         <div className="modal__head">
           <div>

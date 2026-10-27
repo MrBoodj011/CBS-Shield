@@ -1,4 +1,4 @@
-# Sécurité — CBS Shield 0.5.0-dev
+# Sécurité — CBS Shield 0.6.0-dev
 
 Ce document décrit le modèle de menace, les garanties offertes, les limites assumées
 et la procédure de signalement. CBS Shield est une **version expérimentale** de
@@ -28,8 +28,11 @@ pas être présentée comme une protection antivirus complète.
    n'est jamais présenté comme protecteur ; un mapping connexion → règle est une
    référence, pas un verdict.
 7. **Pas de capacité active de pare-feu.** Aucune commande IPC ne crée, ne modifie
-   ni ne supprime une règle. L'export JSON est en lecture seule et ne peut pas être
-   restauré.
+   ni ne supprime une règle. L'export JSON est en lecture seule, marqué
+   `restoreSupported: false`, et ne peut pas être restauré.
+8. **Intégrité de l'artefact.** L'installeur du Sprint 6 n'est pas signé
+   Authenticode ; son SHA-256 publié doit être vérifié avant exécution. Une
+   signature absente n'est pas présentée comme une garantie d'éditeur.
 
 ## Modèle de menace
 
@@ -69,8 +72,15 @@ pas être présentée comme une protection antivirus complète.
   acquittement explicite ou lors de la première observation.
 - Les connexions ne sont mappées qu'avec un **chemin d'image réel** ; un processus
   sans chemin (`System`) n'obtient pas de mapping inventé.
-- Export JSON marqué `readOnly: true`, sans commande d'import.
-- **Aucun** appel `put_*`, aucun pilote, aucun service, aucun pare-feu tiers.
+- L'état de `MpsSvc` et `BFE` est lu via `sc query` masqué. CBS Shield ne démarre,
+  n'arrête et ne configure aucun service.
+- L'interface distingue la **référence lue** de la **décision effective**, qui n'est
+  pas calculée (priorité Allow/Block, WFP, IPsec, stratégie de groupe).
+- Export JSON marqué `readOnly: true` et `restoreSupported: false`, avec SHA-256 des
+  octets écrits, sans commande d'import.
+- Le plan de récupération est **conceptuel uniquement** : restauration absente et
+  répétition rollback non réalisée.
+- **Aucun** appel `put_*`, aucun pilote, aucun service CBS Shield, aucun pare-feu tiers.
 - Une alerte n'est pas une preuve d'intrusion et ne remplace pas Microsoft Defender
   Firewall.
 
@@ -79,10 +89,14 @@ pas être présentée comme une protection antivirus complète.
 - L'installation est proposée **uniquement** si ClamAV est absent.
 - L'utilisateur doit cocher une autorisation explicite ; le backend refuse
   `confirm=false`.
-- Seul le paquet officiel `Cisco.ClamAV` est utilisé, avec une console visible et
-  sans option silencieuse.
-- Aucun binaire ClamAV ou signature n'est embarqué dans l'installeur.
-- En cas d'échec, le code, la sortie et les étapes de reprise sont affichés ; l'état
+- Seul le paquet officiel `Cisco.ClamAV` du catalogue Windows est utilisé, avec une
+  fenêtre visible et sans option silencieuse. Aucune commande n'est affichée ou
+  copiée dans le parcours principal.
+- Aucun binaire ClamAV ou signature n'est embarqué dans l'installeur et aucun
+  téléchargement direct depuis un site arbitraire n'est effectué.
+- En cas d'échec, de délai de 20 minutes ou de suivi interrompu, le résultat est
+  distingué (`notDetected`, `wingetFailed`, `installTimedOut`, etc.), expliqué et
+  accompagné d'une reprise ou d'une localisation manuelle de `clamscan.exe`. L'état
   « prêt » n'est jamais simulé.
 - ClamAV reste sous GPL-2.0 et sous la responsabilité de son éditeur.
 
@@ -131,13 +145,25 @@ Windows et le dossier de données en conséquence.
   intermédiaire, stdin fermé. `clamscan`/`freshclam` utilisent une console masquée ;
   l'installation ClamAV utilise une console **visible** pour que l'utilisateur voie
   l'UAC et la progression. Aucune concaténation de commande.
-- **Pare-feu** : quatre commandes de lecture seulement ; aucune mutation enregistrée
-  dans Tauri, gates de gestion fermés.
+- **Pare-feu** : cinq commandes (état, mapping, export, diagnostic et acquittement
+  local de la baseline) ; aucune mutation de règle enregistrée dans Tauri, gates de
+  gestion fermés.
 - **CSP** : `default-src 'self'`, scripts limités à l'origine de l'application,
   connexions IPC uniquement.
 - **SQLite** : requêtes paramétrées via `rusqlite`, pas de SQL construit par concaténation.
 - **Dépendances** : licences vérifiées dans `LICENSES.md` ; `cargo audit` et
   `npm audit` sont recommandés avant toute release.
+
+## Intégrité de l'installeur
+
+- Artefact de référence Sprint 6 : `CBS Shield_0.6.0-dev_x64-setup.exe`,
+  **2 658 926 octets**, SHA-256
+  `650A35AA5A6D59AAB1223D2B41644E5703936C1AE711462227B25112E8784BB8`.
+- **Non signé** : `Get-AuthenticodeSignature` retourne `NotSigned`. SmartScreen peut
+  avertir. Vérifiez le SHA-256 publié avant exécution.
+- L'installeur est en mode `currentUser`; il ne demande pas d'élévation pour installer
+  CBS Shield. L'installation de ClamAV peut déclencher une demande Windows distincte.
+- ClamAV et les signatures ne sont pas inclus dans l'installeur.
 
 ## Bonnes pratiques pour les contributeurs
 
@@ -166,6 +192,6 @@ Merci de laisser un délai raisonnable avant toute divulgation publique.
 
 ## Avertissement
 
-CBS Shield 0.5.0-dev est un projet expérimental. Il ne remplace pas Microsoft
+CBS Shield 0.6.0-dev est un projet expérimental. Il ne remplace pas Microsoft
 Defender, qui doit rester actif. Un scan sans détection ne garantit pas qu'un système
 est sain, et un pare-feu observé comme actif ne garantit pas l'absence d'intrusion.

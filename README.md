@@ -1,7 +1,7 @@
 # CBS Shield
 
 > **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.5.0-dev (Phase 5, sprint 5)**.
+> Édité par **Cybrense** — version expérimentale **0.6.0-dev (Phase 6, sprint 6)**.
 
 CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
 une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
@@ -36,16 +36,22 @@ tests non exécutés sont documentés dans
 [SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md) ; la validation sur VM
 propre reste **non exécutée**.
 
-Le Sprint 5 ajoute l'**assistant de premier lancement** (état réel du moteur,
-installation officielle de ClamAV avec autorisation explicite, signatures
-officielles, diagnostic), enrichit le **pare-feu en lecture seule** (alertes de
-sécurité, détection de changement, mapping connexions → règles, export d'audit)
-et livre un **installeur NSIS 0.5.0-dev** avec sélecteur de langue et dossier
-`Cybrense` dans le menu Démarrer. Le pare-feu reste **strictement observationnel** :
-aucune règle n'est créée, modifiée, activée ou désactivée. La validation sur VM
-propre, les scénarios d'échec de l'installeur et l'installation réelle de ClamAV
-depuis l'assistant restent **non exécutés** ; voir
-[SPRINT5_TEST_REPORT.md](docs/SPRINT5_TEST_REPORT.md).
+Le Sprint 5 a livré l'**assistant de préparation** en cinq étapes et un installeur
+NSIS `0.5.0-dev`. Ses rapports restent disponibles comme preuves historiques, mais
+son artefact est remplacé par celui du Sprint 6.
+
+Le Sprint 6 renforce la **fiabilité de production et l'expérience sans terminal** :
+installation officielle de ClamAV avec accord explicite, progression honnête,
+reprises et erreurs compréhensibles ; diagnostic des services du pare-feu,
+distinction entre règle déclarée et décision effective, export d'audit avec
+empreinte SHA-256 et plan de récupération explicitement non actif ; accessibilité
+clavier des dialogues, états FR/EN complets et statuts sans ambiguïté. Il livre un
+**installeur NSIS 0.6.0-dev** avec sélecteur de langue et dossier `Cybrense` dans
+le menu Démarrer. Le pare-feu reste **strictement observationnel** : aucune règle
+n'est créée, modifiée, activée ou désactivée. La validation sur VM Windows propre,
+les scénarios d'échec de l'installeur, l'installation réelle de ClamAV en absence
+de moteur et la restauration de règles restent **non exécutés** ; voir
+[SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md).
 
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
@@ -74,14 +80,14 @@ depuis l'assistant restent **non exécutés** ; voir
 
 | Élément | État |
 | --- | --- |
-| Interface React/Tauri (9 sections) | Fonctionnelle, design system 0.5.0 |
+| Interface React/Tauri (9 sections) | Fonctionnelle, design system 0.6.0 |
 | Moteur Rust (`cbs-core`) | Fonctionnel |
 | Scan réel ClamAV (fichier/dossier) | Fonctionnel, vérifié |
 | Profils Rapide / Complète / Personnalisée | Livrés ; Complète non exécutée de bout en bout |
 | Progression, annulation, erreurs par fichier | Fonctionnelles, vérifiées |
 | Export JSON / CSV / Markdown / TXT | Fonctionnel, testé |
 | Assistant de premier lancement 5 étapes | Fonctionnel, vérifié en FR/EN |
-| Installation ClamAV officielle avec autorisation | Conçue et testée par politique ; flux réel non exécuté |
+| Installation ClamAV officielle avec autorisation | Conçue et testée par politique ; flux réel en absence de moteur non exécuté |
 | Mise à jour des signatures (`freshclam`) | Manuelle + automatique, vérifiée |
 | Inventaire des signatures (`sigtool`) | Fonctionnel, vérifié (3 642 895 officielles + test séparé) |
 | Historique SQLite + page dédiée | Fonctionnel |
@@ -89,8 +95,8 @@ depuis l'assistant restent **non exécutés** ; voir
 | Tableau de bord (données réelles) | Fonctionnel, vérifié |
 | Localisation FR/EN | Complète (interface, dates, nombres, dialogues) |
 | Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
-| Installeur NSIS `currentUser` | Généré pour 0.5.0-dev, sans ClamAV ni signatures |
-| Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping) |
+| Installeur NSIS `currentUser` | Généré pour 0.6.0-dev, sans ClamAV ni signatures |
+| Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping, diagnostic des services) |
 | Gestion des règles de pare-feu | **Désactivée** (architecture et prérequis seulement) |
 | Network Monitor | **Lecture seule** (métadonnées, volumes mesurés) |
 | Protection temps réel / pilote noyau | **Hors périmètre** |
@@ -112,20 +118,26 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   des signatures. Absence de ClamAV ou de signatures = message explicite, pas de faux scan.
 - Mise à jour des signatures via `freshclam`, journal en direct, délai maximal de 30 min.
 
-### Assistant de premier lancement (Sprint 5)
+### Assistant de préparation (Sprint 5, renforcé Sprint 6)
 
 - Ouvert automatiquement une seule fois tant que la configuration initiale n'est
   pas terminée ; réouvrable depuis **Paramètres** ou **Mises à jour**.
 - Cinq étapes : accueil, état réel du moteur, signatures officielles, protection
   réseau observée, résumé.
 - Si ClamAV manque : proposition d'installation **officielle** (`Cisco.ClamAV`
-  via winget) ou de localisation d'une installation existante. L'installation
-  exige une **case d'autorisation explicite**, affiche une console visible et
-  n'utilise aucun mode silencieux.
+  via le catalogue Windows) ou de localisation d'une installation existante.
+  L'installation exige une **case d'autorisation explicite**, affiche une fenêtre
+  visible et n'utilise aucun mode silencieux. Aucune commande n'est demandée ni
+  affichée dans le parcours principal.
+- La progression indique honnêtement que le pourcentage appartient à
+  l'installateur Windows ; un chronomètre et un état animé montrent que CBS Shield
+  attend toujours. Les résultats sont distingués : déjà installé, installé,
+  installation terminée sans détection, ou échec de l'installateur.
+- Les erreurs (`winget` absent, délai de 20 minutes, suivi interrompu) sont
+  traduites, expliquées et accompagnées de reprise ou de localisation manuelle de
+  `clamscan.exe`. Aucun échec n'est masqué.
 - Aucun téléchargement de ClamAV depuis un site arbitraire, aucun binaire embarqué,
   aucune élévation automatique de CBS Shield.
-- Si l'installation ou la mise à jour échoue, l'assistant affiche le code, la
-  sortie et les étapes de reprise ; il ne prétend jamais que le moteur est prêt.
 - La progression est enregistrée dans les réglages locaux (`onboardingCompleted`).
 
 ### Historique
@@ -151,10 +163,12 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   des compteurs (sprint 3).
 - **Pare-feu** : profils et règles Windows lus via l'API documentée
   `INetFwPolicy2`, alertes de sécurité (profils désactivés, action entrante
-  permissive), détection de changement par empreinte composite profils + règles,
-  mapping indicatif des connexions TCP vers les règles via le chemin d'image réel
-  du processus, export JSON en lecture seule. Aucune règle n'est créée, modifiée,
-  activée ou désactivée ; aucun pilote installé.
+  permissive), diagnostic des services `MpsSvc`/`BFE`, détection de changement par
+  empreinte composite profils + règles, mapping indicatif des connexions TCP vers
+  les règles via le chemin d'image réel du processus, distinction explicite entre
+  règle déclarée et décision effective non calculée, export JSON lecture seule
+  avec empreinte SHA-256 et plan de récupération marqué **non actif**. Aucune règle
+  n'est créée, modifiée, activée ou désactivée ; aucun pilote installé.
 - La **gestion des règles** est visible dans l'interface mais **verrouillée** :
   elle exige une autorisation explicite, une VM isolée et une restauration
   validée. Aucune commande de mutation n'est exposée.
@@ -174,14 +188,16 @@ ClamAV reste un composant externe **GPL-2.0**, installé séparément et **non
 redistribué** avec CBS Shield.
 
 Au premier lancement, l'assistant propose de lancer l'installation officielle
-avec une autorisation explicite :
+avec une autorisation explicite. L'interface ne demande aucune commande à saisir
+et ne les affiche pas dans le parcours principal. Pour référence technique, le
+paquet officiel visé est :
 
 ```powershell
-winget install --id Cisco.ClamAV --exact
+winget install --id Cisco.ClamAV --exact --source winget
 ```
 
-La commande est exécutée dans une **console visible**, sans option silencieuse et
-sans élévation automatique de CBS Shield. L'UAC de Windows peut apparaître : son
+Le lanceur utilise une **fenêtre visible**, sans option silencieuse et sans
+élévation automatique de CBS Shield. L'UAC de Windows peut apparaître : son
 acceptation reste un choix de l'utilisateur. Il est aussi possible d'ignorer cette
 étape, de fermer l'assistant, puis d'installer ClamAV manuellement.
 
@@ -247,14 +263,17 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.5.0-dev_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.6.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
-Artefact de référence vérifié le 27 octobre 2026 : **2 651 293 octets**
-(2,53 Mio), SHA-256
-`4D27F240511A8AE9563434706770AAA3BD3D63E61128B0E384E92A445067B226`,
-**non signé**. Vérifiez ce hash avant exécution.
+Artefact de référence du Sprint 6, vérifié le 27 octobre 2026 :
+**2 658 926 octets** (2,54 Mio), SHA-256
+`650A35AA5A6D59AAB1223D2B41644E5703936C1AE711462227B25112E8784BB8`,
+**non signé**. Vérifiez ce hash avant exécution. L'absence de signature
+Authenticode empêche de garantir l'éditeur au niveau du système ; SmartScreen peut
+donc afficher un avertissement. Le détail est dans
+[SPRINT6_INSTALLER_AUDIT.md](docs/SPRINT6_INSTALLER_AUDIT.md).
 
 Le premier build télécharge l'outillage NSIS (mis en cache par Tauri). Comptez
 plusieurs minutes pour la compilation `release`. L'installeur est en mode
@@ -271,6 +290,11 @@ cargo test --workspace
 npm --prefix ui run build
 npm --prefix ui test
 ```
+
+Résultat final Sprint 6 : **93 tests Rust réussis, 1 ignoré** (EICAR manuel) et
+**26 tests UI réussis** dans 9 fichiers. Les scénarios VM propre, absence réelle de
+ClamAV, restauration de règles et signature Authenticode restent non exécutés ou
+bloqués ; voir le rapport de test.
 
 Les tests d'intégration ClamAV sont **ignorés automatiquement** (avec message) si
 ClamAV ou la base de signatures est absent. Ils n'utilisent aucun malware :
@@ -364,6 +388,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SPRINT5_INSTALLER_AUDIT.md](docs/SPRINT5_INSTALLER_AUDIT.md) — contenu NSIS, langues, SHA-256.
 - [SPRINT5_SECURITY_REGRESSION.md](docs/SPRINT5_SECURITY_REGRESSION.md) — garanties et risques résiduels.
 - [SPRINT5_MALWARE_INVESTIGATION.md](docs/SPRINT5_MALWARE_INVESTIGATION.md) — détection `Win.Packed.Mikey`, analyse non destructive.
+- [SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md) — matrice Sprint 6, résultats réels, tests bloqués/non exécutés.
+- [SPRINT6_CLEAN_INSTALL.md](docs/SPRINT6_CLEAN_INSTALL.md) — installation, réinstallation et désinstallation hôte ; VM propre non exécutée.
+- [SPRINT6_INSTALLER_AUDIT.md](docs/SPRINT6_INSTALLER_AUDIT.md) — artefact NSIS, langues, SHA-256, signature.
+- [SPRINT6_SECURITY_REGRESSION.md](docs/SPRINT6_SECURITY_REGRESSION.md) — garanties lecture seule, Defender et pare-feu.
+- [SPRINT6_ENVIRONMENT_LIMITATIONS.md](docs/SPRINT6_ENVIRONMENT_LIMITATIONS.md) — limites de l'hôte Windows 11 Home.
+- [SPRINT6_UNRESOLVED_RISKS.md](docs/SPRINT6_UNRESOLVED_RISKS.md) — risques résiduels et conditions de passage en production.
 
 ## Licences
 

@@ -83,7 +83,7 @@ export function About({ info, engine, settings, stats, refreshToken = 0 }: About
               <h2>{info?.product ?? "CBS Shield"}</h2>
             </div>
             <Badge tone="info" dot>
-              v{info?.version ?? "0.3.0-dev"}
+              v{info?.version ?? "0.6.0-dev"}
             </Badge>
           </div>
 
@@ -94,11 +94,11 @@ export function About({ info, engine, settings, stats, refreshToken = 0 }: About
             </div>
             <div className="info-cell">
               <span className="info-cell__label">{t("about.version")}</span>
-              <span className="info-cell__value">v{info?.version ?? "0.3.0-dev"}</span>
+              <span className="info-cell__value">v{info?.version ?? "0.6.0-dev"}</span>
             </div>
             <div className="info-cell">
               <span className="info-cell__label">{t("about.phase")}</span>
-              <span className="info-cell__value">{info?.phase ?? "—"}</span>
+              <span className="info-cell__value">{t("about.phaseName")}</span>
             </div>
             <div className="info-cell">
               <span className="info-cell__label">{t("about.tech")}</span>

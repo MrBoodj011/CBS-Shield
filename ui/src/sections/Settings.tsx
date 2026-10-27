@@ -20,11 +20,12 @@ import { api, errorMessage } from "../lib/api";
 import {
   formatDateTime,
   formatNumber,
+  freshnessText,
   signatureStateLabel,
   signatureStateTone,
   truncateMiddle,
 } from "../lib/format";
-import { useI18n } from "../lib/i18n";
+import { translate, useI18n } from "../lib/i18n";
 import type { AppInfo, EngineStatus, SettingsView } from "../types";
 
 interface SettingsProps {
@@ -101,7 +102,11 @@ export function Settings({
         signatureMaxAgeDays: Number(form.signatureMaxAgeDays),
       });
       onSettingsSaved(saved);
-      toast({ tone: "success", title: L("Paramètres enregistrés", "Settings saved") });
+      const savedLanguage = form.language === "en" ? "en" : "fr";
+      toast({
+        tone: "success",
+        title: translate(savedLanguage, "settings.saved"),
+      });
     } catch (error) {
       setFormError(errorMessage(error));
       toast({
@@ -124,7 +129,16 @@ export function Settings({
         title: status.installed
           ? L("Diagnostic terminé", "Diagnostic complete")
           : L("ClamAV introuvable", "ClamAV not found"),
-        message: status.message,
+        message: status.installed
+          ? freshnessText(
+              status.signatureState,
+              status.signatureAgeDays,
+              settings?.signatureMaxAgeDays,
+            )
+          : L(
+              "Aucun exécutable ClamAV n'a été trouvé. Les analyses manuelles restent indisponibles.",
+              "No ClamAV executable was found. Manual scans remain unavailable.",
+            ),
       });
     } catch (error) {
       toast({
@@ -257,6 +271,7 @@ export function Settings({
                     type="button"
                     className={form.language === option.value ? "is-active" : ""}
                     onClick={() => setForm((current) => ({ ...current, language: option.value }))}
+                    aria-pressed={form.language === option.value}
                     lang={option.value}
                   >
                     {option.label}
@@ -501,8 +516,18 @@ export function Settings({
             </div>
 
             <p className={`engine-message engine-message--${signatureStateTone(engine?.signatureState ?? "unknown")}`}>
-              {engine?.message ??
-                L("Diagnostic du moteur en cours…", "Engine diagnostic in progress…")}
+              {engine
+                ? engine.installed
+                  ? freshnessText(
+                      engine.signatureState,
+                      engine.signatureAgeDays,
+                      settings?.signatureMaxAgeDays,
+                    )
+                  : L(
+                      "ClamAV n'est pas détecté. Les analyses manuelles sont indisponibles.",
+                      "ClamAV was not detected. Manual scans are unavailable.",
+                    )
+                : L("Diagnostic du moteur en cours…", "Engine diagnostic in progress…")}
             </p>
 
             <dl className="detail-list detail-list--compact">
@@ -586,10 +611,10 @@ export function Settings({
                 <span className="panel__eyebrow">{L("À propos", "About")}</span>
                 <h2>{info?.product ?? "CBS Shield"}</h2>
               </div>
-              <Badge tone="info">v{info?.version ?? "0.1.0"}</Badge>
+              <Badge tone="info">v{info?.version ?? "0.6.0-dev"}</Badge>
             </div>
             <p className="about__text">
-              {info?.phase ?? L("Phase 1 — scanner manuel", "Phase 1 — manual scanner")}
+              {t("about.phaseName")}
               {L(" par ", " by ")}
               {info?.vendor ?? "Cybrense"}.
               {L(

@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../lib/i18n";
 import { api } from "../lib/api";
 import { Firewall } from "./Firewall";
+import type { FirewallObservation } from "../types";
 
-const observation = {
+const observation: FirewallObservation = {
   status: {
     checkedAt: "2026-10-26T09:00:00Z",
     profiles: [
@@ -41,6 +42,12 @@ const observation = {
   alerts: [
     { code: "all_profiles_disabled", severity: "danger", profile: null },
   ],
+  service: {
+    mpsSvc: "running",
+    bfe: "running",
+    observed: true,
+    checkedAt: "2026-10-26T09:00:00Z",
+  },
   listedTruncated: false,
 };
 
@@ -84,6 +91,14 @@ const management = {
     { code: "rollback_rehearsal", satisfied: false },
   ],
   rollbackDesignVersion: "1",
+  recovery: {
+    state: "designOnly",
+    snapshotReadOnly: true,
+    restoreExposed: false,
+    rollbackRehearsed: false,
+    isolationRequired: true,
+    designedVersion: "1",
+  },
 };
 
 vi.mock("../lib/api", () => ({
@@ -102,6 +117,9 @@ vi.mock("../lib/api", () => ({
       rulesTotalCount: 1,
       truncated: false,
       checkedAt: "2026-10-26T09:00:00Z",
+      readOnly: true,
+      restoreSupported: false,
+      sha256: "a".repeat(64),
     })),
   },
   errorMessage: (error: unknown) => String(error),
@@ -128,6 +146,25 @@ describe("Firewall", () => {
     expect(screen.getByText(/Architecture verrouillée/)).toBeInTheDocument();
     expect(screen.getByText(/Aucune API de mutation n'est exposée/)).toBeInTheDocument();
     expect(screen.getByText("Restauration non implémentée")).toBeInTheDocument();
+    expect(screen.getByText("Une règle déclarée n'est pas un verdict")).toBeInTheDocument();
+    expect(screen.getByText("Ce que CBS Shield ne prétend pas calculer")).toBeInTheDocument();
+    expect(screen.getByText("Plan de récupération — conception seulement")).toBeInTheDocument();
+  });
+
+  it("warns without changing anything when a firewall service is stopped", async () => {
+    vi.mocked(api.firewallStatus).mockResolvedValueOnce({
+      ...observation,
+      service: {
+        ...observation.service!,
+        bfe: "stopped",
+      },
+    });
+    renderFirewall();
+
+    expect(
+      await screen.findByText("Les services du pare-feu Windows ne sont pas tous en cours d'exécution"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/BFE : stopped/)).toBeInTheDocument();
   });
 
   it("exports a read-only snapshot and acknowledges the baseline explicitly", async () => {
@@ -140,6 +177,8 @@ describe("Firewall", () => {
     await waitFor(() => expect(api.firewallExportSnapshot).toHaveBeenCalledTimes(1));
 
     await screen.findByText(/firewall-snapshot-20261026T090000Z.json/);
+    expect(screen.getAllByText(/SHA-256/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/aucune importation ni restauration/i)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /Accepter comme nouvelle référence/ }),
     );

@@ -33,8 +33,8 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         product: "CBS Shield".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         vendor: "Cybrense".to_string(),
-        phase: "Phase 5 — installation, préparation ClamAV et fondation pare-feu".to_string(),
-        disclaimer: "CBS Shield assure une protection manuelle expérimentale. Il ne fournit pas de protection en temps réel et ne remplace pas Microsoft Defender. Aucun pilote noyau, aucune règle de pare-feu et aucune modification de Defender ne sont effectués.".to_string(),
+        phase: "Phase 6 — fiabilité, installation propre et expérience utilisateur".to_string(),
+        disclaimer: "CBS Shield assure une analyse antivirus manuelle expérimentale. Il ne fournit pas de protection en temps réel et ne remplace pas Microsoft Defender. Aucun pilote noyau, aucune règle de pare-feu et aucune modification de Defender ne sont effectués.".to_string(),
         data_dir: state.paths.data_dir.display().to_string(),
     }
 }

@@ -1,14 +1,17 @@
 # CBS Shield — UI Components
 
-**Version 0.5.0-dev** · React 19 + TypeScript · `ui/src/components/` and
+**Version 0.6.0-dev** · React 19 + TypeScript · `ui/src/components/` and
 `ui/src/theme.css`.
 
 Every component below is used by at least one shipped screen. There are no
 demonstration-only components in the product.
 
 Sprint 5 adds `components/SetupWizard.tsx` (five-step first-run assistant) and the
-firewall alert / connection / management blocks in `sections/Firewall.tsx`. They
-reuse the tokens and rules below; no separate visual language was introduced.
+firewall alert / connection / management blocks in `sections/Firewall.tsx`.
+Sprint 6 adds the shared `lib/useFocusTrap.ts` used by `Modal` and `SetupWizard`,
+plus the service-health, reference-vs-decision, snapshot SHA-256 and recovery-plan
+blocks. They reuse the tokens and rules below; no separate visual language was
+introduced.
 
 ---
 
@@ -154,7 +157,8 @@ quarantine actions.
 
 Behaviour: closes on Escape and backdrop click (unless `busy`), `role="dialog"`,
 `aria-modal`, labelled title, blurred backdrop, scale-in animation, localised
-close button (`common.close`).
+close button (`common.close`). `useFocusTrap` focuses the first control, traps
+Tab/Shift+Tab, locks body scroll and restores the previous focus on close.
 
 ---
 

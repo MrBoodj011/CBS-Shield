@@ -26,6 +26,7 @@ const fr = {
   "nav.settings": "Paramètres",
   "nav.updates": "Mises à jour",
   "nav.about": "À propos & diagnostic",
+  "nav.main": "Navigation principale",
   "nav.group.protection": "Protection",
   "nav.group.insight": "Observation",
   "nav.group.system": "Système",
@@ -89,15 +90,25 @@ const fr = {
   "signature.unknown": "Inconnu",
 
   "shell.offlineTitle": "Connexion au moteur natif incomplète",
+  "shell.diagnosticDone": "Diagnostic terminé",
+  "shell.diagnosticFailed": "Diagnostic impossible",
+  "shell.clamavMissing": "ClamAV introuvable",
+  "shell.clamavDetected":
+    "ClamAV est détecté. CBS Shield reste un scanner manuel, sans protection en temps réel.",
+  "shell.clamavNotDetected":
+    "ClamAV reste introuvable. Les analyses manuelles sont indisponibles.",
   "shell.disclaimer":
-    "Protection manuelle expérimentale. Microsoft Defender reste actif.",
+    "Analyse manuelle expérimentale. Microsoft Defender reste actif.",
 
-  "posture.manual": "Protection manuelle opérationnelle",
-  "posture.degraded": "Protection manuelle incomplète",
-  "posture.unavailable": "Protection manuelle indisponible",
-  "posture.manualHint": "Aucune protection temps réel : chaque analyse est déclenchée par vous.",
-  "posture.degradedHint": "Le moteur est présent mais les signatures ne sont pas à jour.",
-  "posture.unavailableHint": "Installez ClamAV pour activer l'analyse locale.",
+  "posture.manual": "Analyse manuelle prête",
+  "posture.degraded": "Analyse manuelle dégradée",
+  "posture.unavailable": "Analyse manuelle indisponible",
+  "posture.manualHint":
+    "ClamAV et les signatures sont prêts. Aucune protection en temps réel n'est active : chaque analyse est déclenchée par vous.",
+  "posture.degradedHint":
+    "Le moteur est présent, mais les signatures sont absentes ou anciennes. Les résultats peuvent être incomplets.",
+  "posture.unavailableHint":
+    "ClamAV n'est pas détecté. Les analyses manuelles sont indisponibles.",
   "posture.realtime": "Temps réel inactif",
   "posture.defender": "Microsoft Defender reste votre protection principale.",
 
@@ -185,8 +196,7 @@ const fr = {
   "updates.engineTitle": "Moteur ClamAV",
   "updates.engineMissing": "ClamAV n'est pas détecté sur ce poste.",
   "updates.installHint":
-    "CBS Shield n'embarque pas ClamAV (installateur autonome). Installez-le, puis relancez le diagnostic.",
-  "updates.installCommand": "winget install Cisco.ClamAV",
+    "L'assistant de préparation propose une installation officielle guidée, avec votre accord et sans commande à saisir.",
   "updates.signaturesTitle": "Signatures",
   "updates.signatureDate": "Date des signatures",
   "updates.freshness": "Âge de la base",
@@ -240,7 +250,9 @@ const fr = {
   "updates.provision.wingetOk": "winget disponible",
   "updates.provision.wingetMissing": "winget indisponible",
   "updates.provision.clamav": "ClamAV",
-  "updates.provision.command": "Commande officielle",
+  "updates.provision.method": "Mode d'installation",
+  "updates.provision.guided": "Assistant guidé · catalogue officiel Windows",
+  "updates.provision.openSetup": "Ouvrir l'assistant",
   "updates.provision.docs": "Documentation officielle",
   "updates.provision.license":
     "ClamAV est publié sous licence GPLv2 par Cisco Talos. CBS Shield ne redistribue ni le moteur ni les bases de signatures : l'installation officielle reste gérée par l'utilisateur et winget.",
@@ -248,7 +260,8 @@ const fr = {
     "Signatures téléchargées dans {path}. Relancez le diagnostic pour vérifier la date.",
   "updates.result.offline":
     "La mise à jour a échoué car le réseau est inaccessible. La base existante n'a pas été modifiée.",
-  "updates.result.failure": "freshclam a échoué : {detail}",
+  "updates.result.failure":
+    "freshclam n'a pas abouti (code {detail}). Le journal ci-dessous contient le détail technique.",
   "updates.log.app": "Journal CBS Shield",
   "updates.log.freshclam": "Journal freshclam",
   "updates.offline": "réseau inaccessible",
@@ -258,6 +271,7 @@ const fr = {
   "about.product": "Produit",
   "about.version": "Version",
   "about.phase": "Phase",
+  "about.phaseName": "Phase 6 — fiabilité, installation propre et expérience utilisateur",
   "about.dataDir": "Dossier de données",
   "about.historyDb": "Base d'historique",
   "about.quarantineDir": "Coffre de quarantaine",
@@ -287,8 +301,9 @@ const fr = {
   "about.udp": "Liaisons UDP",
 
   "settings.language": "Langue de l'interface",
+  "settings.saved": "Paramètres enregistrés",
   "settings.languageHint":
-    "Toute l'interface, les dates, les nombres et les messages de l'application suivent la langue choisie. Les messages techniques renvoyés par le moteur restent dans leur langue d'origine.",
+    "Toute l'interface, les dates, les nombres et les messages applicatifs suivent la langue choisie. Les journaux techniques et les sorties des outils externes peuvent rester dans leur langue d'origine.",
   "settings.languageFr": "Français",
   "settings.languageEn": "English",
 
@@ -460,6 +475,7 @@ const en: Record<TranslationKey, string> = {
   "nav.settings": "Settings",
   "nav.updates": "Updates",
   "nav.about": "About & diagnostics",
+  "nav.main": "Main navigation",
   "nav.group.protection": "Protection",
   "nav.group.insight": "Observation",
   "nav.group.system": "System",
@@ -523,14 +539,24 @@ const en: Record<TranslationKey, string> = {
   "signature.unknown": "Unknown",
 
   "shell.offlineTitle": "Incomplete connection to the native engine",
-  "shell.disclaimer": "Experimental manual protection. Microsoft Defender stays active.",
+  "shell.diagnosticDone": "Diagnostic complete",
+  "shell.diagnosticFailed": "Diagnostic failed",
+  "shell.clamavMissing": "ClamAV not found",
+  "shell.clamavDetected":
+    "ClamAV is detected. CBS Shield remains a manual scanner with no real-time protection.",
+  "shell.clamavNotDetected":
+    "ClamAV is still not found. Manual scans are unavailable.",
+  "shell.disclaimer": "Experimental manual scanning. Microsoft Defender stays active.",
 
-  "posture.manual": "Manual protection operational",
-  "posture.degraded": "Manual protection incomplete",
-  "posture.unavailable": "Manual protection unavailable",
-  "posture.manualHint": "No real-time protection: every scan is started by you.",
-  "posture.degradedHint": "The engine is present but signatures are not up to date.",
-  "posture.unavailableHint": "Install ClamAV to enable local scanning.",
+  "posture.manual": "Manual scan ready",
+  "posture.degraded": "Manual scan degraded",
+  "posture.unavailable": "Manual scan unavailable",
+  "posture.manualHint":
+    "ClamAV and its signatures are ready. No real-time protection is active: every scan is started by you.",
+  "posture.degradedHint":
+    "The engine is present, but signatures are missing or outdated. Results may be incomplete.",
+  "posture.unavailableHint":
+    "ClamAV was not detected. Manual scans are unavailable.",
   "posture.realtime": "Real-time off",
   "posture.defender": "Microsoft Defender remains your primary protection.",
 
@@ -618,8 +644,7 @@ const en: Record<TranslationKey, string> = {
   "updates.engineTitle": "ClamAV engine",
   "updates.engineMissing": "ClamAV was not found on this machine.",
   "updates.installHint":
-    "CBS Shield does not bundle ClamAV (standalone installer). Install it, then run the diagnostic again.",
-  "updates.installCommand": "winget install Cisco.ClamAV",
+    "The setup assistant offers a guided official installation, with your consent and no command to type.",
   "updates.signaturesTitle": "Signatures",
   "updates.signatureDate": "Signature date",
   "updates.freshness": "Database age",
@@ -673,14 +698,17 @@ const en: Record<TranslationKey, string> = {
   "updates.provision.wingetOk": "winget available",
   "updates.provision.wingetMissing": "winget unavailable",
   "updates.provision.clamav": "ClamAV",
-  "updates.provision.command": "Official command",
+  "updates.provision.method": "Installation method",
+  "updates.provision.guided": "Guided assistant · official Windows catalogue",
+  "updates.provision.openSetup": "Open setup assistant",
   "updates.provision.docs": "Official documentation",
   "updates.provision.license":
     "ClamAV is published under GPLv2 by Cisco Talos. CBS Shield redistributes neither the engine nor the signature databases: the official installation remains managed by the user and winget.",
   "updates.result.success": "Signatures downloaded to {path}. Recheck the diagnostic to verify the date.",
   "updates.result.offline":
     "The update failed because the network is unreachable. The existing database was left unchanged.",
-  "updates.result.failure": "freshclam failed: {detail}",
+  "updates.result.failure":
+    "freshclam did not complete (code {detail}). The log below contains the technical details.",
   "updates.log.app": "App log",
   "updates.log.freshclam": "freshclam log",
   "updates.offline": "network unreachable",
@@ -690,6 +718,7 @@ const en: Record<TranslationKey, string> = {
   "about.product": "Product",
   "about.version": "Version",
   "about.phase": "Phase",
+  "about.phaseName": "Phase 6 — reliability, clean installation and user experience",
   "about.dataDir": "Data folder",
   "about.historyDb": "History database",
   "about.quarantineDir": "Quarantine vault",
@@ -719,8 +748,9 @@ const en: Record<TranslationKey, string> = {
   "about.udp": "UDP bindings",
 
   "settings.language": "Interface language",
+  "settings.saved": "Settings saved",
   "settings.languageHint":
-    "The entire interface, dates, numbers and application messages follow the selected language. Technical messages returned by the engine remain in their original language.",
+    "The whole interface, dates, numbers and application messages follow the selected language. Technical logs and external tool output may remain in their original language.",
   "settings.languageFr": "Français",
   "settings.languageEn": "English",
 

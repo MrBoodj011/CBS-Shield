@@ -72,7 +72,7 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
         </div>
       </div>
 
-      <nav className="nav" aria-label={t("nav.group.protection")}>
+      <nav className="nav" aria-label={t("nav.main")}>
         {NAV_GROUPS.map((group) => (
           <div className="nav-group" key={group.labelKey}>
             <span className="nav-group__label">{t(group.labelKey)}</span>
@@ -110,7 +110,7 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
           </div>
         </div>
         <div className="sidebar__meta">
-          <span>v{info?.version ?? "0.3.0-dev"}</span>
+          <span>v{info?.version ?? "0.6.0-dev"}</span>
           <span className="sidebar__experimental">{t("common.experimental")}</span>
         </div>
       </div>

@@ -1,9 +1,11 @@
-# Architecture Pare-feu — CBS Shield 0.5.0-dev
+# Architecture Pare-feu — CBS Shield 0.6.0-dev
 
-**Date :** 27 octobre 2026 — Sprint 5
+**Date :** 27 octobre 2026 — Sprint 6
 **Périmètre :** observation **strictement en lecture seule** de Microsoft Defender
-Firewall, détection de changement, alertes, mapping connexions → règles, export
-d'audit et architecture de gestion **désactivée**.
+Firewall, diagnostic des services, détection de changement, alertes, mapping
+connexions → règles, distinction référence/décision effective, export d'audit avec
+SHA-256, plan de récupération **non actif** et architecture de gestion
+**désactivée**.
 
 Ce document remplace la description Sprint 2. Les garde-fous restent identiques :
 CBS Shield ne crée, ne modifie, n'active et ne désactive **aucune** règle.
@@ -23,9 +25,14 @@ CBS Shield ne crée, ne modifie, n'active et ne désactive **aucune** règle.
    règles). L'utilisateur peut acquitter explicitement la configuration courante.
 5. **Connexions** : les connexions TCP actives sont associées aux règles dont le
    programme correspond au **chemin d'image réel** du processus.
-6. **Snapshot** : export JSON en lecture seule dans le dossier de données.
-7. **Gestion de règles** : architecture et prérequis affichés, mais **aucune
-   capacité d'écriture** n'est exposée.
+6. **Services** : état de `MpsSvc` et `BFE` via `sc query` masqué, sans démarrage,
+   arrêt ou configuration. Un état illisible reste `unknown`.
+7. **Snapshot** : export JSON en lecture seule dans le dossier de données, avec
+   SHA-256 des octets écrits.
+8. **Référence vs décision** : l'interface explique que les règles lues ne
+   constituent pas la décision effective du noyau.
+9. **Gestion de règles** : architecture, gates et plan de récupération affichés,
+   mais **aucune capacité d'écriture** n'est exposée.
 
 ### 1.1 API et dépendances
 
@@ -35,8 +42,9 @@ CBS Shield ne crée, ne modifie, n'active et ne désactive **aucune** règle.
 | Défauts, profils actifs | COM direct `INetFwPolicy2` | `CoInitializeEx(MTA)` |
 | Règles | `windows-firewall` `list_rules/count_rules` | liste bornée, hash complet |
 | Connexions | `GetExtendedTcpTable`, `QueryFullProcessImageNameW` | via `cbs-netmon` |
+| Services | `sc query MpsSvc`, `sc query BFE` | console masquée, lecture seule |
 
-Aucun pilote noyau, service, filtre WFP, hook ou pare-feu tiers.
+Aucun pilote noyau, service CBS Shield, filtre WFP, hook ou pare-feu tiers.
 
 ---
 
@@ -52,6 +60,11 @@ Aucun pilote noyau, service, filtre WFP, hook ou pare-feu tiers.
 - `profilesHash` : SHA-256 des profils + actions ;
 - `configurationHash` : hash composite `profilesHash + rulesHash + total` ;
 - `checkedAt` : horodatage RFC 3339.
+
+`FirewallObservation` ajoute :
+
+- `service` : `mpsSvc`, `bfe`, `observed`, `checkedAt` ;
+- `alerts`, `changes`, `changedSinceLast`, `listedTruncated`.
 
 `RuleSummary` expose : nom, groupe, description, programme, service, direction,
 action, état, protocole, ports locaux/distants, profils.
@@ -134,13 +147,18 @@ Commande : `firewall_export_snapshot`.
 
 - destination : `%LOCALAPPDATA%\Cybrense\CBS Shield\firewall-backups\` ;
 - nom : `firewall-snapshot-<horodatage>.json` (caractères non sûrs remplacés) ;
-- contenu : version, `readOnly: true`, statut complet, baseline, règles, alertes ;
+- contenu : version, `exportedAt`, `readOnly: true`, `restoreSupported: false`,
+  statut complet, règles et alertes ;
+- réponse IPC : `sha256` calculé sur les octets exacts écrits, `readOnly`,
+  `restoreSupported`, nombre de règles sauvegardées et total ;
 - aucune commande d'import ou de restauration n'existe.
 
-Un snapshot observé le 26 octobre contenait **657 règles** et le marqueur
-`"readOnly": true` ; l'observation finale du 27 octobre affichait **659 règles**,
-la stratégie Windows ayant évolué. Le fichier est une pièce d'audit, pas une
-sauvegarde restaurable.
+Pendant la validation du 27 octobre, le nombre de règles observé est passé de
+**659 à 657**. CBS Shield a affiché le changement sans le réparer ni avancer la
+baseline ; l'acquittement explicite a ensuite créé une nouvelle référence locale.
+Les snapshots finaux contenaient **657 règles**, `readOnly: true`,
+`restoreSupported: false` et un SHA-256 identique à celui du fichier. Le fichier
+est une pièce d'audit, pas une sauvegarde restaurable.
 
 ---
 
@@ -157,12 +175,19 @@ sauvegarde restaurable.
   - validation sur VM isolée ;
   - validation de la restauration ;
   - autorisation explicite de l'utilisateur ;
-  - revue de sécurité dédiée.
+  - revue de sécurité dédiée ;
+- un plan `recovery` marqué `state: "designOnly"`, avec
+  `snapshotReadOnly: true`, `restoreExposed: false`, `rollbackRehearsed: false`,
+  `isolationRequired: true`.
 
 Aucune commande de création, modification, activation, désactivation ou
 suppression de règle n'est enregistrée dans Tauri. Le bouton de gestion reste
 désactivé ; le backend refuserait toute demande même si l'interface était
 contournée.
+
+Le plan de récupération est une **architecture documentée**, pas une fonction
+disponible. Aucune restauration de règles n'est exposée tant que la VM isolée, le
+rollback et l'autorisation distincte n'ont pas été validés.
 
 ---
 
@@ -178,8 +203,10 @@ contournée.
   pas l'effet réel d'une règle.
 - **Pas de surveillance en arrière-plan** : l'état est rafraîchi à la demande ou
   à l'ouverture de la section.
+- **Snapshot non signé** : le SHA-256 détecte une altération accidentelle, pas une
+  falsification par un processus élevé.
 - **Pas de validation VM** : les scénarios pare-feu actif/désactivé sur machine
-  propre restent non exécutés.
+  propre restent non exécutés. L'hôte a tous les profils désactivés.
 
 ---
 

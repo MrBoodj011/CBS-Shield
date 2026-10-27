@@ -1,6 +1,6 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 
-import { signatureStateTone } from "../lib/format";
+import { freshnessText, signatureStateTone } from "../lib/format";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import type { EngineStatus } from "../types";
 import { Badge } from "./Badge";
@@ -10,10 +10,18 @@ interface TopBarProps {
   subtitle: string;
   engine: EngineStatus | null;
   engineLoading: boolean;
+  signatureMaxAgeDays?: number;
   onRefresh: () => void;
 }
 
-export function TopBar({ title, subtitle, engine, engineLoading, onRefresh }: TopBarProps) {
+export function TopBar({
+  title,
+  subtitle,
+  engine,
+  engineLoading,
+  signatureMaxAgeDays = 7,
+  onRefresh,
+}: TopBarProps) {
   const { t } = useI18n();
   const signatureLabel = (state: EngineStatus["signatureState"]) =>
     t(("signature." + state) as TranslationKey);
@@ -28,7 +36,14 @@ export function TopBar({ title, subtitle, engine, engineLoading, onRefresh }: To
 
       <div className="topbar__actions">
         {engine ? (
-          <div className="engine-pill" title={engine.message}>
+          <div
+            className="engine-pill"
+            title={
+              engine.installed
+                ? freshnessText(engine.signatureState, engine.signatureAgeDays, signatureMaxAgeDays)
+                : t("av.engineMissing.body")
+            }
+          >
             <ShieldCheck size={17} aria-hidden="true" />
             <div className="engine-pill__text">
               <strong>

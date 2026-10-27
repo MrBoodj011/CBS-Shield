@@ -70,6 +70,7 @@ interface AntivirusProps {
   onEngineChanged: (engine: EngineStatus) => void;
   onHistoryChanged: () => void;
   onNavigate: (section: SectionId) => void;
+  onOpenSetup: () => void;
 }
 
 type Tab = "quick" | "full" | "custom" | "results";
@@ -98,6 +99,7 @@ export function Antivirus({
   onEngineChanged,
   onHistoryChanged,
   onNavigate,
+  onOpenSetup,
 }: AntivirusProps) {
   const toast = useToast();
   const { t } = useI18n();
@@ -385,7 +387,13 @@ export function Antivirus({
         title: status.installed
           ? t("av.toast.engineDetected")
           : t("av.toast.engineNotFound"),
-        message: status.message,
+        message: status.installed
+          ? freshnessText(
+              status.signatureState,
+              status.signatureAgeDays,
+              settings?.signatureMaxAgeDays,
+            )
+          : t("av.engineMissing.body"),
       });
     } catch (error) {
       toast({
@@ -511,7 +519,7 @@ export function Antivirus({
           <CircleAlert size={19} aria-hidden="true" />
           <div>
             <strong>{t("av.engineMissing.title")}</strong>
-            <span>{engine?.message ?? t("av.engineMissing.body")}</span>
+            <span>{t("av.engineMissing.body")}</span>
             <div className="banner__actions">
               <button
                 type="button"
@@ -522,18 +530,11 @@ export function Antivirus({
                 <RefreshCw size={15} className={checking ? "spin" : undefined} />
                 {t("av.engine.recheck")}
               </button>
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => onNavigate("updates")}
-              >
+              <button type="button" className="button button--ghost" onClick={onOpenSetup}>
                 {t("av.engine.provision")}
                 <ArrowRight size={15} />
               </button>
             </div>
-            <code className="inline-code">
-              winget install --id Cisco.ClamAV --exact
-            </code>
           </div>
         </div>
       )}
@@ -593,7 +594,7 @@ export function Antivirus({
       <div className="av-layout">
         <div className="av-main">
           <section className="panel">
-            <div className="av-tabs" role="tablist" aria-label={t("av.tabs.label")}>
+            <div className="av-tabs" role="group" aria-label={t("av.tabs.label")}>
               {tabButton("quick", t("av.tabs.quick"), <Gauge size={16} />)}
               {tabButton("full", t("av.tabs.full"), <ShieldCheck size={16} />)}
               {tabButton("custom", t("av.tabs.custom"), <FolderOpen size={16} />)}
@@ -1363,7 +1364,7 @@ export function Antivirus({
                     engine.signatureAgeDays,
                     settings?.signatureMaxAgeDays,
                   )
-                : (engine?.message ?? t("common.loading"))}
+                : t("av.engineMissing.body")}
             </p>
 
             <div className="path-box" title={engine?.databasePath ?? undefined}>

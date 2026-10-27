@@ -21,6 +21,7 @@ use cbs_firewall::{FirewallAlert, FirewallStatus, RuleSummary};
 use cbs_netmon::{NetConnection, Transport};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::State;
 
 use crate::error::CommandError;
@@ -43,8 +44,79 @@ pub struct FirewallObservation {
     pub changes: Vec<FirewallChange>,
     /// Honest security alerts derived from the live profile state.
     pub alerts: Vec<FirewallAlert>,
+    /// State of the two Windows services the firewall depends on.
+    pub service: FirewallServiceHealth,
     /// True when the displayed rule list is a bounded extract.
     pub listed_truncated: bool,
+}
+
+/// Read-only health of the Windows Firewall service stack.
+///
+/// `sc query` is used with a hidden console. The numeric state token is parsed
+/// instead of localized text, so the result is stable on French and English
+/// Windows installations. This never changes the service state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallServiceHealth {
+    pub mps_svc: String,
+    pub bfe: String,
+    pub observed: bool,
+    pub checked_at: String,
+}
+
+fn parse_service_state(output: &str) -> String {
+    for line in output.lines() {
+        let Some((_, value)) = line.split_once(':') else {
+            continue;
+        };
+        let Some(code) = value.split_whitespace().next() else {
+            continue;
+        };
+        let state = match code {
+            "1" => "stopped",
+            "2" => "startPending",
+            "3" => "stopPending",
+            "4" => "running",
+            "5" => "continuePending",
+            "6" => "pausePending",
+            "7" => "paused",
+            _ => continue,
+        };
+        return state.to_string();
+    }
+    "unknown".to_string()
+}
+
+fn query_service_state(name: &str) -> String {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let output = std::process::Command::new("sc")
+            .args(["query", name])
+            .creation_flags(0x0800_0000)
+            .output();
+        match output {
+            Ok(output) => parse_service_state(&String::from_utf8_lossy(&output.stdout)),
+            Err(_) => "unknown".to_string(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = name;
+        "unknown".to_string()
+    }
+}
+
+fn firewall_service_health() -> FirewallServiceHealth {
+    let mps_svc = query_service_state("MpsSvc");
+    let bfe = query_service_state("BFE");
+    let observed = mps_svc != "unknown" || bfe != "unknown";
+    FirewallServiceHealth {
+        mps_svc,
+        bfe,
+        observed,
+        checked_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -162,6 +234,7 @@ fn observation(
         changed_since_last: !changes.is_empty(),
         changes,
         alerts: cbs_firewall::security_alerts(&status),
+        service: firewall_service_health(),
         status,
         listed_truncated,
     }
@@ -208,6 +281,11 @@ pub struct FirewallSnapshotExport {
     pub rules_total_count: u32,
     pub truncated: bool,
     pub checked_at: String,
+    /// The file is an audit copy only: no restore path exists.
+    pub read_only: bool,
+    pub restore_supported: bool,
+    /// SHA-256 of the exact bytes written to disk.
+    pub sha256: String,
 }
 
 /// Export a read-only JSON snapshot for audit/diagnostics.
@@ -220,16 +298,21 @@ pub async fn firewall_export_snapshot(
 ) -> Result<FirewallSnapshotExport, CommandError> {
     let status = inspect_status().await?;
     let path = snapshot_path(&state.paths.firewall_backups, &status.checked_at);
+    let exported_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let snapshot = serde_json::json!({
         "product": "CBS Shield",
         "kind": "firewall-read-only-snapshot",
         "version": env!("CARGO_PKG_VERSION"),
+        "exportedAt": exported_at,
+        "readOnly": true,
+        "restoreSupported": false,
         "note": "Read-only reference. Restoring firewall rules is intentionally not implemented.",
         "status": status,
     });
     let text = serde_json::to_string_pretty(&snapshot).map_err(|err| {
         CommandError::internal(format!("sérialisation de l'instantané pare-feu : {err}"))
     })?;
+    let sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
     let path_clone = path.clone();
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = path_clone.parent() {
@@ -252,6 +335,9 @@ pub async fn firewall_export_snapshot(
         rules_total_count: status.rules_total_count,
         truncated: (status.rules.len() as u32) < status.rules_total_count,
         checked_at: status.checked_at,
+        read_only: true,
+        restore_supported: false,
+        sha256,
     })
 }
 
@@ -475,8 +561,20 @@ pub struct RuleManagementGate {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuleRecoveryPlan {
+    /// `designOnly` until every gate is satisfied in an isolated environment.
+    pub state: String,
+    pub snapshot_read_only: bool,
+    pub restore_exposed: bool,
+    pub rollback_rehearsed: bool,
+    pub isolation_required: bool,
+    pub designed_version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleManagementStatus {
-    /// Permanently false in Sprint 5: no mutation API is exposed.
+    /// Permanently false in Sprint 6: no mutation API is exposed.
     pub enabled: bool,
     pub mutation_api_exposed: bool,
     pub backup_directory: String,
@@ -484,6 +582,7 @@ pub struct RuleManagementStatus {
     pub last_snapshot_at: Option<String>,
     pub gates: Vec<RuleManagementGate>,
     pub rollback_design_version: String,
+    pub recovery: RuleRecoveryPlan,
 }
 
 #[tauri::command]
@@ -538,6 +637,14 @@ pub fn firewall_management_status(
             },
         ],
         rollback_design_version: "1".to_string(),
+        recovery: RuleRecoveryPlan {
+            state: "designOnly".to_string(),
+            snapshot_read_only: true,
+            restore_exposed: false,
+            rollback_rehearsed: false,
+            isolation_required: true,
+            designed_version: "1".to_string(),
+        },
     })
 }
 
@@ -722,6 +829,21 @@ mod tests {
         );
         let name = path.file_name().unwrap().to_string_lossy();
         assert_eq!(name, "firewall-snapshot-20261026T090000Z.json");
+    }
+
+    #[test]
+    fn parses_real_sc_query_states_without_inventing_values() {
+        let running = "SERVICE_NAME: MpsSvc\n        TYPE               : 30  WIN32\n        STATE              : 4  RUNNING\n";
+        let stopped = "SERVICE_NAME: BFE\n        STATE              : 1  STOPPED\n";
+        let pending = "        STATE              : 3  STOP_PENDING\n";
+        assert_eq!(parse_service_state(running), "running");
+        assert_eq!(parse_service_state(stopped), "stopped");
+        assert_eq!(parse_service_state(pending), "stopPending");
+        assert_eq!(parse_service_state("SERVICE_NAME: BFE"), "unknown");
+        assert_eq!(
+            parse_service_state("        STATE              : 42  MYSTERY\n"),
+            "unknown"
+        );
     }
 
     #[test]

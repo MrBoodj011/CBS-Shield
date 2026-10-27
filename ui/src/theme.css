@@ -1574,6 +1574,141 @@ button.event-row:hover {
   gap: 8px;
 }
 
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.compare-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid rgba(63, 224, 166, 0.2);
+  border-radius: 12px;
+  background: rgba(63, 224, 166, 0.035);
+}
+
+.compare-card--muted {
+  border-color: rgba(255, 180, 84, 0.2);
+  background: rgba(255, 180, 84, 0.035);
+}
+
+.compare-card h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.compare-card .rule-list {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 11.5px;
+}
+
+.compare-card > .badge:last-child {
+  margin-top: auto;
+}
+
+.snapshot-hash {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(7, 11, 18, 0.3);
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+[data-theme="light"] .snapshot-hash {
+  background: rgba(233, 241, 250, 0.8);
+}
+
+.recovery-plan {
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+
+.recovery-plan__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.recovery-plan__head h3 {
+  margin: 3px 0 0;
+  font-size: 13px;
+}
+
+.recovery-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-steps > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(122, 158, 209, 0.02);
+}
+
+.recovery-steps > li.is-ok {
+  border-color: rgba(63, 224, 166, 0.2);
+  background: rgba(63, 224, 166, 0.035);
+}
+
+.recovery-steps > li > span:first-child {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: rgba(122, 158, 209, 0.12);
+  color: var(--text-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+  place-items: center;
+}
+
+.recovery-steps > li > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.recovery-steps strong {
+  font-size: 11.5px;
+}
+
+.recovery-steps small {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .compare-grid,
+  .setup-install__source {
+    grid-template-columns: 1fr;
+  }
+}
+
 .gate-card {
   display: flex;
   align-items: center;
@@ -2084,6 +2219,116 @@ button.event-row:hover {
   gap: 8px;
   color: var(--faint);
   font-size: 10.5px;
+}
+
+.setup-install__source {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(78, 167, 255, 0.04);
+}
+
+.setup-install__source > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setup-install__source strong {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.setup-install-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-install-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(122, 158, 209, 0.025);
+}
+
+.setup-install-steps__num {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: none;
+  border: 1px solid rgba(78, 167, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(78, 167, 255, 0.1);
+  color: var(--accent-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  place-items: center;
+}
+
+.setup-install-steps li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setup-install-steps strong {
+  font-size: 11.5px;
+}
+
+.setup-install-steps small {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.setup-install-progress {
+  padding: 12px;
+  border: 1px solid rgba(78, 167, 255, 0.24);
+  border-radius: 10px;
+  background: rgba(78, 167, 255, 0.05);
+}
+
+.setup-install-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 11.5px;
+}
+
+.setup-install-progress__head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft);
+}
+
+.setup-install-progress__head strong {
+  color: var(--accent-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-install-progress .progress-rail {
+  margin-bottom: 9px;
+}
+
+.setup-install-progress p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 
 .setup-command {

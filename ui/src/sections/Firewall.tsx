@@ -254,6 +254,14 @@ export function Firewall() {
     }
   };
 
+  const service = observation?.service;
+  const serviceWarning = Boolean(
+    service?.observed &&
+      (service.mpsSvc !== "running" || service.bfe !== "running"),
+  );
+  const serviceUnknown = Boolean(service && !service.observed);
+  const recovery = management?.recovery;
+
   return (
     <div className="section-stack">
       <div className="banner banner--info">
@@ -295,6 +303,41 @@ export function Firewall() {
                 {L("Réessayer", "Retry")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {serviceWarning && (
+        <div className="banner banner--warning" role="alert">
+          <ShieldAlert size={19} aria-hidden="true" />
+          <div>
+            <strong>
+              {L(
+                "Les services du pare-feu Windows ne sont pas tous en cours d'exécution",
+                "The Windows Firewall services are not all running",
+              )}
+            </strong>
+            <span>
+              {L(
+                `MpsSvc : ${service?.mpsSvc ?? "inconnu"} · BFE : ${service?.bfe ?? "inconnu"}. Une lecture des profils peut être incomplète ou obsolète. CBS Shield ne démarre ni n'arrête aucun service : vérifiez Windows Security et les services Windows.`,
+                `MpsSvc: ${service?.mpsSvc ?? "unknown"} · BFE: ${service?.bfe ?? "unknown"}. A profile reading may be incomplete or stale. CBS Shield does not start or stop any service: review Windows Security and Windows services.`,
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {serviceUnknown && (
+        <div className="banner banner--neutral">
+          <TriangleAlert size={19} aria-hidden="true" />
+          <div>
+            <strong>{L("État des services non vérifié", "Service state not verified")}</strong>
+            <span>
+              {L(
+                "CBS Shield n'a pas pu lire l'état de MpsSvc et BFE. L'observation des profils reste affichée, mais sa fraîcheur n'est pas garantie.",
+                "CBS Shield could not read the state of MpsSvc and BFE. Profile observations remain displayed, but their freshness is not guaranteed.",
+              )}
+            </span>
           </div>
         </div>
       )}
@@ -392,7 +435,7 @@ export function Firewall() {
           <div className="row-actions">
             {status && status.activeProfiles.length > 0 && (
               <Badge tone="info" dot>
-                {L("Actif : ", "Active: ")}
+                {L("Profil réseau : ", "Network profile: ")}
                 {status.activeProfiles.map((value) => profileLabel(value)).join(" + ")}
               </Badge>
             )}
@@ -444,6 +487,50 @@ export function Firewall() {
             </p>
           </>
         ) : null}
+      </section>
+
+      <section className="panel">
+        <div className="panel__head">
+          <div>
+            <span className="panel__eyebrow">
+              {L("Référence et décision effective", "Reference and effective decision")}
+            </span>
+            <h2>{L("Une règle déclarée n'est pas un verdict", "A declared rule is not a verdict")}</h2>
+          </div>
+          <Badge tone="info" dot>
+            {L("Décision non calculée", "Decision not calculated")}
+          </Badge>
+        </div>
+        <div className="compare-grid">
+          <article className="compare-card">
+            <span className="panel__eyebrow">{L("Référence", "Reference")}</span>
+            <h3>{L("Ce que CBS Shield lit", "What CBS Shield reads")}</h3>
+            <ul className="rule-list">
+              <li>{L("profils Windows et actions par défaut ;", "Windows profiles and default actions;")}</li>
+              <li>{L("règles déclarées, direction, action et état activé ;", "declared rules, direction, action and enabled state;")}</li>
+              <li>{L("programme, protocole, ports et profil ciblés ;", "program, protocol, ports and targeted profile;")}</li>
+              <li>{L("empreintes locales pour détecter un changement.", "local fingerprints to detect changes.")}</li>
+            </ul>
+            <Badge tone="ok" dot>{L("Lu", "Read")}</Badge>
+          </article>
+          <article className="compare-card compare-card--muted">
+            <span className="panel__eyebrow">{L("Décision effective", "Effective decision")}</span>
+            <h3>{L("Ce que CBS Shield ne prétend pas calculer", "What CBS Shield does not claim to calculate")}</h3>
+            <ul className="rule-list">
+              <li>{L("priorité entre règles Autoriser et Bloquer ;", "precedence between Allow and Block rules;")}</li>
+              <li>{L("filtres WFP, stratégie de groupe et renforcement du service ;", "WFP filters, Group Policy and service hardening;")}</li>
+              <li>{L("IPsec, adresses locales/distantes et utilisateurs authentifiés ;", "IPsec, local/remote addresses and authenticated users;")}</li>
+              <li>{L("décision réelle pour un paquet ou une connexion donnée.", "the real decision for a given packet or connection.")}</li>
+            </ul>
+            <Badge tone="warning" dot>{L("Non calculée", "Not calculated")}</Badge>
+          </article>
+        </div>
+        <p className="panel__note">
+          {L(
+            "Une règle « Autoriser » visible ne prouve pas qu'un trafic est autorisé : une règle de blocage, un filtre WFP ou une stratégie plus spécifique peut s'appliquer. CBS Shield ne consulte pas les filtres effectifs du noyau et ne remplace pas Windows Security.",
+            "A visible “Allow” rule does not prove that traffic is allowed: a block rule, a WFP filter or a more specific policy may apply. CBS Shield does not query the kernel's effective filters and does not replace Windows Security.",
+          )}
+        </p>
       </section>
 
       <section className="panel">
@@ -661,14 +748,102 @@ export function Firewall() {
               </Badge>
             </div>
             {exportInfo && (
-              <p className="panel__note panel__note--success">
-                <CheckCircle2 size={14} />{" "}
+              <div className="callout callout--info">
+                <strong>{L("Instantané d'audit écrit", "Audit snapshot written")}</strong>
+                <span>
+                  {L(
+                    `${exportInfo.path} · ${formatNumber(exportInfo.rulesSaved)}/${formatNumber(exportInfo.rulesTotalCount)} règles${exportInfo.truncated ? ", tronqué" : ""}.`,
+                    `${exportInfo.path} · ${formatNumber(exportInfo.rulesSaved)}/${formatNumber(exportInfo.rulesTotalCount)} rules${exportInfo.truncated ? ", truncated" : ""}.`,
+                  )}
+                </span>
+                <span>
+                  <LockKeyhole size={13} />{" "}
+                  {L(
+                    "Fichier en lecture seule logique : aucune importation ni restauration n'est exposée.",
+                    "Logically read-only file: no import or restore path is exposed.",
+                  )}
+                </span>
+                <code className="snapshot-hash" title={exportInfo.sha256}>
+                  SHA-256 · {exportInfo.sha256}
+                </code>
+              </div>
+            )}
+
+            <div className="recovery-plan">
+              <div className="recovery-plan__head">
+                <div>
+                  <span className="panel__eyebrow">{L("Récupération", "Recovery")}</span>
+                  <h3>{L("Plan de récupération — conception seulement", "Recovery plan — design only")}</h3>
+                </div>
+                <Badge tone="warning" dot>
+                  {L("Non actif", "Not active")}
+                </Badge>
+              </div>
+              <ol className="recovery-steps">
+                <li className="is-ok">
+                  <span>1</span>
+                  <div>
+                    <strong>{L("Instantané vérifiable", "Verifiable snapshot")}</strong>
+                    <small>
+                      {L(
+                        "Copie JSON en lecture seule, empreinte SHA-256 affichée après export.",
+                        "Read-only JSON copy, SHA-256 displayed after export.",
+                      )}
+                    </small>
+                  </div>
+                  <Badge tone="ok" dot>{L("Conçu", "Designed")}</Badge>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>{L("Restauration absente", "Restore absent")}</strong>
+                    <small>
+                      {L(
+                        "Aucun chemin de code ne peut importer ou appliquer un instantané.",
+                        "No code path can import or apply a snapshot.",
+                      )}
+                    </small>
+                  </div>
+                  <Badge tone="danger" dot>{L("Non implémentée", "Not implemented")}</Badge>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>{L("Répétition de restauration", "Rollback rehearsal")}</strong>
+                    <small>
+                      {L(
+                        "À exécuter dans une VM Windows isolée, avec export avant/après et validation des règles.",
+                        "To be run in an isolated Windows VM, with before/after export and rule validation.",
+                      )}
+                    </small>
+                  </div>
+                  <Badge tone="warning" dot>
+                    {recovery?.rollbackRehearsed
+                      ? L("Validée", "Validated")
+                      : L("Non réalisée", "Not performed")}
+                  </Badge>
+                </li>
+                <li>
+                  <span>4</span>
+                  <div>
+                    <strong>{L("Autorisation explicite", "Explicit authorization")}</strong>
+                    <small>
+                      {L(
+                        "Aucune mutation ne sera activée sans accord distinct et documenté.",
+                        "No mutation will be enabled without separate, documented consent.",
+                      )}
+                    </small>
+                  </div>
+                  <Badge tone="danger" dot>{L("Requise", "Required")}</Badge>
+                </li>
+              </ol>
+              <p className="panel__note">
                 {L(
-                  `Instantané écrit : ${exportInfo.path} (${formatNumber(exportInfo.rulesSaved)}/${formatNumber(exportInfo.rulesTotalCount)} règles${exportInfo.truncated ? ", tronqué" : ""}).`,
-                  `Snapshot written: ${exportInfo.path} (${formatNumber(exportInfo.rulesSaved)}/${formatNumber(exportInfo.rulesTotalCount)} rules${exportInfo.truncated ? ", truncated" : ""}).`,
+                  "Architecture future : schéma versionné, refus des fichiers non reconnus, journal d'audit, sauvegarde préalable obligatoire, test isolé et retour arrière explicite. Aucun de ces mécanismes de mutation n'est exposé dans cette version.",
+                  "Future architecture: versioned schema, rejection of unknown files, audit log, mandatory prior backup, isolated test and explicit rollback. None of these mutation mechanisms is exposed in this version.",
                 )}
               </p>
-            )}
+            </div>
           </>
         ) : managementError ? (
           <p className="panel__note">{managementError}</p>
@@ -857,8 +1032,8 @@ export function Firewall() {
         </ul>
         <p className="panel__note">
           {L(
-            "Fondation Sprint 5 : observation, alertes réelles, détection de changement composite et association processus-règles. La modification du pare-feu reste hors périmètre.",
-            "Sprint 5 foundation: observation, real alerts, composite change detection and process-to-rule mapping. Firewall mutation remains out of scope.",
+            "Sprint 6 : observation, alertes réelles, détection de changement composite, diagnostic des services et association processus-règles. La modification du pare-feu reste hors périmètre.",
+            "Sprint 6: observation, real alerts, composite change detection, service diagnostics and process-to-rule mapping. Firewall mutation remains out of scope.",
           )}
         </p>
       </section>

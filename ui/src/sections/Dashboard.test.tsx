@@ -114,7 +114,7 @@ function renderDashboard(engine: EngineStatus | null) {
         quarantine={quarantine}
         info={{
           product: "CBS Shield",
-          version: "0.3.0-dev",
+          version: "0.6.0-dev",
           vendor: "Cybrense",
           phase: "Phase 3",
           disclaimer: "Protection manuelle expérimentale.",
@@ -130,7 +130,7 @@ describe("Dashboard", () => {
   it("never claims full protection when ClamAV is missing", async () => {
     renderDashboard(null);
 
-    expect(await screen.findByText("Protection manuelle indisponible")).toBeInTheDocument();
+    expect(await screen.findByText("Analyse manuelle indisponible")).toBeInTheDocument();
     expect(screen.getAllByText("Temps réel inactif").length).toBeGreaterThan(0);
     expect(screen.queryByText(/entièrement protégé/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/fully protected/i)).not.toBeInTheDocument();
@@ -143,7 +143,7 @@ describe("Dashboard", () => {
   it("renders the real engine, signature, quarantine and traffic values", async () => {
     renderDashboard(installedEngine);
 
-    expect(await screen.findByText("Protection manuelle opérationnelle")).toBeInTheDocument();
+    expect(await screen.findByText("Analyse manuelle prête")).toBeInTheDocument();
     expect(screen.getByText("1.4.3")).toBeInTheDocument();
     expect(screen.getByText("27000")).toBeInTheDocument();
     // Quarantine count is derived from the real active records.

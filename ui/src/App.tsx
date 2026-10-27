@@ -83,6 +83,7 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false);
   const autoSetupHandled = useRef(false);
   const mainRef = useRef<HTMLDivElement | null>(null);
+  const language: Language = settings?.language === "en" ? "en" : "fr";
 
   const refreshEngine = useCallback(
     async (notify = false) => {
@@ -98,21 +99,31 @@ export default function App() {
         if (notify) {
           toast({
             tone: status.installed ? "success" : "error",
-            title: status.installed ? "Diagnostic terminé" : "ClamAV introuvable",
-            message: status.message,
+            title: translate(
+              language,
+              status.installed ? "shell.diagnosticDone" : "shell.clamavMissing",
+            ),
+            message: translate(
+              language,
+              status.installed ? "shell.clamavDetected" : "shell.clamavNotDetected",
+            ),
           });
         }
       } catch (error) {
         const message = errorMessage(error);
         if (notify) {
-          toast({ tone: "error", title: "Diagnostic impossible", message });
+          toast({
+            tone: "error",
+            title: translate(language, "shell.diagnosticFailed"),
+            message,
+          });
         }
         setOffline((current) => current ?? message);
       } finally {
         setEngineLoading(false);
       }
     },
-    [toast],
+    [language, toast],
   );
 
   const refreshHistory = useCallback(async () => {
@@ -233,7 +244,6 @@ export default function App() {
     [refreshEngine, settings?.language],
   );
 
-  const language: Language = settings?.language === "en" ? "en" : "fr";
   const t = (key: TranslationKey) => translate(language, key);
   const L = (fr: string, en: string) => (language === "en" ? en : fr);
   const meta = {
@@ -252,6 +262,7 @@ export default function App() {
             subtitle={meta.subtitle}
             engine={engine}
             engineLoading={engineLoading}
+            signatureMaxAgeDays={settings?.signatureMaxAgeDays ?? 7}
             onRefresh={() => {
               void refreshAll();
             }}
@@ -325,6 +336,7 @@ export default function App() {
                     void handleDataChanged();
                   }}
                   onNavigate={setSection}
+                  onOpenSetup={() => setSetupOpen(true)}
                 />
               )}
 
@@ -377,7 +389,7 @@ export default function App() {
 
             <footer className="app-footer">
               <span>
-                CBS Shield v{info?.version ?? "0.3.0-dev"} — {info?.vendor ?? "Cybrense"}
+                CBS Shield v{info?.version ?? "0.6.0-dev"} — {info?.vendor ?? "Cybrense"}
               </span>
               <span>{t("shell.disclaimer")}</span>
             </footer>

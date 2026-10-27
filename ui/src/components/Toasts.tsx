@@ -35,6 +35,8 @@ const ICONS = {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const closeLabel =
+    document.documentElement.lang === "en" ? "Close notification" : "Fermer la notification";
 
   const dismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -68,7 +70,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 type="button"
                 className="toast__close"
                 onClick={() => dismiss(toast.id)}
-                aria-label="Fermer la notification"
+                aria-label={closeLabel}
               >
                 <X size={15} />
               </button>

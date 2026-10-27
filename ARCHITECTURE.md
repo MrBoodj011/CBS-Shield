@@ -1,4 +1,4 @@
-# Architecture — CBS Shield 0.5.0-dev
+# Architecture — CBS Shield 0.6.0-dev
 
 CBS Shield est une application **Tauri 2** : un backend Rust natif expose des
 commandes IPC à une interface React/TypeScript chargée dans WebView2. Toute la
@@ -153,8 +153,8 @@ Commandes (`invoke`) :
 | `firewall_status` | — | `FirewallObservation` |
 | `firewall_acknowledge_baseline` | — | `FirewallObservation` |
 | `firewall_connections` | — | `FirewallConnectionsPayload` |
-| `firewall_export_snapshot` | — | chemin du JSON |
-| `firewall_management_status` | — | gates verrouillés |
+| `firewall_export_snapshot` | — | `SnapshotExportResult` (chemin, SHA-256, lecture seule) |
+| `firewall_management_status` | — | gates verrouillés + plan de récupération |
 | `get_settings` | — | `SettingsView` |
 | `update_settings` | `patch` | `SettingsView` |
 | `open_data_dir` | — | — |
