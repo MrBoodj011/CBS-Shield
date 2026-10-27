@@ -76,9 +76,16 @@ vi.mock("../lib/api", () => ({
         rules: [],
         rulesTotalCount: 0,
         rulesHash: "hash",
+        profilesHash: "profiles-hash",
+        configurationHash: "configuration-hash",
       },
       previousCheckedAt: null,
       changedSinceLast: false,
+      changes: [],
+      alerts: [
+        { code: "profile_disabled", severity: "warning", profile: "public" },
+        { code: "inbound_default_allow", severity: "warning", profile: "private" },
+      ],
       listedTruncated: false,
     })),
     netmonHistory: vi.fn(async () => [

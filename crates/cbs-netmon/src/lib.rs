@@ -55,6 +55,9 @@ pub struct NetConnection {
     pub pid: u32,
     /// File name of the owning process, best effort (`None` = unknown).
     pub process_name: Option<String>,
+    /// Full image path of the owning process when Windows allows
+    /// `QueryFullProcessImageNameW`; never fabricated.
+    pub process_path: Option<String>,
 }
 
 /// Cumulative per-interface counters at capture time (NDIS `InOctets` /
@@ -191,5 +194,11 @@ mod tests {
         assert!(name.is_some(), "the current process must be identifiable");
         let name = name.unwrap();
         assert!(name.to_ascii_lowercase().ends_with(".exe") || name.contains("cbs"));
+        let path = sys::process_image_path_of(pid);
+        assert!(
+            path.as_deref()
+                .is_some_and(|value| value.to_ascii_lowercase().ends_with(".exe")),
+            "the current process image path must be readable: {path:?}"
+        );
     }
 }

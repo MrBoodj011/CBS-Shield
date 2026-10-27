@@ -151,6 +151,7 @@ mod tests {
             state: Some("ESTABLISHED".to_string()),
             pid: 1,
             process_name: process_name.map(str::to_string),
+            process_path: process_name.map(|name| format!("C:\\Program Files\\Test\\{name}")),
         }
     }
 

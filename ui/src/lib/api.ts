@@ -2,15 +2,19 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   AppInfo,
+  ClamavInstallResult,
   DashboardStats,
   EngineStatus,
   ExportResult,
+  FirewallConnections,
   FirewallObservation,
+  FirewallSnapshotExport,
   NetmonSnapshotPayload,
   NetmonSnapshotRecord,
   ProvisioningStatus,
   QuarantineRecord,
   ResolvedTargets,
+  RuleManagementStatus,
   ScanDetails,
   ScanLimits,
   ScanProfile,
@@ -29,6 +33,8 @@ export const api = {
   engineStatus: () => invoke<EngineStatus>("engine_status"),
   updateSignatures: (confirm: boolean) =>
     invoke<SignatureUpdateResult>("update_signatures", { confirm }),
+  installClamav: (confirm: boolean) =>
+    invoke<ClamavInstallResult>("install_clamav", { confirm }),
 
   startScan: (input: {
     paths: string[];
@@ -82,6 +88,13 @@ export const api = {
   netmonSnapshot: () => invoke<NetmonSnapshotPayload>("netmon_snapshot"),
   netmonHistory: (limit = 40) => invoke<NetmonSnapshotRecord[]>("netmon_history", { limit }),
   firewallStatus: () => invoke<FirewallObservation>("firewall_status"),
+  firewallAcknowledgeBaseline: () =>
+    invoke<FirewallObservation>("firewall_acknowledge_baseline"),
+  firewallConnections: () => invoke<FirewallConnections>("firewall_connections"),
+  firewallExportSnapshot: () =>
+    invoke<FirewallSnapshotExport>("firewall_export_snapshot"),
+  firewallManagementStatus: () =>
+    invoke<RuleManagementStatus>("firewall_management_status"),
 };
 
 export function errorMessage(error: unknown): string {

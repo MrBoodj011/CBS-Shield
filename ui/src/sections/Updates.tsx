@@ -5,6 +5,7 @@ import {
   Database,
   Download,
   FileText,
+  ListChecks,
   RefreshCw,
   ServerCog,
   Settings2,
@@ -37,10 +38,12 @@ interface UpdatesProps {
   engine: EngineStatus | null;
   settings: SettingsView | null;
   onEngineChanged: (status: EngineStatus) => void;
+  onOpenSetup: () => void;
 }
 
-export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
-  const { t } = useI18n();
+export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: UpdatesProps) {
+  const { t, language } = useI18n();
+  const L = (fr: string, en: string) => (language === "en" ? en : fr);
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [running, setRunning] = useState(false);
@@ -171,6 +174,24 @@ export function Updates({ engine, settings, onEngineChanged }: UpdatesProps) {
 
   return (
     <div className="section-stack">
+      <div className="banner banner--neutral">
+        <ListChecks size={19} aria-hidden="true" />
+        <div>
+          <strong>{L("Moteur et signatures non configurés ?", "Engine or signatures not configured?")}</strong>
+          <span>
+            {L(
+              "L'assistant de préparation vérifie la présence de ClamAV, l'intégrité des bases officielles et les mises à jour automatiques. Aucune installation silencieuse.",
+              "The setup assistant checks ClamAV availability, official database integrity and automatic updates. No silent installation.",
+            )}
+          </span>
+          <div className="banner__actions">
+            <button type="button" className="button button--ghost" onClick={onOpenSetup}>
+              <ListChecks size={15} />
+              {L("Ouvrir l'assistant", "Open setup assistant")}
+            </button>
+          </div>
+        </div>
+      </div>
       <div className="update-grid">
         <section className="panel">
           <div className="panel__head">

@@ -1,6 +1,8 @@
+import { ShieldAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Sidebar } from "./components/Sidebar";
+import { SetupWizard } from "./components/SetupWizard";
 import { TopBar } from "./components/TopBar";
 import { useToast } from "./components/Toasts";
 import { api, errorMessage } from "./lib/api";
@@ -78,6 +80,8 @@ export default function App() {
   const [quarantineLoading, setQuarantineLoading] = useState(true);
   const [offline, setOffline] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const autoSetupHandled = useRef(false);
   const mainRef = useRef<HTMLDivElement | null>(null);
 
   const refreshEngine = useCallback(
@@ -182,10 +186,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!settings || settings.onboardingCompleted || autoSetupHandled.current) return;
+    autoSetupHandled.current = true;
+    setSetupOpen(true);
+  }, [settings]);
+
+  useEffect(() => {
     if (!settings) return;
     const preferred = settings.theme;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");    const apply = () => {
       const resolved =
         preferred === "system" ? (media.matches ? "dark" : "light") : preferred;
       document.documentElement.dataset.theme = resolved === "light" ? "light" : "dark";
@@ -226,6 +235,7 @@ export default function App() {
 
   const language: Language = settings?.language === "en" ? "en" : "fr";
   const t = (key: TranslationKey) => translate(language, key);
+  const L = (fr: string, en: string) => (language === "en" ? en : fr);
   const meta = {
     title: t(SECTION_META[section].title),
     subtitle: t(SECTION_META[section].subtitle),
@@ -260,6 +270,30 @@ export default function App() {
                       onClick={() => void refreshAll()}
                     >
                       {t("common.retry")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {settings && !settings.onboardingCompleted && !setupOpen && (
+              <div className="banner banner--warning">
+                <ShieldAlert size={19} aria-hidden="true" />
+                <div>
+                  <strong>{L("Préparation non terminée", "Setup not finished")}</strong>
+                  <span>
+                    {L(
+                      "Le moteur, les signatures et l'état du pare-feu n'ont pas encore été vérifiés. CBS Shield ne prétend pas à une protection complète.",
+                      "The engine, signatures and firewall state have not been checked yet. CBS Shield does not claim complete protection.",
+                    )}
+                  </span>
+                  <div className="banner__actions">
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      onClick={() => setSetupOpen(true)}
+                    >
+                      {L("Reprendre la préparation", "Resume setup")}
                     </button>
                   </div>
                 </div>
@@ -314,6 +348,7 @@ export default function App() {
                   engine={engine}
                   settings={settings}
                   onEngineChanged={(status) => setEngine(status)}
+                  onOpenSetup={() => setSetupOpen(true)}
                 />
               )}
 
@@ -325,6 +360,7 @@ export default function App() {
                   engineLoading={engineLoading}
                   onSettingsSaved={handleSettingsSaved}
                   onEngineChanged={(status) => setEngine(status)}
+                  onOpenSetup={() => setSetupOpen(true)}
                 />
               )}
 
@@ -348,6 +384,26 @@ export default function App() {
           </main>
         </div>
       </div>
+      <SetupWizard
+        open={setupOpen}
+        engine={engine}
+        settings={settings}
+        onClose={() => setSetupOpen(false)}
+        onCompleted={(saved) => {
+          setSettings(saved);
+          setSetupOpen(false);
+          void refreshAll();
+        }}
+        onEngineChanged={(status) => {
+          setEngine(status);
+          void api.signatureInventory().then(setInventory).catch(() => undefined);
+        }}
+        onSettingsChanged={handleSettingsSaved}
+        onNavigate={(next) => {
+          setSection(next);
+          setSetupOpen(false);
+        }}
+      />
     </I18nProvider>
   );
 }

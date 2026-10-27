@@ -19,6 +19,7 @@ const snapshotPayload: NetmonSnapshotPayload = {
         state: "ESTABLISHED",
         pid: 4242,
         processName: "example-app.exe",
+        processPath: "C:\\Apps\\example-app.exe",
       },
       {
         transport: "tcp",
@@ -29,6 +30,7 @@ const snapshotPayload: NetmonSnapshotPayload = {
         state: "LISTEN",
         pid: 4,
         processName: "System",
+        processPath: null,
       },
       {
         transport: "tcp",
@@ -39,6 +41,7 @@ const snapshotPayload: NetmonSnapshotPayload = {
         state: "TIME-WAIT",
         pid: 7,
         processName: null,
+        processPath: null,
       },
     ],
     udpBindings: [
@@ -51,6 +54,7 @@ const snapshotPayload: NetmonSnapshotPayload = {
         state: null,
         pid: 12,
         processName: "dns-client.exe",
+        processPath: "C:\\Apps\\dns-client.exe",
       },
     ],
     interfaces: [

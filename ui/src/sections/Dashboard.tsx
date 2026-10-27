@@ -137,6 +137,99 @@ export function Dashboard({
         : "posture.unavailableHint",
   );
 
+  const L = (fr: string, en: string) => (language === "en" ? en : fr);
+
+  const securityAlerts = useMemo(() => {
+    const alerts: Array<{
+      key: string;
+      title: string;
+      detail: string;
+      tone: "danger" | "warning";
+      target: SectionId;
+    }> = [];
+    if (!engine) {
+      // Still loading: do not invent an alert.
+    } else if (!installed) {
+      alerts.push({
+        key: "engine-missing",
+        title: L("Moteur ClamAV absent", "ClamAV engine missing"),
+        detail: L(
+          "Les analyses manuelles sont indisponibles. Aucune protection en temps réel n'est active.",
+          "Manual scans are unavailable. No real-time protection is active.",
+        ),
+        tone: "danger",
+        target: "antivirus",
+      });
+    } else if (engine.signatureState === "missing" || engine.signatureState === "outdated") {
+      alerts.push({
+        key: "signatures",
+        title:
+          engine.signatureState === "missing"
+            ? L("Signatures absentes", "Signatures missing")
+            : L("Signatures anciennes", "Outdated signatures"),
+        detail: L(
+          "Les analyses reposent sur une base incomplète ou ancienne. Vérifiez les mises à jour.",
+          "Scans rely on an incomplete or old database. Check updates.",
+        ),
+        tone: "warning",
+        target: "updates",
+      });
+    }
+
+    if (firewall) {
+      const allDisabled = firewall.alerts.some(
+        (alert) => alert.code === "all_profiles_disabled",
+      );
+      if (allDisabled) {
+        alerts.push({
+          key: "firewall-disabled",
+          title: L("Pare-feu Windows désactivé", "Windows Firewall disabled"),
+          detail: L(
+            "Tous les profils observés sont désactivés. CBS Shield ne modifie pas le pare-feu : vérifiez Windows Security.",
+            "All observed profiles are disabled. CBS Shield does not change the firewall: review Windows Security.",
+          ),
+          tone: "danger",
+          target: "firewall",
+        });
+      } else {
+        const disabled = firewall.alerts.filter(
+          (alert) => alert.code === "profile_disabled",
+        ).length;
+        if (disabled > 0) {
+          alerts.push({
+            key: "firewall-profile",
+            title: L(
+              `${disabled} profil(s) de pare-feu désactivé(s)`,
+              `${disabled} firewall profile(s) disabled`,
+            ),
+            detail: L(
+              "La protection réseau n'est pas active sur tous les profils. Observation en lecture seule.",
+              "Network protection is not active on every profile. Read-only observation.",
+            ),
+            tone: "warning",
+            target: "firewall",
+          });
+        }
+      }
+      const inboundAllow = firewall.alerts.some(
+        (alert) => alert.code === "inbound_default_allow",
+      );
+      if (inboundAllow) {
+        alerts.push({
+          key: "firewall-inbound",
+          title: L("Entrant autorisé par défaut", "Inbound allowed by default"),
+          detail: L(
+            "Un profil actif autorise les connexions entrantes non couvertes par une règle.",
+            "An enabled profile allows inbound connections not covered by a rule.",
+          ),
+          tone: "warning",
+          target: "firewall",
+        });
+      }
+    }
+    return alerts;
+  }, [engine, installed, firewall, language]);
+
   const outcomeText = (outcome: string) =>
     KNOWN_OUTCOMES.has(outcome) ? t(`outcome.${outcome}` as TranslationKey) : outcome;
 
@@ -280,6 +373,33 @@ export function Dashboard({
           </div>
         </div>
       </section>
+
+      {securityAlerts.length > 0 && (
+        <section className="security-alert-stack" aria-label={L("Alertes de sécurité", "Security alerts")}>
+          {securityAlerts.map((alert) => (
+            <div
+              key={alert.key}
+              className={`banner ${alert.tone === "danger" ? "banner--danger" : "banner--warning"}`}
+            >
+              <CircleAlert size={19} aria-hidden="true" />
+              <div>
+                <strong>{alert.title}</strong>
+                <span>{alert.detail}</span>
+                <div className="banner__actions">
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => onNavigate(alert.target)}
+                  >
+                    {t("topbar.diagnostics")}
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="metric-grid" aria-label={t("dashboard.recent")}>
         <button

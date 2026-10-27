@@ -102,11 +102,11 @@ fn u16s_to_string(buffer: &[u16]) -> String {
     String::from_utf16_lossy(&buffer[..length])
 }
 
-/// Best-effort file name of the owning process.
-pub fn process_name_of(pid: u32) -> Option<String> {
+/// Best-effort full image path of the owning process.
+pub fn process_image_path_of(pid: u32) -> Option<String> {
     match pid {
         0 => None,
-        SYSTEM_PID => Some("System".to_string()),
+        SYSTEM_PID => None,
         _ => unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
             if handle.is_null() {
@@ -119,22 +119,40 @@ pub fn process_name_of(pid: u32) -> Option<String> {
             if ok == 0 {
                 return None;
             }
-            let full = u16s_to_string(&path[..length as usize]);
-            full.rsplit(['\\', '/']).next().map(str::to_string)
+            Some(u16s_to_string(&path[..length as usize]))
         },
     }
 }
 
+/// Best-effort file name of the owning process (test/diagnostic helper).
+#[cfg(test)]
+pub fn process_name_of(pid: u32) -> Option<String> {
+    match pid {
+        0 => None,
+        SYSTEM_PID => Some("System".to_string()),
+        _ => process_image_path_of(pid)
+            .and_then(|full| full.rsplit(['\\', '/']).next().map(str::to_string)),
+    }
+}
+
 fn assign_process_names(mut connections: Vec<NetConnection>) -> Vec<NetConnection> {
-    let mut names: HashMap<u32, Option<String>> = HashMap::new();
+    let mut processes: HashMap<u32, (Option<String>, Option<String>)> = HashMap::new();
     for connection in &connections {
-        names
-            .entry(connection.pid)
-            .or_insert_with(|| process_name_of(connection.pid));
+        processes.entry(connection.pid).or_insert_with(|| {
+            let path = process_image_path_of(connection.pid);
+            let name = if connection.pid == SYSTEM_PID {
+                Some("System".to_string())
+            } else {
+                path.as_ref()
+                    .and_then(|full| full.rsplit(['\\', '/']).next().map(str::to_string))
+            };
+            (name, path)
+        });
     }
     for connection in &mut connections {
-        if let Some(name) = names.get(&connection.pid).cloned().flatten() {
-            connection.process_name = Some(name);
+        if let Some((name, path)) = processes.get(&connection.pid).cloned() {
+            connection.process_name = name;
+            connection.process_path = path;
         }
     }
     connections
@@ -191,6 +209,7 @@ unsafe fn tcp_rows_v4() -> Result<Vec<NetConnection>, NetmonError> {
                 state: Some(tcp_state_name(row.dwState).to_string()),
                 pid: row.dwOwningPid,
                 process_name: None,
+                process_path: None,
             }
         })
         .collect();
@@ -246,6 +265,7 @@ unsafe fn tcp_rows_v6() -> Result<Vec<NetConnection>, NetmonError> {
                 state: Some(tcp_state_name(row.dwState).to_string()),
                 pid: row.dwOwningPid,
                 process_name: None,
+                process_path: None,
             }
         })
         .collect();
@@ -300,6 +320,7 @@ unsafe fn udp_rows_v4() -> Result<Vec<NetConnection>, NetmonError> {
                 state: None,
                 pid: row.dwOwningPid,
                 process_name: None,
+                process_path: None,
             }
         })
         .collect();
@@ -354,6 +375,7 @@ unsafe fn udp_rows_v6() -> Result<Vec<NetConnection>, NetmonError> {
                 state: None,
                 pid: row.dwOwningPid,
                 process_name: None,
+                process_path: None,
             }
         })
         .collect();

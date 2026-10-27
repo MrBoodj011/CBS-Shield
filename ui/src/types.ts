@@ -201,6 +201,7 @@ export interface SettingsView {
   signatureMaxAgeDays: number;
   autoUpdate: boolean;
   autoUpdateHours: number;
+  onboardingCompleted: boolean;
   dataDir: string;
   historyPath: string;
   quarantinePath: string;
@@ -219,6 +220,7 @@ export interface SettingsPatch {
   signatureMaxAgeDays?: number;
   autoUpdate?: boolean;
   autoUpdateHours?: number;
+  onboardingCompleted?: boolean;
 }
 
 export interface AppInfo {
@@ -293,6 +295,15 @@ export interface ProvisioningStatus {
   checkedAt: string;
 }
 
+export interface ClamavInstallResult {
+  attempted: boolean;
+  success: boolean;
+  exitCode: number | null;
+  installed: boolean;
+  message: string;
+  engine: EngineStatus;
+}
+
 export interface ExportResult {
   path: string;
   format: string;
@@ -332,6 +343,8 @@ export interface NetmonConnection {
   pid: number;
   /** Best-effort process name; null when the process is not identifiable. */
   processName: string | null;
+  /** Full image path when Windows allows the read-only query. */
+  processPath: string | null;
 }
 
 export interface NetmonInterfaceTraffic {
@@ -415,11 +428,78 @@ export interface FirewallStatus {
   rules: FirewallRuleSummary[];
   rulesTotalCount: number;
   rulesHash: string;
+  profilesHash: string;
+  configurationHash: string;
+}
+
+export type FirewallSeverity = "danger" | "warning" | "info";
+
+export interface FirewallAlert {
+  code: string;
+  severity: FirewallSeverity;
+  profile: string | null;
+}
+
+export interface FirewallChange {
+  code: string;
+  profile: string | null;
 }
 
 export interface FirewallObservation {
   status: FirewallStatus;
   previousCheckedAt: string | null;
   changedSinceLast: boolean;
+  changes: FirewallChange[];
+  alerts: FirewallAlert[];
   listedTruncated: boolean;
+}
+
+export interface FirewallConnectionRow {
+  transport: string;
+  localEndpoint: string;
+  remoteEndpoint: string | null;
+  state: string | null;
+  pid: number;
+  processName: string | null;
+  processPath: string | null;
+  matchingRules: string[];
+  matchingRuleCount: number;
+}
+
+export interface FirewallConnections {
+  capturedAt: string;
+  firewallCheckedAt: string | null;
+  mappingAvailable: boolean;
+  mappingLimited: boolean;
+  rulesListed: number;
+  rulesTotalCount: number;
+  tcpTotal: number;
+  udpTotal: number;
+  rows: FirewallConnectionRow[];
+  rowsTruncated: boolean;
+  mappedRows: number;
+  unmappedRows: number;
+}
+
+export interface FirewallSnapshotExport {
+  path: string;
+  rulesSaved: number;
+  rulesTotalCount: number;
+  truncated: boolean;
+  checkedAt: string;
+}
+
+export interface RuleManagementGate {
+  code: string;
+  satisfied: boolean;
+}
+
+export interface RuleManagementStatus {
+  enabled: boolean;
+  mutationApiExposed: boolean;
+  backupDirectory: string;
+  snapshotCount: number;
+  lastSnapshotAt: string | null;
+  gates: RuleManagementGate[];
+  rollbackDesignVersion: string;
 }

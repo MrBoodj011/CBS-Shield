@@ -1,26 +1,35 @@
-# Sécurité — CBS Shield Phase 1
+# Sécurité — CBS Shield 0.5.0-dev
 
 Ce document décrit le modèle de menace, les garanties offertes, les limites assumées
 et la procédure de signalement. CBS Shield est une **version expérimentale** de
-scanner manuel : elle ne doit pas être présentée comme une protection antivirus
-complète.
+scanner manuel avec observation réseau et pare-feu en lecture seule : elle ne doit
+pas être présentée comme une protection antivirus complète.
 
 ## Principes
 
 1. **Aucune action destructive silencieuse.** Tout déplacement, toute restauration et
    toute suppression exigent une confirmation explicite de l'utilisateur.
 2. **Aucune modification de la sécurité système.** CBS Shield ne désactive pas
-   Microsoft Defender, n'ajoute pas d'exclusion, ne modifie aucune règle de pare-feu
-   et n'installe aucun pilote noyau.
+   Microsoft Defender, n'ajoute pas d'exclusion, ne crée/modifie/active/désactive
+   aucune règle de pare-feu et n'installe aucun pilote noyau. Le pare-feu est
+   strictement observé et la gestion des règles est verrouillée.
 3. **Moindre privilège.** L'application fonctionne sans élévation ; l'installeur est
    en mode `currentUser`, les données et signatures vivent dans le profil utilisateur.
+   Seule l'installation **officielle** de ClamAV, demandée explicitement dans
+   l'assistant, peut déclencher l'UAC de `winget` dans une console visible ; CBS
+   Shield ne s'élève jamais lui-même.
 4. **Aucune exécution de fichier analysé.** ClamAV lit les fichiers ; CBS Shield ne
    lance jamais un fichier détecté ou mis en quarantaine.
 5. **Aucune télémétrie.** Pas de compte, pas de serveur CBS Shield, pas d'envoi de
    fichier ou de rapport. Seul `freshclam` contacte `database.clamav.net`, sur action
    explicite de l'utilisateur.
 6. **Honnêteté de l'interface.** Un module absent est marqué « Non disponible » ;
-   un scan en erreur n'est jamais présenté comme propre.
+   un scan en erreur n'est jamais présenté comme propre ; un pare-feu désactivé
+   n'est jamais présenté comme protecteur ; un mapping connexion → règle est une
+   référence, pas un verdict.
+7. **Pas de capacité active de pare-feu.** Aucune commande IPC ne crée, ne modifie
+   ni ne supprime une règle. L'export JSON est en lecture seule et ne peut pas être
+   restauré.
 
 ## Modèle de menace
 
@@ -51,6 +60,32 @@ complète.
 - **Déni de service / ressources** : un scan de disque entier peut être long et
   consommer du CPU ; l'annulation arrête le processus enfant.
 
+## Observation du pare-feu
+
+- Lecture des profils et règles via `INetFwPolicy2`, sans privilège administrateur.
+- Empreinte composite profils + actions + **toutes** les règles ; la liste affichée
+  est bornée à 1 000 entrées.
+- Une différence est **signalée**, jamais réparée. La baseline n'avance qu'après
+  acquittement explicite ou lors de la première observation.
+- Les connexions ne sont mappées qu'avec un **chemin d'image réel** ; un processus
+  sans chemin (`System`) n'obtient pas de mapping inventé.
+- Export JSON marqué `readOnly: true`, sans commande d'import.
+- **Aucun** appel `put_*`, aucun pilote, aucun service, aucun pare-feu tiers.
+- Une alerte n'est pas une preuve d'intrusion et ne remplace pas Microsoft Defender
+  Firewall.
+
+## Assistant et provisioning ClamAV
+
+- L'installation est proposée **uniquement** si ClamAV est absent.
+- L'utilisateur doit cocher une autorisation explicite ; le backend refuse
+  `confirm=false`.
+- Seul le paquet officiel `Cisco.ClamAV` est utilisé, avec une console visible et
+  sans option silencieuse.
+- Aucun binaire ClamAV ou signature n'est embarqué dans l'installeur.
+- En cas d'échec, le code, la sortie et les étapes de reprise sont affichés ; l'état
+  « prêt » n'est jamais simulé.
+- ClamAV reste sous GPL-2.0 et sous la responsabilité de son éditeur.
+
 ## Quarantaine
 
 - Algorithme : AES-256-GCM, nonce aléatoire de 96 bits par élément.
@@ -79,6 +114,8 @@ si vous conservez des éléments importants, en la protégeant comme un secret.
 | Clé du coffre | `quarantine.key` (DPAPI) | locale, utilisateur |
 | Signatures ClamAV | `clamav/database/` | locale, utilisateur |
 | Journal freshclam | `clamav/freshclam.log` | locale, utilisateur |
+| Snapshots pare-feu | `firewall-backups/*.json` | locale, utilisateur, lecture seule |
+| Baseline pare-feu | `cbs-shield.db` (table `settings`) | locale, utilisateur |
 
 Aucun rapport n'est envoyé à Cybrense. Les chemins de fichiers peuvent révéler des
 informations personnelles : la base SQLite n'est pas chiffrée. Protégez votre compte
@@ -91,7 +128,11 @@ Windows et le dossier de données en conséquence.
 - **Entrées utilisateur** : chemins validés/canonicalisés, nombre de cibles limité à 64,
   longueur de la signature de menace tronquée, réglages validés côté Rust.
 - **Processus externes** : lancés avec des arguments explicites, sans shell
-  intermédiaire, stdin fermé, console masquée. Aucune concaténation de commande.
+  intermédiaire, stdin fermé. `clamscan`/`freshclam` utilisent une console masquée ;
+  l'installation ClamAV utilise une console **visible** pour que l'utilisateur voie
+  l'UAC et la progression. Aucune concaténation de commande.
+- **Pare-feu** : quatre commandes de lecture seulement ; aucune mutation enregistrée
+  dans Tauri, gates de gestion fermés.
 - **CSP** : `default-src 'self'`, scripts limités à l'origine de l'application,
   connexions IPC uniquement.
 - **SQLite** : requêtes paramétrées via `rusqlite`, pas de SQL construit par concaténation.
@@ -101,8 +142,10 @@ Windows et le dossier de données en conséquence.
 ## Bonnes pratiques pour les contributeurs
 
 - Ne jamais journaliser le contenu d'un fichier analysé ni la clé de quarantaine.
-- Ne jamais ajouter d'exclusion Defender, de règle de pare-feu ou d'appel nécessitant
-  une élévation sans revue explicite.
+- Ne jamais ajouter d'exclusion Defender, de mutation de règle de pare-feu ou d'appel
+  nécessitant une élévation sans revue explicite. Toute future gestion active de
+  pare-feu exige VM isolée, sauvegarde, restauration validée et autorisation.
+- Ne jamais rendre l'installation de ClamAV silencieuse ou automatique.
 - Ne pas utiliser de malware réel dans les tests : EICAR ou signature NDB inoffensive.
 - Toute nouvelle commande IPC doit valider ses entrées et documenter ses effets.
 - Toute opération destructive doit rester confirmée et réversible quand c'est possible.
@@ -123,5 +166,6 @@ Merci de laisser un délai raisonnable avant toute divulgation publique.
 
 ## Avertissement
 
-CBS Shield 0.1.0 est un projet expérimental. Il ne remplace pas Microsoft Defender,
-qui doit rester actif. Un scan sans détection ne garantit pas qu'un système est sain.
+CBS Shield 0.5.0-dev est un projet expérimental. Il ne remplace pas Microsoft
+Defender, qui doit rester actif. Un scan sans détection ne garantit pas qu'un système
+est sain, et un pare-feu observé comme actif ne garantit pas l'absence d'intrusion.

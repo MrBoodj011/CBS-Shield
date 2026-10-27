@@ -57,6 +57,7 @@ pub fn run() {
             commands::signatures::update_logs,
             commands::signatures::provisioning_status,
             commands::signatures::open_documentation,
+            commands::signatures::install_clamav,
             commands::vault::quarantine_file,
             commands::vault::list_quarantine,
             commands::vault::restore_quarantine,
@@ -67,6 +68,10 @@ pub fn run() {
             commands::netmon::netmon_snapshot,
             commands::netmon::netmon_history,
             commands::firewall::firewall_status,
+            commands::firewall::firewall_acknowledge_baseline,
+            commands::firewall::firewall_connections,
+            commands::firewall::firewall_export_snapshot,
+            commands::firewall::firewall_management_status,
             tray::set_tray_language,
         ])
         .run(tauri::generate_context!())

@@ -19,7 +19,13 @@
 //!   inbound/outbound actions,
 //! - the active profile bitmask,
 //! - the existing rules (bounded copy) plus the true total count,
-//! - a deterministic fingerprint of the rule set for change detection.
+//! - deterministic rule/profile fingerprints and a composite configuration
+//!   fingerprint for change detection,
+//! - honest, machine-readable security alerts derived from the live state.
+//!
+//! Sprint 5 adds the fingerprints and alerts only. Mutating the firewall is
+//! still deliberately out of scope: no `put_*` call and no mutation feature of
+//! the wrapper is linked into this crate.
 
 use sha2::{Digest, Sha256};
 
@@ -34,7 +40,7 @@ pub enum FirewallError {
 }
 
 /// Enable state and default behaviour of one firewall profile.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileStatus {
     pub profile: String,
@@ -62,7 +68,7 @@ pub struct RuleSummary {
 }
 
 /// One complete observation of the firewall configuration.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirewallStatus {
     pub checked_at: String,
@@ -76,6 +82,22 @@ pub struct FirewallStatus {
     pub rules_total_count: u32,
     /// Deterministic fingerprint of the full rule set (see `rules_fingerprint`).
     pub rules_hash: String,
+    /// Deterministic fingerprint of the profile state and defaults.
+    pub profiles_hash: String,
+    /// Composite fingerprint covering profiles, defaults and rules.
+    pub configuration_hash: String,
+}
+
+/// Machine-readable security alert. The UI owns the French/English wording.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallAlert {
+    /// Stable identifier, e.g. `all_profiles_disabled`.
+    pub code: String,
+    /// `danger`, `warning` or `info`.
+    pub severity: String,
+    /// Profile label when the alert is profile-specific.
+    pub profile: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +216,101 @@ pub fn rules_fingerprint(rules: &[RuleSummary], total_count: u32) -> String {
     }
     hasher.update(total_count.to_le_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Deterministic fingerprint of the per-profile enable state, default actions
+/// and currently active profiles. Used together with [`rules_fingerprint`] so
+/// that disabling a profile or changing its default action is also detected.
+pub fn profiles_fingerprint(profiles: &[ProfileStatus], active_profiles: &[String]) -> String {
+    let mut lines: Vec<String> = profiles
+        .iter()
+        .map(|profile| {
+            format!(
+                "{}\x1f{}\x1f{}\x1f{}",
+                profile.profile.to_lowercase(),
+                profile.enabled,
+                profile.inbound_default.to_lowercase(),
+                profile.outbound_default.to_lowercase(),
+            )
+        })
+        .collect();
+    lines.sort();
+    let mut active = active_profiles
+        .iter()
+        .map(|label| label.to_lowercase())
+        .collect::<Vec<_>>();
+    active.sort();
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"cbs-firewall-profiles-v1\x1e");
+    for line in lines {
+        hasher.update(line.as_bytes());
+        hasher.update(b"\x1e");
+    }
+    hasher.update(b"active\x1e");
+    for label in active {
+        hasher.update(label.as_bytes());
+        hasher.update(b"\x1e");
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+/// Composite configuration fingerprint (profiles + defaults + rules).
+pub fn configuration_fingerprint(
+    profiles_hash: &str,
+    rules_hash: &str,
+    rules_total_count: u32,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"cbs-firewall-configuration-v2\x1e");
+    hasher.update(profiles_hash.as_bytes());
+    hasher.update(b"\x1e");
+    hasher.update(rules_hash.as_bytes());
+    hasher.update(b"\x1e");
+    hasher.update(rules_total_count.to_le_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Derive honest security alerts from a real observation.
+///
+/// These are *observations*, not remediation advice. CBS Shield never changes
+/// the Microsoft Defender Firewall state.
+pub fn security_alerts(status: &FirewallStatus) -> Vec<FirewallAlert> {
+    let mut alerts = Vec::new();
+    let disabled: Vec<&str> = status
+        .profiles
+        .iter()
+        .filter(|profile| !profile.enabled)
+        .map(|profile| profile.profile.as_str())
+        .collect();
+
+    if status.profiles.len() >= 3 && disabled.len() == status.profiles.len() {
+        alerts.push(FirewallAlert {
+            code: "all_profiles_disabled".to_string(),
+            severity: "danger".to_string(),
+            profile: None,
+        });
+    } else {
+        for profile in disabled {
+            alerts.push(FirewallAlert {
+                code: "profile_disabled".to_string(),
+                severity: "warning".to_string(),
+                profile: Some(profile.to_string()),
+            });
+        }
+    }
+
+    for profile in &status.profiles {
+        if profile.enabled && profile.inbound_default == "autoriser" {
+            alerts.push(FirewallAlert {
+                code: "inbound_default_allow".to_string(),
+                severity: "warning".to_string(),
+                profile: Some(profile.profile.clone()),
+            });
+        }
+    }
+
+    alerts
 }
 
 // ---------------------------------------------------------------------------
@@ -358,31 +475,40 @@ mod inspect {
             enabled_public.unwrap(),
         ];
 
+        let profiles = vec![
+            ProfileStatus {
+                profile: "domaine".to_string(),
+                enabled: enabled[0],
+                inbound_default: in_domain,
+                outbound_default: out_domain,
+            },
+            ProfileStatus {
+                profile: "privé".to_string(),
+                enabled: enabled[1],
+                inbound_default: in_private,
+                outbound_default: out_private,
+            },
+            ProfileStatus {
+                profile: "public".to_string(),
+                enabled: enabled[2],
+                inbound_default: in_public,
+                outbound_default: out_public,
+            },
+        ];
+        let active_profiles = active_labels.unwrap_or_default();
+        let rules_hash = rules_fingerprint(&listed, total_count);
+        let profiles_hash = profiles_fingerprint(&profiles, &active_profiles);
+        let configuration_hash =
+            configuration_fingerprint(&profiles_hash, &rules_hash, total_count);
+
         Ok(FirewallStatus {
             checked_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            profiles: vec![
-                ProfileStatus {
-                    profile: "domaine".to_string(),
-                    enabled: enabled[0],
-                    inbound_default: in_domain,
-                    outbound_default: out_domain,
-                },
-                ProfileStatus {
-                    profile: "privé".to_string(),
-                    enabled: enabled[1],
-                    inbound_default: in_private,
-                    outbound_default: out_private,
-                },
-                ProfileStatus {
-                    profile: "public".to_string(),
-                    enabled: enabled[2],
-                    inbound_default: in_public,
-                    outbound_default: out_public,
-                },
-            ],
-            active_profiles: active_labels.unwrap_or_default(),
+            profiles,
+            active_profiles,
             rules_total_count: total_count,
-            rules_hash: rules_fingerprint(&listed, total_count),
+            rules_hash,
+            profiles_hash,
+            configuration_hash,
             rules: listed,
         })
     }
@@ -452,6 +578,141 @@ mod tests {
         );
     }
 
+    fn profile(label: &str, enabled: bool, inbound: &str) -> ProfileStatus {
+        ProfileStatus {
+            profile: label.to_string(),
+            enabled,
+            inbound_default: inbound.to_string(),
+            outbound_default: "autoriser".to_string(),
+        }
+    }
+
+    fn status(profiles: Vec<ProfileStatus>, active: Vec<&str>) -> FirewallStatus {
+        let rules = vec![rule("Alpha", true, "entrant", "bloquer")];
+        let rules_hash = rules_fingerprint(&rules, 1);
+        let active = active.into_iter().map(str::to_string).collect::<Vec<_>>();
+        let profiles_hash = profiles_fingerprint(&profiles, &active);
+        FirewallStatus {
+            checked_at: "2026-10-26T09:00:00Z".to_string(),
+            profiles,
+            active_profiles: active,
+            rules,
+            rules_total_count: 1,
+            rules_hash: rules_hash.clone(),
+            profiles_hash: profiles_hash.clone(),
+            configuration_hash: configuration_fingerprint(&profiles_hash, &rules_hash, 1),
+        }
+    }
+
+    #[test]
+    fn profile_fingerprint_tracks_enable_and_default_changes() {
+        let base = status(
+            vec![
+                profile("domaine", true, "bloquer"),
+                profile("privé", true, "bloquer"),
+                profile("public", true, "bloquer"),
+            ],
+            vec!["privé"],
+        );
+        let same = status(
+            vec![
+                profile("public", true, "bloquer"),
+                profile("domaine", true, "bloquer"),
+                profile("privé", true, "bloquer"),
+            ],
+            vec!["privé"],
+        );
+        assert_eq!(
+            base.profiles_hash, same.profiles_hash,
+            "profile order must not matter"
+        );
+
+        let mut disabled = base.clone();
+        disabled.profiles[1].enabled = false;
+        disabled.profiles_hash =
+            profiles_fingerprint(&disabled.profiles, &disabled.active_profiles);
+        assert_ne!(base.profiles_hash, disabled.profiles_hash);
+
+        let mut inbound_allowed = base.clone();
+        inbound_allowed.profiles[2].inbound_default = "autoriser".to_string();
+        inbound_allowed.profiles_hash =
+            profiles_fingerprint(&inbound_allowed.profiles, &inbound_allowed.active_profiles);
+        assert_ne!(base.profiles_hash, inbound_allowed.profiles_hash);
+    }
+
+    #[test]
+    fn configuration_fingerprint_covers_both_parts() {
+        assert_eq!(
+            configuration_fingerprint("profiles", "rules", 7),
+            configuration_fingerprint("profiles", "rules", 7)
+        );
+        assert_ne!(
+            configuration_fingerprint("profiles", "rules", 7),
+            configuration_fingerprint("profiles", "rules", 8)
+        );
+        assert_ne!(
+            configuration_fingerprint("profiles", "rules", 7),
+            configuration_fingerprint("other", "rules", 7)
+        );
+    }
+
+    #[test]
+    fn alerts_report_each_disabled_profile() {
+        let observed = status(
+            vec![
+                profile("domaine", true, "bloquer"),
+                profile("privé", false, "bloquer"),
+                profile("public", false, "bloquer"),
+            ],
+            vec!["domaine"],
+        );
+        let alerts = security_alerts(&observed);
+        assert_eq!(
+            alerts
+                .iter()
+                .filter(|alert| alert.code == "profile_disabled")
+                .count(),
+            2
+        );
+        assert_eq!(alerts[0].severity, "warning");
+    }
+
+    #[test]
+    fn alerts_escalate_when_all_profiles_are_disabled() {
+        let observed = status(
+            vec![
+                profile("domaine", false, "bloquer"),
+                profile("privé", false, "bloquer"),
+                profile("public", false, "bloquer"),
+            ],
+            vec![],
+        );
+        let alerts = security_alerts(&observed);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].code, "all_profiles_disabled");
+        assert_eq!(alerts[0].severity, "danger");
+    }
+
+    #[test]
+    fn alerts_report_an_inbound_allow_default() {
+        let observed = status(
+            vec![
+                profile("domaine", true, "bloquer"),
+                profile("privé", true, "autoriser"),
+                profile("public", false, "bloquer"),
+            ],
+            vec!["privé"],
+        );
+        let alerts = security_alerts(&observed);
+        assert!(alerts.iter().any(|alert| {
+            alert.code == "inbound_default_allow" && alert.profile.as_deref() == Some("privé")
+        }));
+        assert!(!alerts
+            .iter()
+            .any(|alert| alert.code == "inbound_default_allow"
+                && alert.profile.as_deref() == Some("domaine")));
+    }
+
     #[cfg(windows)]
     #[test]
     fn inspect_returns_a_real_configuration() {
@@ -467,6 +728,8 @@ mod tests {
         assert!(status.rules.len() <= MAX_RULES_LISTED);
         assert!(status.rules.len() <= status.rules_total_count as usize);
         assert_ne!(status.rules_hash, String::new());
+        assert_ne!(status.profiles_hash, String::new());
+        assert_ne!(status.configuration_hash, String::new());
 
         // Rules are sorted by name (deterministic display).
         for pair in status.rules.windows(2) {

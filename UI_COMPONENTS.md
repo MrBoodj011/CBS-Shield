@@ -1,10 +1,14 @@
 # CBS Shield — UI Components
 
-**Version 0.3.0-dev** · React 19 + TypeScript · `ui/src/components/` and
+**Version 0.5.0-dev** · React 19 + TypeScript · `ui/src/components/` and
 `ui/src/theme.css`.
 
 Every component below is used by at least one shipped screen. There are no
 demonstration-only components in the product.
+
+Sprint 5 adds `components/SetupWizard.tsx` (five-step first-run assistant) and the
+firewall alert / connection / management blocks in `sections/Firewall.tsx`. They
+reuse the tokens and rules below; no separate visual language was introduced.
 
 ---
 

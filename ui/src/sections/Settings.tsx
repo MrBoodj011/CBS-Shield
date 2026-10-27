@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Info,
   KeyRound,
+  ListChecks,
   LoaderCircle,
   RefreshCw,
   Save,
@@ -33,6 +34,7 @@ interface SettingsProps {
   engineLoading: boolean;
   onSettingsSaved: (settings: SettingsView) => void;
   onEngineChanged: (engine: EngineStatus) => void;
+  onOpenSetup: () => void;
 }
 
 interface FormState {
@@ -62,6 +64,7 @@ export function Settings({
   engineLoading,
   onSettingsSaved,
   onEngineChanged,
+  onOpenSetup,
 }: SettingsProps) {
   const toast = useToast();
   const { t, language } = useI18n();
@@ -174,6 +177,45 @@ export function Settings({
 
       <div className="settings-grid">
         <div className="settings-main">
+          <section className="panel setup-entry">
+            <div className="panel__head">
+              <div>
+                <span className="panel__eyebrow">{L("Installation", "Installation")}</span>
+                <h2>{L("Assistant de préparation", "Setup assistant")}</h2>
+              </div>
+              {settings && !settings.onboardingCompleted && (
+                <Badge tone="warning" dot>
+                  {L("À terminer", "To finish")}
+                </Badge>
+              )}
+            </div>
+            <div className="setup-entry__body">
+              <span className="setup-entry__icon">
+                <ListChecks size={22} />
+              </span>
+              <div>
+                <strong>
+                  {L(
+                    "Moteur, signatures, mises à jour et pare-feu",
+                    "Engine, signatures, updates and firewall",
+                  )}
+                </strong>
+                <span>
+                  {L(
+                    "Relancez le diagnostic guidé pour vérifier ClamAV, l'intégrité des signatures, les mises à jour automatiques et l'état réel du pare-feu Windows. Aucune installation silencieuse.",
+                    "Rerun the guided diagnostic to verify ClamAV, signature integrity, automatic updates and the real Windows firewall state. No silent installation.",
+                  )}
+                </span>
+              </div>
+              <button type="button" className="button button--primary" onClick={onOpenSetup}>
+                <ListChecks size={15} />
+                {settings?.onboardingCompleted
+                  ? L("Relancer l'assistant", "Rerun assistant")
+                  : L("Reprendre la préparation", "Resume setup")}
+              </button>
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panel__head">
               <div>

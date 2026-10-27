@@ -15,6 +15,7 @@ pub struct AppPaths {
     pub signature_db: PathBuf,
     pub freshclam_conf: PathBuf,
     pub freshclam_log: PathBuf,
+    pub firewall_backups: PathBuf,
     pub bundled_clamav_dir: Option<PathBuf>,
 }
 
@@ -55,6 +56,7 @@ impl AppPaths {
             signature_db: clamav_dir.join("database"),
             freshclam_conf: clamav_dir.join("freshclam.conf"),
             freshclam_log: clamav_dir.join("freshclam.log"),
+            firewall_backups: data_dir.join("firewall-backups"),
             clamav_dir,
             bundled_clamav_dir,
             data_dir,
@@ -66,6 +68,7 @@ impl AppPaths {
         std::fs::create_dir_all(&self.clamav_dir)?;
         std::fs::create_dir_all(&self.signature_db)?;
         std::fs::create_dir_all(&self.quarantine_dir)?;
+        std::fs::create_dir_all(&self.firewall_backups)?;
         Ok(())
     }
 

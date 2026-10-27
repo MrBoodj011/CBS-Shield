@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 
 import { setFormatLanguage } from "./format";
 
@@ -923,6 +923,9 @@ export function I18nProvider({
     }),
     [language],
   );
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
   setFormatLanguage(language);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

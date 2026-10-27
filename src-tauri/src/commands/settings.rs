@@ -20,6 +20,7 @@ pub struct SettingsView {
     pub signature_max_age_days: i64,
     pub auto_update: bool,
     pub auto_update_hours: i64,
+    pub onboarding_completed: bool,
     pub data_dir: String,
     pub history_path: String,
     pub quarantine_path: String,
@@ -40,6 +41,7 @@ pub struct SettingsPatch {
     pub signature_max_age_days: Option<i64>,
     pub auto_update: Option<bool>,
     pub auto_update_hours: Option<i64>,
+    pub onboarding_completed: Option<bool>,
 }
 
 /// Supported interface languages. Stored as a plain `settings` key/value entry:
@@ -140,6 +142,7 @@ fn build_view(state: &AppState, map: &HashMap<String, String>) -> SettingsView {
             .and_then(|value| value.parse::<i64>().ok())
             .filter(|value| (6..=168).contains(value))
             .unwrap_or(24),
+        onboarding_completed: parse_bool(map.get("onboardingCompleted"), false),
         data_dir: state.paths.data_dir.display().to_string(),
         history_path: state.paths.history_db.display().to_string(),
         quarantine_path: state.paths.quarantine_dir.display().to_string(),
@@ -185,6 +188,9 @@ pub fn update_settings(
     }
     if let Some(auto_update) = patch.auto_update {
         updates.push(("autoUpdate", auto_update.to_string()));
+    }
+    if let Some(onboarding_completed) = patch.onboarding_completed {
+        updates.push(("onboardingCompleted", onboarding_completed.to_string()));
     }
     if let Some(hours) = patch.auto_update_hours {
         if !(6..=168).contains(&hours) {
