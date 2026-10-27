@@ -1,6 +1,6 @@
 # CBS Shield — UI Components
 
-**Version 0.6.0-dev** · React 19 + TypeScript · `ui/src/components/` and
+**Version 0.7.0-dev** · React 19 + TypeScript · `ui/src/components/` and
 `ui/src/theme.css`.
 
 Every component below is used by at least one shipped screen. There are no
@@ -10,8 +10,10 @@ Sprint 5 adds `components/SetupWizard.tsx` (five-step first-run assistant) and t
 firewall alert / connection / management blocks in `sections/Firewall.tsx`.
 Sprint 6 adds the shared `lib/useFocusTrap.ts` used by `Modal` and `SetupWizard`,
 plus the service-health, reference-vs-decision, snapshot SHA-256 and recovery-plan
-blocks. They reuse the tokens and rules below; no separate visual language was
-introduced.
+blocks. Sprint 7 adds the firewall overview metric strip, section navigation,
+rule-filter toolbar, read-only rule-detail modal, application grouping,
+snapshot-history table and capability matrix. They reuse the tokens and rules
+below; no separate visual language was introduced.
 
 ---
 

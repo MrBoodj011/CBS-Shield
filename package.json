@@ -1,7 +1,7 @@
 {
   "name": "cbs-shield",
   "private": true,
-  "version": "0.6.0-dev",
+  "version": "0.7.0-dev",
   "description": "CBS Shield — scanner de sécurité manuel open source pour Windows (Cybrense)",
   "license": "Apache-2.0",
   "scripts": {

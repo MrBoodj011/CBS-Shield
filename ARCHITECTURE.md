@@ -1,4 +1,4 @@
-# Architecture — CBS Shield 0.6.0-dev
+# Architecture - CBS Shield 0.7.0-dev
 
 CBS Shield est une application **Tauri 2** : un backend Rust natif expose des
 commandes IPC à une interface React/TypeScript chargée dans WebView2. Toute la

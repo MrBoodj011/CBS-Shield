@@ -505,6 +505,34 @@ export interface FirewallSnapshotExport {
   readOnly: boolean;
   restoreSupported: boolean;
   sha256: string;
+  sha256Sidecar: string | null;
+}
+
+export type FirewallSnapshotIntegrity =
+  | "matched"
+  | "mismatch"
+  | "unverified"
+  | "invalid";
+
+export interface FirewallSnapshotInfo {
+  path: string;
+  fileName: string;
+  bytes: number;
+  modifiedAt: string;
+  checkedAt: string | null;
+  rulesSaved: number | null;
+  rulesTotalCount: number | null;
+  truncated: boolean;
+  sha256: string;
+  integrity: FirewallSnapshotIntegrity;
+  sidecarPresent: boolean;
+}
+
+export interface FirewallSnapshotVerification {
+  snapshot: FirewallSnapshotInfo;
+  sidecarSha256: string | null;
+  integrity: FirewallSnapshotIntegrity;
+  structureValid: boolean;
 }
 
 export interface RuleManagementGate {
@@ -526,6 +554,7 @@ export interface RuleManagementStatus {
   mutationApiExposed: boolean;
   backupDirectory: string;
   snapshotCount: number;
+  verifiedSnapshotCount: number;
   lastSnapshotAt: string | null;
   gates: RuleManagementGate[];
   rollbackDesignVersion: string;

@@ -9,6 +9,8 @@ import type {
   FirewallConnections,
   FirewallObservation,
   FirewallSnapshotExport,
+  FirewallSnapshotInfo,
+  FirewallSnapshotVerification,
   NetmonSnapshotPayload,
   NetmonSnapshotRecord,
   ProvisioningStatus,
@@ -93,6 +95,10 @@ export const api = {
   firewallConnections: () => invoke<FirewallConnections>("firewall_connections"),
   firewallExportSnapshot: () =>
     invoke<FirewallSnapshotExport>("firewall_export_snapshot"),
+  firewallSnapshotHistory: () =>
+    invoke<FirewallSnapshotInfo[]>("firewall_snapshot_history"),
+  firewallVerifySnapshot: (path: string) =>
+    invoke<FirewallSnapshotVerification>("firewall_verify_snapshot", { path }),
   firewallManagementStatus: () =>
     invoke<RuleManagementStatus>("firewall_management_status"),
 };

@@ -54,7 +54,7 @@ const settings: SettingsView = {
   quarantinePath: "C:\\quarantine",
   signatureDbPath: "C:\\database",
   freshclamConfPath: "C:\\freshclam.conf",
-  appVersion: "0.6.0-dev",
+  appVersion: "0.7.0-dev",
 };
 
 const inventory = {

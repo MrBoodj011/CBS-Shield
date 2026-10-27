@@ -286,6 +286,8 @@ pub struct FirewallSnapshotExport {
     pub restore_supported: bool,
     /// SHA-256 of the exact bytes written to disk.
     pub sha256: String,
+    /// Sidecar file containing the digest, when it could be written.
+    pub sha256_sidecar: Option<String>,
 }
 
 /// Export a read-only JSON snapshot for audit/diagnostics.
@@ -314,11 +316,27 @@ pub async fn firewall_export_snapshot(
     })?;
     let sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
     let path_clone = path.clone();
+    let sidecar_path = sidecar_path(&path);
+    let sidecar_path_clone = sidecar_path.clone();
+    let sha_for_sidecar = sha256.clone();
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = path_clone.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path_clone, text)
+        std::fs::write(&path_clone, text)?;
+        // The sidecar is an integrity aid, not a restore path. If the sidecar
+        // cannot be written, the snapshot remains a valid read-only audit copy
+        // and the UI reports it as unverified instead of pretending otherwise.
+        let file_name = path_clone
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        std::fs::write(
+            &sidecar_path_clone,
+            format!("{sha_for_sidecar}  {file_name}\n"),
+        )
+        .ok();
+        Ok::<(), std::io::Error>(())
     })
     .await
     .map_err(|err| CommandError::internal(format!("écriture de l'instantané interrompue : {err}")))?
@@ -338,6 +356,9 @@ pub async fn firewall_export_snapshot(
         read_only: true,
         restore_supported: false,
         sha256,
+        sha256_sidecar: sidecar_path
+            .exists()
+            .then(|| sidecar_path.display().to_string()),
     })
 }
 
@@ -348,6 +369,202 @@ fn snapshot_path(dir: &Path, checked_at: &str) -> PathBuf {
         .format("%Y%m%dT%H%M%SZ")
         .to_string();
     dir.join(format!("firewall-snapshot-{stamp}.json"))
+}
+
+fn sidecar_path(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.sha256", path.display()))
+}
+
+const MAX_SNAPSHOT_FILES: usize = 50;
+const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallSnapshotInfo {
+    pub path: String,
+    pub file_name: String,
+    pub bytes: u64,
+    pub modified_at: String,
+    pub checked_at: Option<String>,
+    pub rules_saved: Option<u32>,
+    pub rules_total_count: Option<u32>,
+    pub truncated: bool,
+    pub sha256: String,
+    /// `matched`, `mismatch`, `unverified` or `invalid`.
+    pub integrity: String,
+    pub sidecar_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallSnapshotVerification {
+    pub snapshot: FirewallSnapshotInfo,
+    pub sidecar_sha256: Option<String>,
+    pub integrity: String,
+    pub structure_valid: bool,
+}
+
+fn digest_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn read_sidecar_digest(path: &Path) -> Option<String> {
+    std::fs::read_to_string(sidecar_path(path))
+        .ok()
+        .and_then(|value| value.split_whitespace().next().map(str::to_string))
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn snapshot_info(path: &Path) -> Result<FirewallSnapshotInfo, std::io::Error> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_SNAPSHOT_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "snapshot exceeds the read limit",
+        ));
+    }
+    let bytes = std::fs::read(path)?;
+    let sha256 = digest_bytes(&bytes);
+    let sidecar_sha256 = read_sidecar_digest(path);
+    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
+    let structure_valid = parsed.as_ref().is_some_and(|value| {
+        value.get("kind").and_then(|kind| kind.as_str()) == Some("firewall-read-only-snapshot")
+            && value.get("readOnly").and_then(|flag| flag.as_bool()) == Some(true)
+    });
+    let integrity = if !structure_valid {
+        "invalid"
+    } else {
+        match sidecar_sha256.as_deref() {
+            Some(expected) if expected.eq_ignore_ascii_case(&sha256) => "matched",
+            Some(_) => "mismatch",
+            None => "unverified",
+        }
+    };
+    let status = parsed.as_ref().and_then(|value| value.get("status"));
+    let checked_at = status
+        .and_then(|value| value.get("checkedAt"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    let rules_saved = status
+        .and_then(|value| value.get("rules"))
+        .and_then(|value| value.as_array())
+        .map(|rules| rules.len() as u32);
+    let rules_total_count = status
+        .and_then(|value| value.get("rulesTotalCount"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32);
+    let truncated =
+        matches!((rules_saved, rules_total_count), (Some(saved), Some(total)) if saved < total);
+    let modified_at = metadata
+        .modified()
+        .map(|value| {
+            let datetime: DateTime<Utc> = value.into();
+            datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        })
+        .unwrap_or_else(|_| Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+
+    Ok(FirewallSnapshotInfo {
+        path: path.display().to_string(),
+        file_name: path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        bytes: metadata.len(),
+        modified_at,
+        checked_at,
+        rules_saved,
+        rules_total_count,
+        truncated,
+        sha256,
+        integrity: integrity.to_string(),
+        sidecar_present: sidecar_sha256.is_some(),
+    })
+}
+
+fn list_snapshots(dir: &Path) -> Vec<FirewallSnapshotInfo> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|value| value.to_str()) == Some("json")
+                && path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|name| name.starts_with("firewall-snapshot-"))
+        })
+        .filter_map(|path| {
+            std::fs::metadata(&path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|modified| (modified, path))
+        })
+        .collect();
+    files.sort_by_key(|entry| std::cmp::Reverse(entry.0));
+    files
+        .into_iter()
+        .take(MAX_SNAPSHOT_FILES)
+        .filter_map(|(_, path)| snapshot_info(&path).ok())
+        .collect()
+}
+
+/// List read-only audit snapshots, newest first. This never opens or applies a
+/// snapshot and never writes to the firewall configuration.
+#[tauri::command]
+pub async fn firewall_snapshot_history(
+    state: State<'_, AppState>,
+) -> Result<Vec<FirewallSnapshotInfo>, CommandError> {
+    let directory = state.paths.firewall_backups.clone();
+    tokio::task::spawn_blocking(move || list_snapshots(&directory))
+        .await
+        .map_err(|err| {
+            CommandError::internal(format!("lecture des instantanés interrompue : {err}"))
+        })
+}
+
+fn contained_snapshot_path(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let candidate = candidate.canonicalize().ok()?;
+    if !candidate.starts_with(&root) {
+        return None;
+    }
+    if candidate.extension().and_then(|value| value.to_str()) != Some("json") {
+        return None;
+    }
+    Some(candidate)
+}
+
+/// Verify a read-only snapshot's structure and, when present, its SHA-256
+/// sidecar. A sidecar is an integrity aid, not a signature or a restore path.
+#[tauri::command]
+pub fn firewall_verify_snapshot(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<FirewallSnapshotVerification, CommandError> {
+    let candidate = contained_snapshot_path(&state.paths.firewall_backups, Path::new(&path))
+        .ok_or_else(|| {
+            CommandError::new(
+                "invalidSnapshotPath",
+                "L'instantané demandé n'est pas dans le dossier d'audit CBS Shield.",
+            )
+        })?;
+    let info = snapshot_info(&candidate).map_err(|err| {
+        CommandError::new(
+            "snapshotUnreadable",
+            format!("Impossible de lire l'instantané pare-feu : {err}"),
+        )
+    })?;
+    let sidecar_sha256 = read_sidecar_digest(&candidate);
+    let structure_valid = info.integrity != "invalid";
+    Ok(FirewallSnapshotVerification {
+        integrity: info.integrity.clone(),
+        snapshot: info,
+        sidecar_sha256,
+        structure_valid,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -579,6 +796,8 @@ pub struct RuleManagementStatus {
     pub mutation_api_exposed: bool,
     pub backup_directory: String,
     pub snapshot_count: u64,
+    /// Snapshots whose .sha256 sidecar matches their bytes.
+    pub verified_snapshot_count: u64,
     pub last_snapshot_at: Option<String>,
     pub gates: Vec<RuleManagementGate>,
     pub rollback_design_version: String,
@@ -590,33 +809,22 @@ pub fn firewall_management_status(
     state: State<'_, AppState>,
 ) -> Result<RuleManagementStatus, CommandError> {
     let backups = &state.paths.firewall_backups;
-    let mut snapshot_count = 0u64;
-    let mut last_snapshot: Option<std::time::SystemTime> = None;
-    if let Ok(entries) = std::fs::read_dir(backups) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) == Some("json") {
-                snapshot_count += 1;
-                if let Ok(metadata) = entry.metadata() {
-                    if let Ok(modified) = metadata.modified() {
-                        if last_snapshot.is_none_or(|current| modified > current) {
-                            last_snapshot = Some(modified);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let last_snapshot_at = last_snapshot.map(|time| {
-        let datetime: DateTime<Utc> = time.into();
-        datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    });
+    let snapshots = list_snapshots(backups);
+    let snapshot_count = snapshots.len() as u64;
+    let verified_snapshot_count = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.integrity == "matched")
+        .count() as u64;
+    let last_snapshot_at = snapshots
+        .first()
+        .map(|snapshot| snapshot.modified_at.clone());
 
     Ok(RuleManagementStatus {
         enabled: false,
         mutation_api_exposed: false,
         backup_directory: backups.display().to_string(),
         snapshot_count,
+        verified_snapshot_count,
         last_snapshot_at,
         gates: vec![
             RuleManagementGate {
@@ -629,7 +837,7 @@ pub fn firewall_management_status(
             },
             RuleManagementGate {
                 code: "backup_snapshot".to_string(),
-                satisfied: snapshot_count > 0,
+                satisfied: verified_snapshot_count > 0,
             },
             RuleManagementGate {
                 code: "rollback_rehearsal".to_string(),
@@ -829,6 +1037,69 @@ mod tests {
         );
         let name = path.file_name().unwrap().to_string_lossy();
         assert_eq!(name, "firewall-snapshot-20261026T090000Z.json");
+    }
+
+    #[test]
+    fn snapshot_history_verifies_digest_and_detects_tampering() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory
+            .path()
+            .join("firewall-snapshot-20261026T090000Z.json");
+        let snapshot = serde_json::json!({
+            "kind": "firewall-read-only-snapshot",
+            "readOnly": true,
+            "restoreSupported": false,
+            "status": {
+                "checkedAt": "2026-10-26T09:00:00Z",
+                "rulesTotalCount": 3,
+                "rules": [{ "name": "one" }, { "name": "two" }]
+            }
+        });
+        let text = serde_json::to_vec_pretty(&snapshot).unwrap();
+        std::fs::write(&path, &text).unwrap();
+        let digest = digest_bytes(&text);
+        std::fs::write(
+            sidecar_path(&path),
+            format!("{digest}  firewall-snapshot-20261026T090000Z.json\n"),
+        )
+        .unwrap();
+
+        let info = snapshot_info(&path).unwrap();
+        assert_eq!(info.integrity, "matched");
+        assert!(info.sidecar_present);
+        assert_eq!(info.rules_saved, Some(2));
+        assert_eq!(info.rules_total_count, Some(3));
+        assert!(info.truncated);
+        assert_eq!(list_snapshots(directory.path()).len(), 1);
+
+        let tampered = serde_json::json!({
+            "kind": "firewall-read-only-snapshot",
+            "readOnly": true,
+            "status": { "checkedAt": "2026-10-26T09:00:00Z", "rules": [] }
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+        assert_eq!(snapshot_info(&path).unwrap().integrity, "mismatch");
+
+        std::fs::write(&path, b"not json").unwrap();
+        assert_eq!(snapshot_info(&path).unwrap().integrity, "invalid");
+    }
+
+    #[test]
+    fn snapshot_paths_are_contained_and_require_json() {
+        let directory = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let inside = directory
+            .path()
+            .join("firewall-snapshot-20261026T090000Z.json");
+        std::fs::write(&inside, b"{}").unwrap();
+        let outside_file = outside
+            .path()
+            .join("firewall-snapshot-20261026T090000Z.json");
+        std::fs::write(&outside_file, b"{}").unwrap();
+
+        assert!(contained_snapshot_path(directory.path(), &inside).is_some());
+        assert!(contained_snapshot_path(directory.path(), &outside_file).is_none());
+        assert!(contained_snapshot_path(directory.path(), directory.path()).is_none());
     }
 
     #[test]

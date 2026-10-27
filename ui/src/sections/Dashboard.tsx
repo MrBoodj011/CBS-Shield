@@ -321,7 +321,7 @@ export function Dashboard({
               {postureLabel}
             </Badge>
             <Badge tone="neutral">{t("posture.realtime")}</Badge>
-            <Badge tone="info">{t("dashboard.version", { version: info?.version ?? "0.6.0-dev" })}</Badge>
+            <Badge tone="info">{t("dashboard.version", { version: info?.version ?? "0.7.0-dev" })}</Badge>
           </div>
 
           <h2>{t("dashboard.heroTitle")}</h2>

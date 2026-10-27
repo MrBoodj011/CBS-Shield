@@ -1,16 +1,55 @@
-# État du développement — CBS Shield 0.6.0-dev
+# État du développement — CBS Shield 0.7.0-dev
 
 **Date de vérification :** 27 octobre 2026
-**Branche :** `sprint-6` (base Sprint 5 `d832daa`)
+**Branche :** `sprint-7` (base Sprint 6 `888e0ac`)
 **Nature :** version expérimentale — antivirus manuel, assistant de préparation,
 installation officielle de ClamAV, observation réseau et pare-feu strictement en
-lecture seule.
+lecture seule, avec historique d'instantanés vérifiable.
 
 Ce document décrit ce qui a été **réellement implémenté et vérifié**, ce qui reste
 **bloqué ou non exécuté**, et les limites connues. Aucune fonctionnalité non testée
 n'est présentée comme opérationnelle. Le détail de recette est dans
-[`docs/SPRINT6_TEST_REPORT.md`](docs/SPRINT6_TEST_REPORT.md). Les rapports Sprint 5
-restent des preuves historiques.
+[`docs/SPRINT7_TEST_REPORT.md`](docs/SPRINT7_TEST_REPORT.md). Les rapports Sprint 5
+et 6 restent des preuves historiques.
+
+---
+
+## 0. Sprint 7 — état réel
+
+### 0.1 Livré
+
+- UI Pare-feu premium en lecture seule : vue d'ensemble, navigation par sections,
+  alertes actives, profils, connexions regroupées par application, règles
+  filtrables (direction, action, état, protocole, profil), détail de règle en
+  modale, sauvegardes et diagnostic.
+- Instantanés d'audit avec sidecar `.sha256`, historique borné à 50 fichiers,
+  vérification par commande séparée et états honnêtes `matched`, `mismatch`,
+  `unverified`, `invalid`.
+- Gate `backup_snapshot` renforcée : un simple JSON ne suffit plus ; il faut une
+  empreinte `.sha256` concordante.
+- Matrice de capacités : lecture, export et vérification disponibles ; création,
+  modification, restauration et rollback visiblement indisponibles.
+- Version alignée `0.7.0-dev` (Cargo, Tauri, npm, lockfiles, interface).
+- Tests Rust dédiés aux helpers d'instantanés et tests frontend des filtres, de
+  l'historique et de la vérification.
+- Suite locale complète : **95 tests Rust** et **28 tests frontend** réussis,
+  `cargo fmt` et Clippy sans avertissement.
+- Documentation Sprint 7 : rapport de test, revue de sécurité, audit d'installeur
+  et plan VM mis à jour.
+
+### 0.2 Non livré / bloqué
+
+- **Aucune mutation de règle** : aucune API IPC, aucun bouton actif, aucun chemin
+  de restauration. La décision reste volontairement bloquée.
+- La VM Windows 11 isolée a été créée et démarrée, mais le cycle complet
+  installation → sauvegarde → restauration → récupération n'est pas revendiqué
+  comme validé à la date de ce document.
+- Les scénarios pare-feu activé/désactivé dans la VM, l'installation NSIS 0.7,
+  la mise à niveau depuis 0.6 et la désinstallation doivent être consignés dans le
+  rapport VM dès qu'ils sont exécutés. Sans ces preuves, aucune affirmation de
+  « validé VM » n'est autorisée.
+- L'installeur 0.7.0-dev reste non signé Authenticode ; son SHA-256 doit être
+  vérifié manuellement.
 
 ---
 
@@ -175,20 +214,39 @@ Binaire **release** installé puis piloté via CDP WebView2 :
 
 ## 5. Installation et distribution
 
+### 5.1 Sprint 7 (courant)
+
+- Installeur NSIS `CBS Shield_0.7.0-dev_x64-setup.exe`, **2 674 869 octets**,
+  SHA-256 `F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
+  **non signé (Authenticode : NotSigned)**.
+- Binaire release : **7 401 984 octets**, SHA-256
+  `5E56D043EAE518E1A29C18E5BF982598E2AADFADD9607C752EC2604ED01C1D88`.
+- Mise à niveau hôte 0.6 → 0.7 : code 0, entrée HKCU passée à `0.7.0-dev`.
+- Binaire installé : **7 401 984 octets**, SHA-256
+  `2E0920B4E2753FEB203E7051E64E10F1B520E96678B3FBE10E4FF2DE8A9B97C7`
+  (le binaire de `target\release` est patché par le bundler NSIS).
+- Lancement de l'application installée : fenêtre `CBS Shield - Cybrense`,
+  captures FR/EN dans [`docs/screenshots/`](docs/screenshots/).
+- Désinstallation silencieuse : code 0, binaires et registre supprimés,
+  **données utilisateur conservées** ; réinstallation 0.7 : code 0.
+- Export d'un instantané réel : nouveau JSON + sidecar `.sha256`, interface
+  « Empreinte vérifiée » ; gate `backup_snapshot` devenue disponible, les autres
+  gates restant non satisfaites.
+- Aucun appel de mutation pare-feu n'a été exécuté.
+- Détails : [`docs/SPRINT7_INSTALLER_AUDIT.md`](docs/SPRINT7_INSTALLER_AUDIT.md).
+- Cycle VM propre : **en cours / non terminé** ; voir
+  [`docs/SPRINT7_TEST_REPORT.md`](docs/SPRINT7_TEST_REPORT.md).
+
+### 5.2 Sprint 6 (historique)
+
 - Installeur NSIS `CBS Shield_0.6.0-dev_x64-setup.exe`, **2 658 926 octets**,
   SHA-256 `650A35AA5A6D59AAB1223D2B41644E5703936C1AE711462227B25112E8784BB8`,
   **non signé (Authenticode : NotSigned)**.
-- Installation silencieuse : code 0, dossier `%LOCALAPPDATA%\CBS Shield`,
-  raccourci `Cybrense`, entrée HKCU `0.6.0-dev`.
-- Réinstallation sur la même version : code 0.
 - Binaire installé : **7 361 024 octets**, SHA-256
-  `FC44D467DD0D185320B760F6F5D429F6D4D69EC41C2B05C95759786C1FF6F737`
-  (le binaire de `target\release` est patché par le bundler NSIS).
+  `FC44D467DD0D185320B760F6F5D429F6D4D69EC41C2B05C95759786C1FF6F737`.
 - Désinstallation : code 0, binaires/raccourci/registre supprimés, **données
   préservées** (base, WAL, clé de quarantaine, signatures, snapshots).
 - Détails : [`docs/SPRINT6_INSTALLER_AUDIT.md`](docs/SPRINT6_INSTALLER_AUDIT.md).
-- Cycle VM propre : **non exécuté** ; voir
-  [`docs/SPRINT6_CLEAN_INSTALL.md`](docs/SPRINT6_CLEAN_INSTALL.md).
 
 ---
 
@@ -273,19 +331,20 @@ npm run build
 
 # Hash et signature de l'installeur
 Get-FileHash -Algorithm SHA256 `
-  'target\release\bundle\nsis\CBS Shield_0.6.0-dev_x64-setup.exe'
+  'target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe'
 Get-AuthenticodeSignature `
-  'target\release\bundle\nsis\CBS Shield_0.6.0-dev_x64-setup.exe'
+  'target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe'
 ```
 
 ---
 
 ## 10. Avertissement final
 
-CBS Shield 0.6.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
+CBS Shield 0.7.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
 Defender, qui doit rester actif. Il ne fournit aucune protection en temps réel,
 aucune modification de pare-feu, aucune capture de contenu réseau, et ne doit pas
-être présenté comme un antivirus complet. Le Sprint 6 **n'est pas déclaré prêt pour
+être présenté comme un antivirus complet. Le Sprint 7 **n'est pas déclaré prêt pour
 la production** tant que la VM Windows propre, l'installation en absence de ClamAV,
-les scénarios d'échec/reprise de l'installeur et la restauration de règles n'ont pas
-été validés dans un environnement isolé.
+la mise à niveau depuis 0.6, la désinstallation, les scénarios pare-feu
+activé/désactivé et la restauration de règles n'ont pas été validés dans un
+environnement isolé. La présence d'un snapshot vérifié ne remplace pas ces preuves.

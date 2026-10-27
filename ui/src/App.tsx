@@ -389,7 +389,7 @@ export default function App() {
 
             <footer className="app-footer">
               <span>
-                CBS Shield v{info?.version ?? "0.6.0-dev"} — {info?.vendor ?? "Cybrense"}
+                CBS Shield v{info?.version ?? "0.7.0-dev"} - {info?.vendor ?? "Cybrense"}
               </span>
               <span>{t("shell.disclaimer")}</span>
             </footer>

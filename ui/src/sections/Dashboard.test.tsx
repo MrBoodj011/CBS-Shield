@@ -114,7 +114,7 @@ function renderDashboard(engine: EngineStatus | null) {
         quarantine={quarantine}
         info={{
           product: "CBS Shield",
-          version: "0.6.0-dev",
+          version: "0.7.0-dev",
           vendor: "Cybrense",
           phase: "Phase 3",
           disclaimer: "Protection manuelle expérimentale.",

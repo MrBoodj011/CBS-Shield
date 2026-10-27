@@ -71,6 +71,8 @@ pub fn run() {
             commands::firewall::firewall_acknowledge_baseline,
             commands::firewall::firewall_connections,
             commands::firewall::firewall_export_snapshot,
+            commands::firewall::firewall_snapshot_history,
+            commands::firewall::firewall_verify_snapshot,
             commands::firewall::firewall_management_status,
             tray::set_tray_language,
         ])

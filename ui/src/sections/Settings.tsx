@@ -611,7 +611,7 @@ export function Settings({
                 <span className="panel__eyebrow">{L("À propos", "About")}</span>
                 <h2>{info?.product ?? "CBS Shield"}</h2>
               </div>
-              <Badge tone="info">v{info?.version ?? "0.6.0-dev"}</Badge>
+              <Badge tone="info">v{info?.version ?? "0.7.0-dev"}</Badge>
             </div>
             <p className="about__text">
               {t("about.phaseName")}

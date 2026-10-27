@@ -110,7 +110,7 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
           </div>
         </div>
         <div className="sidebar__meta">
-          <span>v{info?.version ?? "0.6.0-dev"}</span>
+          <span>v{info?.version ?? "0.7.0-dev"}</span>
           <span className="sidebar__experimental">{t("common.experimental")}</span>
         </div>
       </div>

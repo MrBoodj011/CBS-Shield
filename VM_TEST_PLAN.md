@@ -1,94 +1,138 @@
-# Plan de test machine propre (VM) — CBS Shield 0.2.0-dev
+# Plan de validation Windows 11 isolé — CBS Shield 0.7.0-dev
 
-**Date :** 25 octobre 2026 — plan d'exécution sur une **machine propre** (VM
-Windows 11 ou restauration à l'image), sans DevTools, sans ClamAV présent à
-l'avance. Objectif : prouver qu'un utilisateur réel obtient un produit fonctionnel
-sans environnement de développement.
+**Date :** 27 octobre 2026 — Sprint 7
+**Statut global :** **en cours / non complet**. Aucun résultat n'est revendiqué
+comme validé tant que la ligne correspondante du journal n'a pas de preuve.
 
-> **Consentement obligatoire.** Le script `scripts/vm-validate.ps1` refuse de
-> s'exécuter sans confirmation explicite interactive (il doit être lancé
-> volontairement sur le poste de test : il crée des fichiers de diagnostic, lance
-> les étapes de build et inspecte le système ; il ne modifie toutefois ni Defender,
-> ni le pare-feu, ni aucune règle système).
+Ce plan remplace le plan 0.2.0-dev. Il couvre l'installation NSIS, l'absence de
+ClamAV, l'assistant de préparation, les signatures, un scan de fixture inoffensive,
+le redémarrage, la mise à niveau depuis 0.6, la désinstallation et les scénarios
+pare-feu activé/désactivé. Il ne contient **aucun malware réel**.
+
+> **Règle absolue.** Aucune mutation de règle de pare-feu n'est autorisée avant
+> que l'isolation, la sauvegarde vérifiée et la répétition de restauration aient
+> produit des preuves. CBS Shield ne remplace pas Microsoft Defender Firewall, ne
+> désactive pas Defender et ne crée aucun pilote noyau.
 
 ---
 
-## 1. Préparation de la VM
+## 1. Environnement isolé
 
-| Étape | Contenu |
+| Élément | Valeur |
 | --- | --- |
-| VM1 | Windows 11 x64 (build 22H2+), 2 CPU / 4 Go / 60 Go, pas de mise à jour d'état |
-| VM2 | Node.js LTS 20+ (`winget install OpenJS.NodeJS.LTS`), Rust MSVC (`winget install Rustlang.Rustup` + Visual Build Tools C++) |
+| Hyperviseur | VirtualBox 7.2.22 r175245 |
+| VM | `CBS-Shield-Sprint7` |
+| Système invité | Windows 11 Enterprise Evaluation 26H2, build 26300.9457, en-US |
+| ISO | `target/iso/Win11_Enterprise_Eval_26H2_en-us.iso` |
+| Taille / SHA-256 ISO | `8 225 329 152` octets / `BC3F24086EBADC94489066B5AD78089E2CF5C3491E90E790BB81A2B199C10E38` |
+| Ressources | 6 Go RAM, 4 vCPU, 80 Go VDI, EFI, TPM 2.0 |
+| Réseau | NAT uniquement, VRDE local `127.0.0.1:3390` |
+| Périphériques | audio, USB, presse-papiers et glisser-déposer désactivés |
+| Compte de test | compte local administrateur créé par l'installation unattended ; mot de passe non versionné |
+| Dossier VM | `target/sprint7-vm` (non versionné) |
 
-Ne pas installer ClamAV à l'avance : la machine doit montrer le démarrage sans
-ClamAV et guider l'installation (comme un utilisateur réel).
+L'ISO d'évaluation Enterprise est utilisée parce que le point d'entrée ISO grand
+public a rejeté ce réseau lors de la préparation. Ce choix doit être mentionné
+dans tout rapport de compatibilité.
 
-## 2. Déroulé humain
+### 1.1 Artefacts à copier dans la VM
 
-### A. Sans moteur ClamAV
+| Artefact | Chemin hôte | Usage |
+| --- | --- | --- |
+| Installeur 0.6 (base de mise à niveau) | `target/release/bundle/nsis/CBS Shield_0.6.0-dev_x64-setup.exe` | scénario de mise à niveau |
+| Installeur 0.7 | `target/release/bundle/nsis/CBS Shield_0.7.0-dev_x64-setup.exe` | installation propre |
+| Fixture inoffensive | à créer dans la VM | scan `clean` |
+| Fixture EICAR | `tests/fixtures/eicar.com.txt` (ou équivalent) | détection sans malware réel |
+| Rapport de preuve | `target/sprint7-vm/evidence/` | captures, journaux, SHA-256 |
 
-1. **Lancement** `npm run build && npm run tauri dev` (ou installeur) — l'UI doit
-   charger sans erreur ; « Moteur : non détecté » au Dashboard ; un message guide
-   vers l'installation. ✅ attendu
-2. Le scan Antivirus est indisponible (pas de clamscan) : message explicite,
-   jamais un spinner infini.
-3. `engine_status` affiche l'état `unknown/missing`, jamais forgé.
+Ne jamais monter le dossier du projet en partage dans la VM. Copier les artefacts
+par un moyen explicite, puis vérifier leur SHA-256 dans la VM.
 
-### B. Installation ClamAV par l'utilisateur
+---
 
-4. `winget install Cisco.ClamAV` — passer la langue FR ; la découverteCBS Shield
-   trouve `clamscan/freshclam` au démarrage suivant (ou via Paramètres → chemin).
-5. **Mise à jour des signatures** dans l'UI (bouton) : `freshclam` réel → base
-   `daily/main/bytecode` dans le dossier app-locale ; état passe `upToDate`.
-6. Interruption volontaire : tuer `freshclam` en cours (via gestionnaire) :
-   état reste honnête (`outdated` ou « en échec » selon la base), pas de corruption,
-   nouveau smoothie/`freshclam` repartant proprement — voir `CLAMAV_INTEGRATION.md` §5.
+## 2. Matrice d'exécution
 
-### C. Fonctionnalités
+| ID | Scénario | Attendu | Statut |
+| --- | --- | --- | --- |
+| VM-01 | Installation propre 0.7 sans ClamAV | application démarre, moteur `non détecté`, aucune boucle infinie | à exécuter |
+| VM-02 | Assistant de préparation | étapes lisibles, autorisation explicite avant `winget`, aucun terminal brut | à exécuter |
+| VM-03 | Installation officielle ClamAV | paquet officiel, UAC/fenêtre visible, résultat honnête | à exécuter |
+| VM-04 | Mise à jour des signatures | `freshclam` réel, base et état affichés, reprise après interruption | à exécuter |
+| VM-05 | Scan fixture inoffensive | scan `clean`, progression et rapport corrects | à exécuter |
+| VM-06 | Détection EICAR | détection, quarantaine, restauration, purge avec confirmations | à exécuter |
+| VM-07 | Redémarrage | historique SQLite, quarantaine, réglages et langue persistent | à exécuter |
+| VM-08 | Mise à niveau 0.6 → 0.7 | données conservées, version affichée 0.7.0-dev, pas de doublon | à exécuter |
+| VM-09 | Désinstallation | désinstalleur réel, choix explicite sur les données | à exécuter |
+| VM-10 | Dépendances absentes | absence de ClamAV/Node/Rust gérée avec messages, pas de spinner infini | à exécuter |
+| VM-11 | Pare-feu Windows activé | profils et règles observés, aucune mutation | à exécuter |
+| VM-12 | Pare-feu Windows désactivé | alerte réelle, aucune tentative de réparation | à exécuter |
+| VM-13 | Instantané pare-feu + sidecar | JSON + `.sha256`, vérification `matched` | à exécuter |
+| VM-14 | Altération d'instantané | vérification `mismatch`, aucune restauration | à exécuter |
+| VM-15 | Gate de mutation | gestion désactivée, gates incomplètes, aucun bouton actif | à exécuter |
+| VM-16 | Accessibilité clavier | Tab/Shift+Tab, Échap, focus visible sur les nouveaux contrôles | à exécuter |
 
-7. **Scan réel** : sélectionner un dossier, scan terminé `clean`, progression
-   lisible, annulation optionnelle testée sur un second scan.
-8. **Détection via marqueur de test** (optionnel, méthode NDB inoffensive décrite
-   dans `DEVELOPMENT_STATUS.md` § 4.1) : quarantaine → restauration → purge.
-9. **Quarantaine** : case à cocher obligatoire ; restauration refusée si écrasement ;
-   suppression à double confirmation (`SUPPRIMER`).
-10. **Moniteur réseau** : 1 capture → valeurs réelles ; 5 s auto-rérafraîchissement ;
-    deltas non-zéros après trafic réel ; filtre TCP/UDP ; recherche ; historique
-    purgé quand > 2 000 lignes (facultatif, sinon cohérence des nombres).
-11. **Pare-feu** : état de profils conforme à `Get-NetFirewallProfile` (comparer) ;
-    comptage des règles cohérent avec `Get-NetFirewallRule` ; bannière de
-    modification abs au premier affichage, présente après une modification externe
-    (via `netsh` made par le testeur, **jamais par CBS Shield**).
-12. **SQLite** : les données persistent après un redémarrage de l'app (scans,
-    quarantaine, historique réseau).
+### 2.1 Scénarios de récupération (obligatoires avant toute mutation)
 
-### D. Installeur NSIS
+Ces scénarios ne peuvent être exécutés que si une future version expose une
+mutation. Ils sont listés pour empêcher de considérer la gate comme acquise.
 
-13. `npm run build` : `target\release\bundle\nsis\CBS Shield_0.2.0_x64-setup.exe`
-    doit construire sans erreur.
-14. Exécuter l'installeur sur la VM : raccourcis, désinstalleur, version correcte
-    ; désinstallation propre sans restes (coffre et base conservés ou supprimés
-    selon le choix explicite — à TOUJOURS laisser le choix).
+1. Créer une règle de test sur un profil VM isolé.
+2. Exporter un instantané **avant** mutation et vérifier son sidecar.
+3. Appliquer la mutation avec confirmation explicite.
+4. Simuler une perte de connectivité : la protection doit revenir automatiquement
+   à l'état sauvegardé, sans laisser le réseau coupé.
+5. Restaurer la sauvegarde, vérifier que la règle de test disparaît et que les
+   règles préexistantes sont intactes.
+6. Consigner les preuves, les hashes et la durée de récupération.
 
-## 3. Script automatisé
+Tant que les étapes 1–6 ne sont pas toutes exécutées, `isolated_vm_test`,
+`rollback_rehearsal` et `explicit_authorization` restent fausses et la gestion
+des règles reste indisponible.
 
-`scripts/vm-validate.ps1` :
+---
 
-- **consentement obligatoire** au préambule (`-Confirm` forcé, aucun `-Y` pipé) ;
-- vérifie l'environnement (`node`, `cargo`, `clamscan` — échec propre sinon) ;
-- exécute diagnostics : `cargo fmt/clippy/test`, `npm ui:test/ui:build` ;
-- **build de l'installeur** optionnel (`-Installer`) — long (8–13 min) ;
-- écrit un rapport `target\vm-report-<date>.txt` avec les sorties brutes ;
-- **ne modifie jamais** Defender, les règles de pare-feu, ni les exclusions ;
-  aucun malware réel à aucun stade.
+## 3. Commandes de vérification dans la VM
+
+```powershell
+Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber
+Get-FileHash 'CBS Shield_0.7.0-dev_x64-setup.exe' -Algorithm SHA256
+Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction
+Get-AuthenticodeSignature 'CBS Shield_0.7.0-dev_x64-setup.exe' | Format-List
+```
+
+Pour comparer sans modifier :
+
+```powershell
+Get-NetFirewallRule |
+  Measure-Object |
+  Select-Object Count
+```
+
+CBS Shield ne doit exécuter aucun `Set-NetFirewallRule`, `New-NetFirewallRule`,
+`Remove-NetFirewallRule`, `netsh advfirewall set` ou équivalent.
+
+---
 
 ## 4. Journal des exécutions
 
-| Machine | Date | Version | Résultat | Notes |
+| Date | Version | Scénario | Résultat | Preuve |
 | --- | --- | --- | --- | --- |
-| VM à exécuter | — | 0.2.0-dev | — | plan fourni, non encore exécuté |
-| Machine de dev | 25/10/2026 | 0.2.0-dev | ✅ backend 60 tests + UI 10 tests + parcours réels | voir `DEVELOPMENT_STATUS.md` § 4 |
+| 27/10/2026 | 0.7.0-dev | Création VM isolée et démarrage | partiel | `target/sprint7-vm/boot-*.png`, `Logs/VBox.log` |
+| 27/10/2026 | 0.7.0-dev | Installation Windows unattended | en cours | captures de setup |
+| — | 0.7.0-dev | VM-01 à VM-16 | non exécuté | — |
 
-> Les parcours sur machine propre restent à exécuter avant de parler de
-> « installable éprouvé » : sans cette validation, ne pas publier d'affirmation
-> de compatibilité d'installeur.
+> **Ne pas publier « validé sur VM »** avant que les scénarios critiques
+> (installation, absence de ClamAV, scan, redémarrage, mise à niveau,
+> désinstallation, pare-feu activé/désactivé) soient terminés et que leurs preuves
+> soient archivées.
+
+---
+
+## 5. Nettoyage et conservation
+
+- La VM et son VDI restent sous `target/sprint7-vm` et ne sont pas versionnés.
+- Les captures et rapports de preuve peuvent être copiés dans `docs/` uniquement
+  s'ils ne contiennent aucun secret, jeton ou mot de passe.
+- La VM peut être supprimée avec `VBoxManage unregistervm --delete` après
+  archivage des preuves.
+- Ne pas réutiliser cette VM pour des tests de malware réel.

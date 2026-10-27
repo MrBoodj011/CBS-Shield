@@ -1,7 +1,7 @@
 # CBS Shield
 
 > **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.6.0-dev (Phase 6, sprint 6)**.
+> Édité par **Cybrense** — version expérimentale **0.7.0-dev (Phase 7, sprint 7)**.
 
 CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
 une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
@@ -53,6 +53,16 @@ les scénarios d'échec de l'installeur, l'installation réelle de ClamAV en abs
 de moteur et la restauration de règles restent **non exécutés** ; voir
 [SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md).
 
+Le Sprint 7 renforce le **Pare-feu en lecture seule** : vue d'ensemble et
+navigation par sections, filtres locaux, détail de règle, regroupement des
+connexions par application, historique d'instantanés avec sidecar `.sha256`,
+vérification bornée au dossier d'audit et matrice de capacités. La gate de
+sauvegarde exige désormais une empreinte concordante, et non un simple fichier
+JSON. La mutation de règle reste **indisponible** tant que l'isolation VM, la
+sauvegarde vérifiée et la répétition de restauration ne sont pas prouvées. Voir
+[FIREWALL_ARCHITECTURE.md](FIREWALL_ARCHITECTURE.md) et
+[docs/SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md).
+
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
 > pilote noyau et ne fournit **aucune protection en temps réel**.
@@ -95,8 +105,9 @@ de moteur et la restauration de règles restent **non exécutés** ; voir
 | Tableau de bord (données réelles) | Fonctionnel, vérifié |
 | Localisation FR/EN | Complète (interface, dates, nombres, dialogues) |
 | Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
-| Installeur NSIS `currentUser` | Généré pour 0.6.0-dev, sans ClamAV ni signatures |
-| Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping, diagnostic des services) |
+| Installeur NSIS `currentUser` | Généré pour 0.7.0-dev, sans ClamAV ni signatures |
+| Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping, filtres, détail, diagnostic) |
+| Instantanés Pare-feu | JSON + sidecar `.sha256`, historique borné, vérification sans restauration |
 | Gestion des règles de pare-feu | **Désactivée** (architecture et prérequis seulement) |
 | Network Monitor | **Lecture seule** (métadonnées, volumes mesurés) |
 | Protection temps réel / pilote noyau | **Hors périmètre** |
@@ -263,17 +274,17 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.6.0-dev_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
-Artefact de référence du Sprint 6, vérifié le 27 octobre 2026 :
-**2 658 926 octets** (2,54 Mio), SHA-256
-`650A35AA5A6D59AAB1223D2B41644E5703936C1AE711462227B25112E8784BB8`,
+Artefact de référence du Sprint 7, vérifié le 27 octobre 2026 :
+**2 674 869 octets** (2,55 Mio), SHA-256
+`F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
 **non signé**. Vérifiez ce hash avant exécution. L'absence de signature
 Authenticode empêche de garantir l'éditeur au niveau du système ; SmartScreen peut
 donc afficher un avertissement. Le détail est dans
-[SPRINT6_INSTALLER_AUDIT.md](docs/SPRINT6_INSTALLER_AUDIT.md).
+[SPRINT7_INSTALLER_AUDIT.md](docs/SPRINT7_INSTALLER_AUDIT.md).
 
 Le premier build télécharge l'outillage NSIS (mis en cache par Tauri). Comptez
 plusieurs minutes pour la compilation `release`. L'installeur est en mode
@@ -291,8 +302,8 @@ npm --prefix ui run build
 npm --prefix ui test
 ```
 
-Résultat final Sprint 6 : **93 tests Rust réussis, 1 ignoré** (EICAR manuel) et
-**26 tests UI réussis** dans 9 fichiers. Les scénarios VM propre, absence réelle de
+Résultat final Sprint 7 : **95 tests Rust réussis, 1 ignoré** (EICAR manuel) et
+**28 tests UI réussis** dans 9 fichiers. Les scénarios VM propre, absence réelle de
 ClamAV, restauration de règles et signature Authenticode restent non exécutés ou
 bloqués ; voir le rapport de test.
 
@@ -394,6 +405,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SPRINT6_SECURITY_REGRESSION.md](docs/SPRINT6_SECURITY_REGRESSION.md) — garanties lecture seule, Defender et pare-feu.
 - [SPRINT6_ENVIRONMENT_LIMITATIONS.md](docs/SPRINT6_ENVIRONMENT_LIMITATIONS.md) — limites de l'hôte Windows 11 Home.
 - [SPRINT6_UNRESOLVED_RISKS.md](docs/SPRINT6_UNRESOLVED_RISKS.md) — risques résiduels et conditions de passage en production.
+- [SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md) — tests locaux, build, matrice VM et résultats honnêtes.
+- [SPRINT7_SECURITY_REGRESSION.md](docs/SPRINT7_SECURITY_REGRESSION.md) — invariants lecture seule, sidecar, IPC et limites.
+- [SPRINT7_INSTALLER_AUDIT.md](docs/SPRINT7_INSTALLER_AUDIT.md) — artefact NSIS 0.7, SHA-256 et signature.
+- [VM_TEST_PLAN.md](VM_TEST_PLAN.md) — plan d'isolation et matrice Windows 11.
 
 ## Licences
 

@@ -83,6 +83,7 @@ const management = {
   mutationApiExposed: false,
   backupDirectory: "C:\\Data\\firewall-backups",
   snapshotCount: 0,
+  verifiedSnapshotCount: 0,
   lastSnapshotAt: null,
   gates: [
     { code: "explicit_authorization", satisfied: false },
@@ -106,6 +107,25 @@ vi.mock("../lib/api", () => ({
     firewallStatus: vi.fn(async () => observation),
     firewallConnections: vi.fn(async () => connections),
     firewallManagementStatus: vi.fn(async () => management),
+    firewallSnapshotHistory: vi.fn(async () => []),
+    firewallVerifySnapshot: vi.fn(async (path: string) => ({
+      snapshot: {
+        path,
+        fileName: "firewall-snapshot-20261026T090000Z.json",
+        bytes: 512,
+        modifiedAt: "2026-10-26T09:00:00Z",
+        checkedAt: "2026-10-26T09:00:00Z",
+        rulesSaved: 1,
+        rulesTotalCount: 1,
+        truncated: false,
+        sha256: "a".repeat(64),
+        integrity: "matched",
+        sidecarPresent: true,
+      },
+      sidecarSha256: "a".repeat(64),
+      integrity: "matched",
+      structureValid: true,
+    })),
     firewallAcknowledgeBaseline: vi.fn(async () => ({
       ...observation,
       changedSinceLast: false,
@@ -141,7 +161,7 @@ describe("Firewall", () => {
       await screen.findByText("Tous les profils du pare-feu Windows sont désactivés"),
     ).toBeInTheDocument();
     expect(screen.getByText("Le jeu de règles a changé")).toBeInTheDocument();
-    expect(await screen.findByText("example.exe")).toBeInTheDocument();
+    expect((await screen.findAllByText("example.exe")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Allow outbound app/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Architecture verrouillée/)).toBeInTheDocument();
     expect(screen.getByText(/Aucune API de mutation n'est exposée/)).toBeInTheDocument();
@@ -149,6 +169,54 @@ describe("Firewall", () => {
     expect(screen.getByText("Une règle déclarée n'est pas un verdict")).toBeInTheDocument();
     expect(screen.getByText("Ce que CBS Shield ne prétend pas calculer")).toBeInTheDocument();
     expect(screen.getByText("Plan de récupération — conception seulement")).toBeInTheDocument();
+  });
+
+  it("filters observed rules locally without changing the firewall", async () => {
+    renderFirewall();
+
+    await screen.findAllByText(/Allow outbound app/);
+    fireEvent.change(screen.getByLabelText("Direction"), {
+      target: { value: "inbound" },
+    });
+    expect(await screen.findByText("Aucune règle correspondante")).toBeInTheDocument();
+    expect(screen.getByText(/0 règle correspond aux filtres locaux/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Direction"), {
+      target: { value: "outbound" },
+    });
+    expect((await screen.findAllByText(/Allow outbound app/)).length).toBeGreaterThan(0);
+  });
+
+  it("lists and verifies snapshot digests without exposing restore", async () => {
+    vi.mocked(api.firewallSnapshotHistory).mockResolvedValueOnce([
+      {
+        path: "C:\\Data\\firewall-backups\\firewall-snapshot-20261026T090000Z.json",
+        fileName: "firewall-snapshot-20261026T090000Z.json",
+        bytes: 512,
+        modifiedAt: "2026-10-26T09:00:00Z",
+        checkedAt: "2026-10-26T09:00:00Z",
+        rulesSaved: 1,
+        rulesTotalCount: 1,
+        truncated: false,
+        sha256: "a".repeat(64),
+        integrity: "matched",
+        sidecarPresent: true,
+      },
+    ]);
+    renderFirewall();
+
+    await screen.findByText(/firewall-snapshot-20261026T090000Z.json/);
+    expect(screen.getByText("Empreinte vérifiée")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vérifier" }));
+    await waitFor(() =>
+      expect(api.firewallVerifySnapshot).toHaveBeenCalledWith(
+        "C:\\Data\\firewall-backups\\firewall-snapshot-20261026T090000Z.json",
+      ),
+    );
+    expect(
+      await screen.findByText(/Le fichier .sha256 correspond aux octets du JSON/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Restauration non implémentée")).toBeInTheDocument();
   });
 
   it("warns without changing anything when a firewall service is stopped", async () => {

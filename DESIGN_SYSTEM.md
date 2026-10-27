@@ -1,6 +1,6 @@
 # CBS Shield — Design System
 
-**Version 0.6.0-dev (Sprint 6)** · Dark-first "Midnight Navy" interface for Windows 11.
+**Version 0.7.0-dev (Sprint 7)** · Dark-first "Midnight Navy" interface for Windows 11.
 
 This document is the reference for every visual decision in the interface. It is
 implemented twice:

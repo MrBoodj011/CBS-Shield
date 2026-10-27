@@ -1,19 +1,30 @@
 import {
   Activity,
+  Archive,
   CheckCircle2,
   Download,
+  FileCheck2,
+  FileSearch,
+  Filter,
   Flame,
+  Gauge,
+  LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
+  Network,
   RefreshCw,
+  Search,
   ShieldAlert,
   ShieldCheck,
+  Stethoscope,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../components/Badge";
 import { EmptyState } from "../components/EmptyState";
+import { Modal } from "../components/Modal";
 import { api, errorMessage } from "../lib/api";
 import { formatDateTime, formatNumber, truncateMiddle } from "../lib/format";
 import { useI18n } from "../lib/i18n";
@@ -24,6 +35,8 @@ import type {
   FirewallObservation,
   FirewallRuleSummary,
   FirewallSnapshotExport,
+  FirewallSnapshotInfo,
+  FirewallSnapshotVerification,
   FirewallStatus,
   RuleManagementStatus,
 } from "../types";
@@ -64,10 +77,106 @@ function ruleMatches(rule: FirewallRuleSummary, query: string): boolean {
   );
 }
 
+type DirectionFilter = "all" | "inbound" | "outbound";
+type ActionFilter = "all" | "allow" | "block";
+type StateFilter = "all" | "enabled" | "disabled";
+type ProtocolFilter = "all" | "tcp" | "udp" | "any";
+type ProfileFilter = "all" | "domain" | "private" | "public";
+
+interface RuleFilters {
+  direction: DirectionFilter;
+  action: ActionFilter;
+  state: StateFilter;
+  protocol: ProtocolFilter;
+  profile: ProfileFilter;
+}
+
+const EMPTY_RULE_FILTERS: RuleFilters = {
+  direction: "all",
+  action: "all",
+  state: "all",
+  protocol: "all",
+  profile: "all",
+};
+
+function normalized(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function ruleMatchesFilters(rule: FirewallRuleSummary, filters: RuleFilters): boolean {
+  const direction = normalized(rule.direction);
+  if (filters.direction === "inbound" && direction !== "entrant" && direction !== "inbound") {
+    return false;
+  }
+  if (filters.direction === "outbound" && direction !== "sortant" && direction !== "outbound") {
+    return false;
+  }
+  const action = normalized(rule.action);
+  if (filters.action === "allow" && action !== "autoriser" && action !== "allow") return false;
+  if (filters.action === "block" && action !== "bloquer" && action !== "block") return false;
+  if (filters.state === "enabled" && !rule.enabled) return false;
+  if (filters.state === "disabled" && rule.enabled) return false;
+
+  const protocol = normalized(rule.protocol);
+  if (filters.protocol === "tcp" && protocol !== "tcp") return false;
+  if (filters.protocol === "udp" && protocol !== "udp") return false;
+  if (filters.protocol === "any" && protocol !== "tout" && protocol !== "any") return false;
+
+  const profiles = normalized(rule.profiles);
+  if (filters.profile === "all") return true;
+  if (profiles === "tous" || profiles === "all") return true;
+  if (filters.profile === "domain") {
+    return profiles.includes("domaine") || profiles.includes("domain");
+  }
+  if (filters.profile === "private") {
+    return profiles.includes("privé") || profiles.includes("private");
+  }
+  return profiles.includes("public");
+}
+
 function toneForSeverity(severity: string): "danger" | "warning" | "info" {
   if (severity === "danger") return "danger";
   if (severity === "warning") return "warning";
   return "info";
+}
+
+interface ApplicationSummary {
+  key: string;
+  name: string;
+  path: string | null;
+  connections: number;
+  established: number;
+  mapped: number;
+  rules: string[];
+}
+
+function summarizeApplications(connections: FirewallConnections | null): ApplicationSummary[] {
+  if (!connections) return [];
+  const groups = new Map<string, ApplicationSummary>();
+  for (const row of connections.rows) {
+    const key = (row.processPath || row.processName || `pid:${row.pid}`).toLowerCase();
+    const current = groups.get(key) ?? {
+      key,
+      name: row.processName || row.processPath || `PID ${row.pid}`,
+      path: row.processPath,
+      connections: 0,
+      established: 0,
+      mapped: 0,
+      rules: [],
+    };
+    current.connections += 1;
+    if (row.state === "ESTABLISHED") current.established += 1;
+    if (row.matchingRuleCount > 0) current.mapped += 1;
+    for (const rule of row.matchingRules) {
+      if (!current.rules.includes(rule)) current.rules.push(rule);
+    }
+    groups.set(key, current);
+  }
+  return [...groups.values()].sort(
+    (left, right) =>
+      right.connections - left.connections ||
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+  );
 }
 
 export function Firewall() {
@@ -106,15 +215,24 @@ export function Firewall() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<RuleFilters>(EMPTY_RULE_FILTERS);
+  const [selectedRule, setSelectedRule] = useState<FirewallRuleSummary | null>(null);
   const [connections, setConnections] = useState<FirewallConnections | null>(null);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
+  const [connectionQuery, setConnectionQuery] = useState("");
+  const [establishedOnly, setEstablishedOnly] = useState(false);
   const [management, setManagement] = useState<RuleManagementStatus | null>(null);
   const [managementError, setManagementError] = useState<string | null>(null);
   const [exportInfo, setExportInfo] = useState<FirewallSnapshotExport | null>(null);
   const [exporting, setExporting] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<FirewallSnapshotInfo[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(true);
+  const [snapshotsError, setSnapshotsError] = useState<string | null>(null);
+  const [verifications, setVerifications] = useState<Record<string, FirewallSnapshotVerification>>({});
+  const [verifyingPath, setVerifyingPath] = useState<string | null>(null);
 
   const inspect = useCallback(async () => {
     setLoading(true);
@@ -152,18 +270,57 @@ export function Firewall() {
     }
   }, []);
 
+  const loadSnapshots = useCallback(async () => {
+    setSnapshotsLoading(true);
+    try {
+      setSnapshots(await api.firewallSnapshotHistory());
+      setSnapshotsError(null);
+    } catch (err) {
+      setSnapshotsError(errorMessage(err));
+    } finally {
+      setSnapshotsLoading(false);
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([inspect(), loadConnections(), loadManagement()]);
-  }, [inspect, loadConnections, loadManagement]);
+    await Promise.all([inspect(), loadConnections(), loadManagement(), loadSnapshots()]);
+  }, [inspect, loadConnections, loadManagement, loadSnapshots]);
 
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
 
   const visibleRules = useMemo(
-    () => status?.rules.filter((rule) => ruleMatches(rule, query)) ?? [],
-    [status, query],
+    () =>
+      status?.rules.filter(
+        (rule) => ruleMatches(rule, query) && ruleMatchesFilters(rule, filters),
+      ) ?? [],
+    [status, query, filters],
   );
+
+  const activeFilterCount = useMemo(
+    () => Object.values(filters).filter((value) => value !== "all").length,
+    [filters],
+  );
+  const hasLocalFilter = activeFilterCount > 0 || query.trim().length > 0;
+
+  const applications = useMemo(() => summarizeApplications(connections), [connections]);
+
+  const visibleConnections = useMemo(() => {
+    const rows = connections?.rows ?? [];
+    const needle = connectionQuery.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (establishedOnly && row.state !== "ESTABLISHED") return false;
+      if (!needle) return true;
+      return (
+        (row.processName ?? "").toLowerCase().includes(needle) ||
+        (row.processPath ?? "").toLowerCase().includes(needle) ||
+        row.localEndpoint.toLowerCase().includes(needle) ||
+        (row.remoteEndpoint ?? "").toLowerCase().includes(needle) ||
+        row.matchingRules.some((rule) => rule.toLowerCase().includes(needle))
+      );
+    });
+  }, [connections, connectionQuery, establishedOnly]);
 
   const alertMessage = (alert: FirewallAlert) => {
     const profile = alert.profile ? profileLabel(alert.profile) : "";
@@ -246,12 +403,84 @@ export function Firewall() {
     try {
       const result = await api.firewallExportSnapshot();
       setExportInfo(result);
-      await loadManagement();
+      await Promise.all([loadManagement(), loadSnapshots()]);
     } catch (err) {
       setActionError(errorMessage(err));
     } finally {
       setExporting(false);
     }
+  };
+
+  const verifySnapshot = async (path: string) => {
+    setVerifyingPath(path);
+    setActionError(null);
+    try {
+      const result = await api.firewallVerifySnapshot(path);
+      setVerifications((current) => ({ ...current, [path]: result }));
+      await loadManagement();
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setVerifyingPath(null);
+    }
+  };
+
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+
+  const integrityBadge = (integrity: string) => {
+    if (integrity === "matched") {
+      return (
+        <Badge tone="ok" dot>
+          {L("Empreinte vérifiée", "Digest matched")}
+        </Badge>
+      );
+    }
+    if (integrity === "mismatch") {
+      return (
+        <Badge tone="danger" dot>
+          {L("Empreinte divergente", "Digest mismatch")}
+        </Badge>
+      );
+    }
+    if (integrity === "invalid") {
+      return (
+        <Badge tone="danger" dot>
+          {L("Fichier non reconnu", "Unrecognized file")}
+        </Badge>
+      );
+    }
+    return (
+      <Badge tone="warning" dot>
+        {L("Sans empreinte de contrôle", "No control digest")}
+      </Badge>
+    );
+  };
+
+  const integrityNote = (integrity: string) => {
+    if (integrity === "matched") {
+      return L(
+        "Le fichier .sha256 correspond aux octets du JSON. Cela détecte une altération accidentelle, pas une signature authentifiée.",
+        "The .sha256 sidecar matches the JSON bytes. This detects accidental alteration, not an authenticated signature.",
+      );
+    }
+    if (integrity === "mismatch") {
+      return L(
+        "Le fichier .sha256 ne correspond plus au JSON. Considérez l'instantané comme suspect et ne l'utilisez pas comme preuve.",
+        "The .sha256 sidecar no longer matches the JSON. Treat the snapshot as suspect and do not use it as evidence.",
+      );
+    }
+    if (integrity === "invalid") {
+      return L(
+        "Le fichier n'a pas le schéma d'un instantané CBS Shield en lecture seule.",
+        "The file does not match the CBS Shield read-only snapshot schema.",
+      );
+    }
+    return L(
+      "Aucune empreinte de contrôle n'accompagne cet ancien instantané. Le fichier est lisible, mais son intégrité n'est pas attestée.",
+      "No control digest accompanies this older snapshot. The file is readable, but its integrity is not attested.",
+    );
   };
 
   const service = observation?.service;
@@ -261,6 +490,10 @@ export function Firewall() {
   );
   const serviceUnknown = Boolean(service && !service.observed);
   const recovery = management?.recovery;
+  const enabledProfiles = status?.profiles.filter((profile) => profile.enabled).length ?? 0;
+  const alertCount = observation?.alerts.length ?? 0;
+  const mappedConnections = connections?.mappedRows ?? 0;
+  const totalConnections = connections?.tcpTotal ?? 0;
 
   return (
     <div className="section-stack">
@@ -286,6 +519,88 @@ export function Firewall() {
           </span>
         </div>
       </div>
+
+      <section className="panel firewall-overview" id="firewall-overview">
+        <div className="panel__head">
+          <div>
+            <span className="panel__eyebrow">{L("Posture observée", "Observed posture")}</span>
+            <h2>{L("Vue d'ensemble du pare-feu", "Firewall overview")}</h2>
+          </div>
+          <div className="row-actions">
+            <Badge tone="info" dot>
+              {L("Lecture seule", "Read-only")}
+            </Badge>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => void refreshAll()}
+              disabled={loading || connectionsLoading || snapshotsLoading}
+            >
+              {loading || connectionsLoading || snapshotsLoading ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <RefreshCw size={15} />
+              )}
+              {L("Tout actualiser", "Refresh all")}
+            </button>
+          </div>
+        </div>
+        <div className="metric-strip metric-strip--firewall firewall-overview__metrics">
+          <div>
+            <span>{L("Profils actifs", "Enabled profiles")}</span>
+            <strong>
+              {loading ? "—" : `${enabledProfiles}/${status?.profiles.length ?? 0}`}
+            </strong>
+          </div>
+          <div>
+            <span>{L("Règles dans la stratégie", "Rules in policy")}</span>
+            <strong>{status ? formatNumber(status.rulesTotalCount) : "—"}</strong>
+          </div>
+          <div>
+            <span>{L("Connexions associées", "Mapped connections")}</span>
+            <strong>
+              {connections
+                ? `${formatNumber(mappedConnections)}/${formatNumber(totalConnections)}`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>{L("Instantanés d'audit", "Audit snapshots")}</span>
+            <strong>{snapshotsLoading ? "—" : formatNumber(snapshots.length)}</strong>
+          </div>
+          <div>
+            <span>{L("Mutation des règles", "Rule mutation")}</span>
+            <strong className="text-warning">{L("Désactivée", "Disabled")}</strong>
+          </div>
+        </div>
+        <nav className="firewall-nav" aria-label={L("Sections du pare-feu", "Firewall sections")}>
+          {[
+            { id: "firewall-overview", label: L("Vue d'ensemble", "Overview"), Icon: LayoutDashboard },
+            { id: "firewall-alerts", label: L("Alertes", "Alerts"), Icon: ShieldAlert },
+            { id: "firewall-profiles", label: L("Profils", "Profiles"), Icon: Gauge },
+            { id: "firewall-connections", label: L("Connexions", "Connections"), Icon: Network },
+            { id: "firewall-rules", label: L("Règles", "Rules"), Icon: Filter },
+            { id: "firewall-backup", label: L("Sauvegardes", "Backups"), Icon: Archive },
+            { id: "firewall-diagnostics", label: L("Diagnostic", "Diagnostics"), Icon: Stethoscope },
+          ].map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className="firewall-nav__item"
+              onClick={() => scrollToSection(id)}
+            >
+              <Icon size={14} aria-hidden="true" />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <p className="panel__note">
+          {L(
+            `Dernière lecture : ${status ? formatDateTime(status.checkedAt) : "non disponible"} · ${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""} · la décision effective du noyau n'est pas calculée.`,
+            `Latest read: ${status ? formatDateTime(status.checkedAt) : "not available"} · ${alertCount} active alert${alertCount > 1 ? "s" : ""} · the kernel's effective decision is not calculated.`,
+          )}
+        </p>
+      </section>
 
       {error && (
         <div className="banner banner--danger">
@@ -342,9 +657,32 @@ export function Firewall() {
         </div>
       )}
 
-      {observation && observation.alerts.length > 0 && (
-        <section className="security-alert-stack" aria-label={L("Alertes de sécurité", "Security alerts")}>
-          {observation.alerts.map((alert, index) => {
+      <section
+        id="firewall-alerts"
+        className="security-alert-stack"
+        aria-label={L("Alertes de sécurité", "Security alerts")}
+      >
+        <div className="section-heading">
+          <span className="panel__eyebrow">{L("Alertes actives", "Active alerts")}</span>
+          <h2>{L("Ce que l'état réel révèle", "What the real state reveals")}</h2>
+        </div>
+        {!observation ? (
+          <div className="loading-row">
+            <LoaderCircle size={16} className="spin" />
+            {L("Lecture des alertes…", "Reading alerts…")}
+          </div>
+        ) : observation.alerts.length === 0 ? (
+          <div className="callout callout--success">
+            <strong>{L("Aucune alerte active", "No active alert")}</strong>
+            <span>
+              {L(
+                "Les profils observés ne déclenchent aucune alerte de sécurité connue. Cela ne prouve pas que le filtrage effectif est optimal.",
+                "The observed profiles trigger no known security alert. This does not prove that effective filtering is optimal.",
+              )}
+            </span>
+          </div>
+        ) : (
+          observation.alerts.map((alert, index) => {
             const message = alertMessage(alert);
             return (
               <div
@@ -358,9 +696,9 @@ export function Firewall() {
                 </div>
               </div>
             );
-          })}
-        </section>
-      )}
+          })
+        )}
+      </section>
 
       {observation?.changedSinceLast && (
         <div className="banner banner--warning">
@@ -426,7 +764,7 @@ export function Firewall() {
         </div>
       )}
 
-      <section className="panel">
+      <section className="panel" id="firewall-profiles">
         <div className="panel__head">
           <div>
             <span className="panel__eyebrow">{L("Profils", "Profiles")}</span>
@@ -533,7 +871,7 @@ export function Firewall() {
         </p>
       </section>
 
-      <section className="panel">
+      <section className="panel" id="firewall-connections">
         <div className="panel__head">
           <div>
             <span className="panel__eyebrow">{L("Observations réseau", "Network observations")}</span>
@@ -608,6 +946,101 @@ export function Firewall() {
                 )}
             </p>
 
+            {applications.length > 0 && (
+              <div className="firewall-applications">
+                <div className="firewall-subhead">
+                  <div>
+                    <span className="panel__eyebrow">
+                      {L("Applications observées", "Observed applications")}
+                    </span>
+                    <h3>{L("Regroupement des connexions par processus", "Connections grouped by process")}</h3>
+                  </div>
+                  <Badge tone="neutral">{formatNumber(applications.length)}</Badge>
+                </div>
+                <div className="table-wrap">
+                  <table className="table table--compact">
+                    <thead>
+                      <tr>
+                        <th>{L("Application", "Application")}</th>
+                        <th>{L("Connexions", "Connections")}</th>
+                        <th>{L("Établies", "Established")}</th>
+                        <th>{L("Associées", "Mapped")}</th>
+                        <th>{L("Règles", "Rules")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {applications.slice(0, 10).map((application) => (
+                        <tr key={application.key}>
+                          <td title={application.path ?? undefined}>
+                            <strong>{application.name}</strong>
+                            {application.path && (
+                              <small className="table__sub">
+                                {truncateMiddle(application.path, 46)}
+                              </small>
+                            )}
+                          </td>
+                          <td className="mono">{formatNumber(application.connections)}</td>
+                          <td className="mono">{formatNumber(application.established)}</td>
+                          <td>
+                            <Badge tone={application.mapped > 0 ? "info" : "neutral"}>
+                              {formatNumber(application.mapped)}
+                            </Badge>
+                          </td>
+                          <td title={application.rules.join("\n")}>
+                            {application.rules.length > 0
+                              ? truncateMiddle(application.rules[0], 32)
+                              : "—"}
+                            {application.rules.length > 1 && (
+                              <span className="muted"> +{application.rules.length - 1}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {applications.length > 10 && (
+                  <p className="panel__note">
+                    {L(
+                      `Les ${formatNumber(applications.length - 10)} autres applications sont visibles dans le tableau des connexions.`,
+                      `The other ${formatNumber(applications.length - 10)} applications are visible in the connection table.`,
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="filter-row firewall-connection-filters">
+              <div className="field field--grow">
+                <label className="field__label" htmlFor="firewall-connection-search">
+                  {L("Filtrer les connexions", "Filter connections")}
+                </label>
+                <input
+                  id="firewall-connection-search"
+                  className="input"
+                  type="search"
+                  placeholder={L("Processus, adresse, règle…", "Process, address, rule…")}
+                  value={connectionQuery}
+                  onChange={(event) => setConnectionQuery(event.target.value)}
+                />
+              </div>
+              <label className="switch-row switch-row--inline" htmlFor="firewall-established-only">
+                <input
+                  id="firewall-established-only"
+                  type="checkbox"
+                  checked={establishedOnly}
+                  onChange={(event) => setEstablishedOnly(event.target.checked)}
+                />
+                <span>
+                  <strong>{L("Établies uniquement", "Established only")}</strong>
+                  <small>{L("Filtre local, aucune capture supplémentaire", "Local filter, no extra capture")}</small>
+                </span>
+              </label>
+              <Badge tone="neutral">
+                {formatNumber(visibleConnections.length)}/{formatNumber(connections.rows.length)}
+              </Badge>
+            </div>
+
             {connections.rows.length === 0 ? (
               <EmptyState
                 icon={Activity}
@@ -615,6 +1048,15 @@ export function Firewall() {
                 description={L(
                   "La capture est réelle et en lecture seule. Aucune connexion TCP n'était active au moment de la mesure.",
                   "The capture is real and read-only. No TCP connection was active at measurement time.",
+                )}
+              />
+            ) : visibleConnections.length === 0 ? (
+              <EmptyState
+                icon={Search}
+                title={L("Aucune connexion correspondante", "No matching connection")}
+                description={L(
+                  "Modifiez le filtre local pour élargir les résultats.",
+                  "Change the local filter to broaden the results.",
                 )}
               />
             ) : (
@@ -631,7 +1073,7 @@ export function Firewall() {
                     </tr>
                   </thead>
                   <tbody>
-                    {connections.rows.map((row, index) => (
+                    {visibleConnections.map((row, index) => (
                       <tr key={`${row.pid}-${row.localEndpoint}-${row.remoteEndpoint ?? "none"}-${index}`}>
                         <td title={row.processPath ?? undefined}>
                           {row.processName ?? <span className="muted">{L("Inconnu", "Unknown")}</span>}
@@ -680,7 +1122,7 @@ export function Firewall() {
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel" id="firewall-backup">
         <div className="panel__head">
           <div>
             <span className="panel__eyebrow">{L("Gestion des règles", "Rule management")}</span>
@@ -721,8 +1163,8 @@ export function Firewall() {
           <>
             <p className="panel__note">
               {L(
-                `Aucune API de mutation n'est exposée. Les instantanés JSON en lecture seule sont écrits dans ${management.backupDirectory} (${formatNumber(management.snapshotCount)} présent${management.snapshotCount > 1 ? "s" : ""}).`,
-                `No mutation API is exposed. Read-only JSON snapshots are written to ${management.backupDirectory} (${formatNumber(management.snapshotCount)} present).`,
+                `Aucune API de mutation n'est exposée. Les instantanés JSON en lecture seule sont écrits dans ${management.backupDirectory} (${formatNumber(management.snapshotCount)} présent${management.snapshotCount > 1 ? "s" : ""}, ${formatNumber(management.verifiedSnapshotCount)} avec empreinte vérifiée).`,
+                `No mutation API is exposed. Read-only JSON snapshots are written to ${management.backupDirectory} (${formatNumber(management.snapshotCount)} present, ${formatNumber(management.verifiedSnapshotCount)} with a matched digest).`,
               )}
             </p>
             {management.lastSnapshotAt && (
@@ -766,8 +1208,148 @@ export function Firewall() {
                 <code className="snapshot-hash" title={exportInfo.sha256}>
                   SHA-256 · {exportInfo.sha256}
                 </code>
+                {exportInfo.sha256Sidecar ? (
+                  <span>
+                    <FileCheck2 size={13} />{" "}
+                    {L(
+                      "Empreinte de contrôle .sha256 écrite à côté de l'instantané.",
+                      "A .sha256 control digest was written next to the snapshot.",
+                    )}
+                  </span>
+                ) : (
+                  <span>
+                    <TriangleAlert size={13} />{" "}
+                    {L(
+                      "Empreinte de contrôle non écrite : l'instantané est lisible mais non attesté.",
+                      "Control digest not written: the snapshot is readable but unverified.",
+                    )}
+                  </span>
+                )}
               </div>
             )}
+
+            <div className="firewall-snapshots">
+              <div className="firewall-subhead">
+                <div>
+                  <span className="panel__eyebrow">{L("Instantanés d'audit", "Audit snapshots")}</span>
+                  <h3>{L("Sauvegardes vérifiables, sans restauration", "Verifiable backups, no restore")}</h3>
+                </div>
+                <div className="row-actions">
+                  <Badge tone="neutral">{formatNumber(snapshots.length)}</Badge>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => void loadSnapshots()}
+                    disabled={snapshotsLoading}
+                  >
+                    {snapshotsLoading ? (
+                      <LoaderCircle size={14} className="spin" />
+                    ) : (
+                      <RefreshCw size={14} />
+                    )}
+                    {L("Actualiser", "Refresh")}
+                  </button>
+                </div>
+              </div>
+              <p className="panel__note">
+                {L(
+                  "Les fichiers JSON et leur empreinte .sha256 sont uniquement lus. Aucun import, aucune application et aucune suppression ne sont exposés. La vérification détecte une altération accidentelle, pas une signature authentifiée.",
+                  "The JSON files and their .sha256 sidecars are read only. No import, apply or delete path is exposed. Verification detects accidental alteration, not an authenticated signature.",
+                )}
+              </p>
+              {snapshotsError && (
+                <div className="banner banner--warning">
+                  <TriangleAlert size={18} aria-hidden="true" />
+                  <div>
+                    <strong>{L("Instantanés indisponibles", "Snapshots unavailable")}</strong>
+                    <span>{snapshotsError}</span>
+                  </div>
+                </div>
+              )}
+              {!snapshotsError && snapshots.length === 0 && !snapshotsLoading && (
+                <EmptyState
+                  icon={Archive}
+                  title={L("Aucun instantané d'audit", "No audit snapshot")}
+                  description={L(
+                    "Exportez un instantané lecture seule pour conserver une référence vérifiable de l'état observé.",
+                    "Export a read-only snapshot to keep a verifiable reference of the observed state.",
+                  )}
+                />
+              )}
+              {snapshots.length > 0 && (
+                <div className="table-wrap">
+                  <table className="table table--compact">
+                    <thead>
+                      <tr>
+                        <th>{L("Fichier", "File")}</th>
+                        <th>{L("Observé", "Observed")}</th>
+                        <th>{L("Règles", "Rules")}</th>
+                        <th>{L("Intégrité", "Integrity")}</th>
+                        <th>{L("Taille", "Size")}</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snapshots.map((snapshot) => {
+                        const verification = verifications[snapshot.path];
+                        const integrity = verification?.integrity ?? snapshot.integrity;
+                        return (
+                          <tr key={snapshot.path}>
+                            <td title={snapshot.path}>
+                              <strong>{truncateMiddle(snapshot.fileName, 42)}</strong>
+                              <small className="table__sub">
+                                {snapshot.modifiedAt ? formatDateTime(snapshot.modifiedAt) : "—"}
+                              </small>
+                            </td>
+                            <td className="mono">
+                              {snapshot.checkedAt ? formatDateTime(snapshot.checkedAt) : "—"}
+                            </td>
+                            <td className="mono">
+                              {snapshot.rulesSaved === null
+                                ? "—"
+                                : `${formatNumber(snapshot.rulesSaved)}/${formatNumber(snapshot.rulesTotalCount ?? snapshot.rulesSaved)}`}
+                            </td>
+                            <td>{integrityBadge(integrity)}</td>
+                            <td className="mono">
+                              {formatNumber(snapshot.bytes)} {L("o", "B")}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="button button--ghost button--small"
+                                onClick={() => void verifySnapshot(snapshot.path)}
+                                disabled={verifyingPath === snapshot.path}
+                              >
+                                {verifyingPath === snapshot.path ? (
+                                  <LoaderCircle size={13} className="spin" />
+                                ) : (
+                                  <FileSearch size={13} />
+                                )}
+                                {L("Vérifier", "Verify")}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {Object.values(verifications).map((verification) => (
+                <div className="callout callout--info" key={verification.snapshot.path}>
+                  <strong>{verification.snapshot.fileName}</strong>
+                  <span>{integrityNote(verification.integrity)}</span>
+                  <code className="snapshot-hash" title={verification.snapshot.sha256}>
+                    SHA-256 · {verification.snapshot.sha256}
+                  </code>
+                  {verification.sidecarSha256 && (
+                    <code className="snapshot-hash" title={verification.sidecarSha256}>
+                      .sha256 · {verification.sidecarSha256}
+                    </code>
+                  )}
+                </div>
+              ))}
+            </div>
 
             <div className="recovery-plan">
               <div className="recovery-plan__head">
@@ -861,7 +1443,7 @@ export function Firewall() {
         </p>
       </section>
 
-      <section className="panel">
+      <section className="panel" id="firewall-rules">
         <div className="panel__head">
           <div>
             <span className="panel__eyebrow">{L("Règles", "Rules")}</span>
@@ -882,9 +1464,22 @@ export function Firewall() {
               </span>
             </h2>
           </div>
+          {hasLocalFilter && (
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setFilters(EMPTY_RULE_FILTERS);
+                setQuery("");
+              }}
+            >
+              <X size={14} />
+              {L("Réinitialiser les filtres", "Reset filters")}
+            </button>
+          )}
         </div>
 
-        <div className="filter-row">
+        <div className="filter-row firewall-rule-filters">
           <div className="field field--grow">
             <label className="field__label" htmlFor="firewall-search">
               {L("Recherche locale", "Local search")}
@@ -901,6 +1496,125 @@ export function Firewall() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
+          <div className="field">
+            <label className="field__label" htmlFor="firewall-direction-filter">
+              {L("Direction", "Direction")}
+            </label>
+            <select
+              id="firewall-direction-filter"
+              className="input"
+              value={filters.direction}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  direction: event.target.value as DirectionFilter,
+                }))
+              }
+            >
+              <option value="all">{L("Toutes", "All")}</option>
+              <option value="inbound">{L("Entrantes", "Inbound")}</option>
+              <option value="outbound">{L("Sortantes", "Outbound")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="firewall-action-filter">
+              {L("Action", "Action")}
+            </label>
+            <select
+              id="firewall-action-filter"
+              className="input"
+              value={filters.action}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  action: event.target.value as ActionFilter,
+                }))
+              }
+            >
+              <option value="all">{L("Toutes", "All")}</option>
+              <option value="allow">{L("Autoriser", "Allow")}</option>
+              <option value="block">{L("Bloquer", "Block")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="firewall-state-filter">
+              {L("État", "State")}
+            </label>
+            <select
+              id="firewall-state-filter"
+              className="input"
+              value={filters.state}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  state: event.target.value as StateFilter,
+                }))
+              }
+            >
+              <option value="all">{L("Tous", "All")}</option>
+              <option value="enabled">{L("Activées", "Enabled")}</option>
+              <option value="disabled">{L("Désactivées", "Disabled")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="firewall-protocol-filter">
+              {L("Protocole", "Protocol")}
+            </label>
+            <select
+              id="firewall-protocol-filter"
+              className="input"
+              value={filters.protocol}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  protocol: event.target.value as ProtocolFilter,
+                }))
+              }
+            >
+              <option value="all">{L("Tous", "All")}</option>
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+              <option value="any">{L("Tout protocole", "Any protocol")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="firewall-profile-filter">
+              {L("Profil", "Profile")}
+            </label>
+            <select
+              id="firewall-profile-filter"
+              className="input"
+              value={filters.profile}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  profile: event.target.value as ProfileFilter,
+                }))
+              }
+            >
+              <option value="all">{L("Tous", "All")}</option>
+              <option value="domain">{L("Domaine", "Domain")}</option>
+              <option value="private">{L("Privé", "Private")}</option>
+              <option value="public">Public</option>
+            </select>
+          </div>
+        </div>
+        <div className="firewall-filter-summary">
+          <Filter size={14} aria-hidden="true" />
+          <span>
+            {L(
+              `${formatNumber(visibleRules.length)} règle${visibleRules.length > 1 ? "s" : ""} correspond${visibleRules.length > 1 ? "ent" : ""} aux filtres locaux.`,
+              `${formatNumber(visibleRules.length)} rule${visibleRules.length > 1 ? "s" : ""} match the local filters.`,
+            )}
+          </span>
+          {activeFilterCount > 0 && (
+            <Badge tone="info">
+              {L(
+                `${activeFilterCount} filtre${activeFilterCount > 1 ? "s" : ""} actif${activeFilterCount > 1 ? "s" : ""}`,
+                `${activeFilterCount} active filter${activeFilterCount > 1 ? "s" : ""}`,
+              )}
+            </Badge>
+          )}
         </div>
 
         {observation?.listedTruncated && (
@@ -946,11 +1660,12 @@ export function Firewall() {
                   <th>{L("Profil", "Profile")}</th>
                   <th>{L("Programme", "Program")}</th>
                   <th>{L("Groupe", "Group")}</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {visibleRules.map((rule, index) => (
-                  <tr key={index} className={rule.enabled ? "" : "is-muted"}>
+                  <tr key={`${rule.name}-${rule.grouping}-${index}`} className={rule.enabled ? "" : "is-muted"}>
                     <td title={rule.description || rule.name}>
                       {truncateMiddle(rule.name, 42)}
                     </td>
@@ -983,12 +1698,141 @@ export function Firewall() {
                         : <span className="muted">—</span>}
                     </td>
                     <td title={rule.grouping || undefined}>{rule.grouping || "—"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => setSelectedRule(rule)}
+                        aria-label={L(
+                          `Détails de la règle ${rule.name}`,
+                          `Details for rule ${rule.name}`,
+                        )}
+                      >
+                        <FileSearch size={13} />
+                        {L("Détails", "Details")}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+      </section>
+
+      <section className="panel" id="firewall-diagnostics">
+        <div className="panel__head">
+          <div>
+            <span className="panel__eyebrow">{L("Diagnostic", "Diagnostics")}</span>
+            <h2>{L("Capacités et empreintes observées", "Observed capabilities and fingerprints")}</h2>
+          </div>
+          <div className="row-actions">
+            <Badge tone="info" dot>
+              {L("API documentée", "Documented API")}
+            </Badge>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => void refreshAll()}
+              disabled={loading || snapshotsLoading}
+            >
+              {loading || snapshotsLoading ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <Stethoscope size={15} />
+              )}
+              {L("Relancer le diagnostic", "Run diagnostics")}
+            </button>
+          </div>
+        </div>
+        <div className="diagnostic-grid">
+          <div>
+            <span>{L("Profils actifs", "Active profiles")}</span>
+            <strong>
+              {status?.activeProfiles.length
+                ? status.activeProfiles.map((value) => profileLabel(value)).join(" + ")
+                : L("Aucun", "None")}
+            </strong>
+          </div>
+          <div>
+            <span>{L("MpsSvc", "MpsSvc")}</span>
+            <strong>{service?.mpsSvc ?? L("non vérifié", "not verified")}</strong>
+          </div>
+          <div>
+            <span>{L("BFE", "BFE")}</span>
+            <strong>{service?.bfe ?? L("non vérifié", "not verified")}</strong>
+          </div>
+          <div>
+            <span>{L("Règles listées", "Listed rules")}</span>
+            <strong>
+              {status
+                ? `${formatNumber(status.rules.length)} / ${formatNumber(status.rulesTotalCount)}`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>{L("Empreinte des règles", "Rule fingerprint")}</span>
+            <code title={status?.rulesHash}>{status ? truncateMiddle(status.rulesHash, 26) : "—"}</code>
+          </div>
+          <div>
+            <span>{L("Empreinte des profils", "Profile fingerprint")}</span>
+            <code title={status?.profilesHash}>{status ? truncateMiddle(status.profilesHash, 26) : "—"}</code>
+          </div>
+          <div>
+            <span>{L("Empreinte composite", "Composite fingerprint")}</span>
+            <code title={status?.configurationHash}>
+              {status ? truncateMiddle(status.configurationHash, 26) : "—"}
+            </code>
+          </div>
+          <div>
+            <span>{L("Dossier des instantanés", "Snapshot directory")}</span>
+            <code title={management?.backupDirectory}>{management?.backupDirectory ?? "—"}</code>
+          </div>
+          <div>
+            <span>{L("Mutation des règles", "Rule mutation")}</span>
+            <strong className="text-warning">{L("Non exposée", "Not exposed")}</strong>
+          </div>
+          <div>
+            <span>{L("Dernier instantané", "Latest snapshot")}</span>
+            <strong>
+              {management?.lastSnapshotAt
+                ? formatDateTime(management.lastSnapshotAt)
+                : L("Aucun", "None")}
+            </strong>
+          </div>
+        </div>
+        <div className="capability-grid">
+          <article className="capability-card">
+            <CheckCircle2 size={18} />
+            <strong>{L("Lecture des profils et règles", "Read profiles and rules")}</strong>
+            <span>{L("Active, sans élévation", "Enabled, no elevation")}</span>
+            <Badge tone="ok" dot>{L("Disponible", "Available")}</Badge>
+          </article>
+          <article className="capability-card">
+            <CheckCircle2 size={18} />
+            <strong>{L("Instantané + empreinte .sha256", "Snapshot + .sha256 digest")}</strong>
+            <span>{L("Écrit dans le dossier de données", "Written under the data directory")}</span>
+            <Badge tone="ok" dot>{L("Disponible", "Available")}</Badge>
+          </article>
+          <article className="capability-card capability-card--muted">
+            <LockKeyhole size={18} />
+            <strong>{L("Création ou modification de règle", "Create or modify a rule")}</strong>
+            <span>{L("Aucune API de mutation exposée", "No mutation API exposed")}</span>
+            <Badge tone="danger" dot>{L("Indisponible", "Unavailable")}</Badge>
+          </article>
+          <article className="capability-card capability-card--muted">
+            <LockKeyhole size={18} />
+            <strong>{L("Restauration automatique", "Automatic restore")}</strong>
+            <span>{L("Aucun chemin d'import ou d'application", "No import or apply path")}</span>
+            <Badge tone="danger" dot>{L("Indisponible", "Unavailable")}</Badge>
+          </article>
+        </div>
+        <p className="panel__note">
+          {L(
+            "La lecture utilise INetFwPolicy2 via le wrapper audité. CBS Shield ne consulte pas les filtres WFP effectifs, ne remplace pas Windows Security et ne demande aucun privilège administratif pour cette page.",
+            "Reading uses INetFwPolicy2 through the audited wrapper. CBS Shield does not query effective WFP filters, does not replace Windows Security, and requests no administrative privilege for this page.",
+          )}
+        </p>
       </section>
 
       <section className="panel">
@@ -1032,11 +1876,107 @@ export function Firewall() {
         </ul>
         <p className="panel__note">
           {L(
-            "Sprint 6 : observation, alertes réelles, détection de changement composite, diagnostic des services et association processus-règles. La modification du pare-feu reste hors périmètre.",
-            "Sprint 6: observation, real alerts, composite change detection, service diagnostics and process-to-rule mapping. Firewall mutation remains out of scope.",
+            "Sprint 7 : ajout des filtres de règles, du détail en lecture seule, du regroupement par application, de l'historique d'instantanés avec empreinte .sha256 et du diagnostic des capacités. La modification du pare-feu reste hors périmètre tant que le cycle de récupération n'est pas validé.",
+            "Sprint 7: adds rule filters, read-only rule details, application grouping, snapshot history with .sha256 digests, and capability diagnostics. Firewall mutation remains out of scope until the recovery cycle is validated.",
           )}
         </p>
       </section>
+
+      <Modal
+        open={selectedRule !== null}
+        title={selectedRule?.name ?? ""}
+        eyebrow={L("Détail de la règle observée", "Observed rule detail")}
+        tone={selectedRule?.action === "bloquer" ? "danger" : "info"}
+        wide
+        onClose={() => setSelectedRule(null)}
+        footer={
+          <>
+            <Badge tone="info" dot>
+              {L("Lecture seule", "Read-only")}
+            </Badge>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => setSelectedRule(null)}
+            >
+              {L("Fermer", "Close")}
+            </button>
+          </>
+        }
+      >
+        {selectedRule && (
+          <div className="rule-detail">
+            <div className="rule-detail__summary">
+              {directionBadge(selectedRule, L)}
+              {actionBadge(selectedRule, L)}
+              <Badge tone={selectedRule.enabled ? "ok" : "neutral"} dot>
+                {selectedRule.enabled
+                  ? L("Activée", "Enabled")
+                  : L("Désactivée", "Disabled")}
+              </Badge>
+              <Badge tone="neutral">{profilesLabel(selectedRule.profiles)}</Badge>
+            </div>
+            {selectedRule.description && (
+              <p className="rule-detail__description">{selectedRule.description}</p>
+            )}
+            <dl className="rule-detail__grid">
+              <div>
+                <dt>{L("Nom", "Name")}</dt>
+                <dd>{selectedRule.name}</dd>
+              </div>
+              <div>
+                <dt>{L("Groupe", "Group")}</dt>
+                <dd>{selectedRule.grouping || "—"}</dd>
+              </div>
+              <div>
+                <dt>{L("Direction", "Direction")}</dt>
+                <dd>{directionBadge(selectedRule, L)}</dd>
+              </div>
+              <div>
+                <dt>{L("Action", "Action")}</dt>
+                <dd>{actionBadge(selectedRule, L)}</dd>
+              </div>
+              <div>
+                <dt>{L("Protocole", "Protocol")}</dt>
+                <dd className="mono">{protocolLabel(selectedRule.protocol)}</dd>
+              </div>
+              <div>
+                <dt>{L("Ports locaux", "Local ports")}</dt>
+                <dd className="mono">{portLabel(selectedRule.localPorts || "tout")}</dd>
+              </div>
+              <div>
+                <dt>{L("Ports distants", "Remote ports")}</dt>
+                <dd className="mono">{portLabel(selectedRule.remotePorts || "tout")}</dd>
+              </div>
+              <div>
+                <dt>{L("Profils", "Profiles")}</dt>
+                <dd>{profilesLabel(selectedRule.profiles)}</dd>
+              </div>
+              <div className="rule-detail__wide">
+                <dt>{L("Programme", "Program")}</dt>
+                <dd className="mono">{selectedRule.applicationName || "—"}</dd>
+              </div>
+              <div className="rule-detail__wide">
+                <dt>{L("Service", "Service")}</dt>
+                <dd className="mono">{selectedRule.serviceName || "—"}</dd>
+              </div>
+              <div className="rule-detail__wide">
+                <dt>{L("Description", "Description")}</dt>
+                <dd>{selectedRule.description || "—"}</dd>
+              </div>
+            </dl>
+            <div className="callout callout--info">
+              <strong>{L("Ce détail est une observation", "This detail is an observation")}</strong>
+              <span>
+                {L(
+                  "La règle est affichée telle que lue dans la stratégie Windows. CBS Shield ne calcule pas la priorité entre règles, les filtres WFP, IPsec ou la décision effective pour un paquet.",
+                  "The rule is displayed as read from Windows policy. CBS Shield does not calculate precedence between rules, WFP filters, IPsec or the effective decision for a packet.",
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

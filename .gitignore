@@ -25,6 +25,7 @@ pnpm-debug.log*
 .env.local
 .DS_Store
 Thumbs.db
+*.tmp
 
 # Local test artefacts (never commit security test files)
 /tests/tmp/

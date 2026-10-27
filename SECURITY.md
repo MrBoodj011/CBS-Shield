@@ -1,9 +1,11 @@
-# Sécurité — CBS Shield 0.6.0-dev
+# Sécurité — CBS Shield 0.7.0-dev
 
 Ce document décrit le modèle de menace, les garanties offertes, les limites assumées
 et la procédure de signalement. CBS Shield est une **version expérimentale** de
 scanner manuel avec observation réseau et pare-feu en lecture seule : elle ne doit
-pas être présentée comme une protection antivirus complète.
+pas être présentée comme une protection antivirus complète. Sprint 7 ajoute un
+historique d'instantanés pare-feu avec empreinte `.sha256` et une interface de
+diagnostic plus détaillée, sans exposer de mutation de règle.
 
 ## Principes
 
@@ -29,8 +31,10 @@ pas être présentée comme une protection antivirus complète.
    référence, pas un verdict.
 7. **Pas de capacité active de pare-feu.** Aucune commande IPC ne crée, ne modifie
    ni ne supprime une règle. L'export JSON est en lecture seule, marqué
-   `restoreSupported: false`, et ne peut pas être restauré.
-8. **Intégrité de l'artefact.** L'installeur du Sprint 6 n'est pas signé
+   `restoreSupported: false`, et ne peut pas être restauré. Sprint 7 ajoute un
+   sidecar `.sha256` et une vérification bornée au dossier d'audit ; ce n'est pas
+   une signature et cela ne débloque aucune mutation.
+8. **Intégrité de l'artefact.** L'installeur 0.7.0-dev n'est pas signé
    Authenticode ; son SHA-256 publié doit être vérifié avant exécution. Une
    signature absente n'est pas présentée comme une garantie d'éditeur.
 
@@ -77,9 +81,19 @@ pas être présentée comme une protection antivirus complète.
 - L'interface distingue la **référence lue** de la **décision effective**, qui n'est
   pas calculée (priorité Allow/Block, WFP, IPsec, stratégie de groupe).
 - Export JSON marqué `readOnly: true` et `restoreSupported: false`, avec SHA-256 des
-  octets écrits, sans commande d'import.
+  octets écrits et sidecar `.sha256`, sans commande d'import.
+- `firewall_snapshot_history` lit au plus 50 fichiers d'audit et
+  `firewall_verify_snapshot` canonicalise le chemin, refuse tout fichier hors du
+  dossier d'audit et toute extension non `.json`, puis recompute l'empreinte sans
+  écrire. Un sidecar absent est `unverified`, un sidecar divergent est `mismatch`.
+- Le sidecar n'est ni signé ni protégé contre un processus élevé qui réécrirait
+  JSON et sidecar ensemble. Il détecte une altération accidentelle, pas une
+  falsification coordonnée.
 - Le plan de récupération est **conceptuel uniquement** : restauration absente et
   répétition rollback non réalisée.
+- La gate `backup_snapshot` n'est satisfaite que par un sidecar concordant ; les
+  gates `isolated_vm_test`, `rollback_rehearsal` et `explicit_authorization`
+  restent fausses.
 - **Aucun** appel `put_*`, aucun pilote, aucun service CBS Shield, aucun pare-feu tiers.
 - Une alerte n'est pas une preuve d'intrusion et ne remplace pas Microsoft Defender
   Firewall.
