@@ -1,9 +1,10 @@
 # Sprint 7 — Audit de l'installeur
 
 **Version :** `0.7.0-dev`
-**Date :** 27 octobre 2026
+**Date :** 28 octobre 2026
 **Artefact :** `CBS Shield_0.7.0-dev_x64-setup.exe`
-**Statut :** construit et testé sur l'hôte — **non signé**, validation VM en cours.
+**Statut :** construit, testé sur l'hôte et installé dans la VM Windows 11 —
+**non signé**. Les scénarios antivirus et pare-feu désactivé restent partiels.
 
 ---
 
@@ -92,11 +93,35 @@ La VM `CBS-Shield-Sprint7` a été créée avec :
 - audio, USB, presse-papiers et glisser-déposer désactivés ;
 - aucun dossier hôte partagé.
 
-L'installation Windows a été observée jusqu'à **51 %** à 15:17 UTC. Le cycle VM
-n'est donc **pas terminé** : installation CBS Shield, absence de ClamAV, scan,
-redémarrage, mise à niveau, désinstallation et pare-feu activé/désactivé restent à
-exécuter. Ces scénarios sont marqués ⏳ dans
-[`SPRINT7_TEST_REPORT.md`](SPRINT7_TEST_REPORT.md).
+Windows 11 Enterprise Evaluation 26H2 a démarré avec le build `26300`, en français,
+sous le compte local non administrateur `cbs`. `winget` et ClamAV sont absents.
+
+### 3.1 Résultats exécutés
+
+| Scénario | Résultat |
+| --- | --- |
+| SHA-256 de l'installeur 0.7 dans la VM | ✅ `F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF` |
+| Installation silencieuse 0.6 | ✅ code 0, version `0.6.0-dev` |
+| Mise à niveau silencieuse 0.6 → 0.7 | ✅ code 0 |
+| Version après mise à niveau | ✅ `0.7.0-dev` |
+| Binaire installé | ✅ 7 401 984 octets, SHA-256 `2E0920B4…B97C7` |
+| Lancement de l'interface | ✅ fenêtre `CBS Shield - Cybrense` |
+| Absence de ClamAV | ✅ message « ClamAV n'est pas détecté sur ce poste » |
+| Redémarrage Windows | ✅ base SQLite et instantané conservés, application relancée |
+| Instantané + sidecar | ✅ `firewall-snapshot-20261028T150021Z.json`, SHA-256 concordant |
+| Pare-feu observé | ✅ 3/3 profils activés, 450 puis 476 règles, aucune mutation |
+| Désinstallation silencieuse | ✅ code 0, application et registre supprimés |
+| Données après désinstallation | ✅ dossier conservé, 4 fichiers |
+| Réinstallation 0.7 | ✅ code 0, application relancée |
+| Pare-feu désactivé dans la VM | ⏳ non exécuté (non-admin/UAC non automatisé) |
+| ClamAV/FreshClam/scan/quarantaine | ⏳ bloqués par l'absence de `winget` et de moteur |
+
+Le premier script VM a été lancé deux fois en parallèle, ce qui a dupliqué quelques
+lignes de journal et provoqué une erreur de verrou. Les valeurs uniques, les hashes
+et les captures restent cohérents ; ce doublon n'est pas traité comme deux essais.
+
+Les preuves détaillées sont dans `target/sprint7-vm/vm-result*.txt` et les captures
+locales. Elles contiennent des chemins utilisateur et ne sont pas versionnées.
 
 ---
 
@@ -113,7 +138,12 @@ exécuter. Ces scénarios sont marqués ⏳ dans
 
 ## 5. Conclusion
 
-L'installeur 0.7.0-dev est construit, son hash est stable et la mise à niveau
-hôte 0.6 → 0.7 fonctionne. La validation en VM isolée reste incomplète et la
-signature Authenticode absente. Ces deux points interdisent de présenter
-l'artefact comme prêt pour la production.
+L'installeur 0.7.0-dev est construit, son hash est stable, et les parcours
+d'installation, de mise à niveau, de redémarrage et de désinstallation fonctionnent
+sur l'hôte et dans la VM Windows 11 isolée. Le pare-feu est resté actif et aucune
+règle n'a été modifiée.
+
+La validation reste incomplète pour le provisionnement ClamAV, les signatures, le
+scan, la quarantaine/restauration et le pare-feu désactivé dans la VM. L'absence de
+signature Authenticode interdit également de présenter l'artefact comme prêt pour la
+production.

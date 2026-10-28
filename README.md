@@ -106,7 +106,7 @@ pare-feu Windows — sans jamais les modifier.
 | Tableau de bord (données réelles) | Fonctionnel, vérifié |
 | Localisation FR/EN | Complète (interface, dates, nombres, dialogues) |
 | Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
-| Installeur NSIS `currentUser` | Généré pour 0.7.0-dev, sans ClamAV ni signatures |
+| Installeur NSIS `currentUser` | Généré pour 0.7.0-dev, installé sur l'hôte et dans la VM Windows 11, sans ClamAV ni signatures |
 | Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping, filtres, détail, diagnostic) |
 | Instantanés Pare-feu | JSON + sidecar `.sha256`, historique borné, vérification sans restauration |
 | Gestion des règles de pare-feu | **Désactivée** (architecture et prérequis seulement) |
@@ -283,7 +283,7 @@ target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
-Artefact de référence du Sprint 7, vérifié le 27 octobre 2026 :
+Artefact de référence du Sprint 7, vérifié le 28 octobre 2026 :
 **2 674 869 octets** (2,55 Mio), SHA-256
 `F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
 **non signé**. Vérifiez ce hash avant exécution. L'absence de signature
@@ -308,8 +308,11 @@ npm --prefix ui test
 ```
 
 Résultat final Sprint 7 : **95 tests Rust réussis, 1 ignoré** (EICAR manuel) et
-**28 tests UI réussis** dans 9 fichiers. Les scénarios VM propre, absence réelle de
-ClamAV, restauration de règles et signature Authenticode restent non exécutés ou
+**28 tests UI réussis** dans 9 fichiers. La VM Windows 11 isolée a validé
+l'installation 0.7, la mise à niveau 0.6 → 0.7, le redémarrage, l'export
+d'instantané avec sidecar, la désinstallation et l'observation d'un pare-feu
+activé. L'installation ClamAV/FreshClam, le scan, la quarantaine/restauration, le
+pare-feu désactivé dans la VM et une signature Authenticode restent non exécutés ou
 bloqués ; voir le rapport de test.
 
 Les tests d'intégration ClamAV sont **ignorés automatiquement** (avec message) si

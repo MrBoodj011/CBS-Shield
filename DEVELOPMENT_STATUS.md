@@ -1,7 +1,7 @@
 # État du développement — CBS Shield 0.7.0-dev
 
-**Date de vérification :** 27 octobre 2026
-**Branche :** `sprint-7` (base Sprint 6 `888e0ac`)
+**Date de vérification :** 28 octobre 2026
+**Branche :** `main` (Sprint 7 fusionné depuis `sprint-7`, base Sprint 6 `888e0ac`)
 **Nature :** version expérimentale — antivirus manuel, assistant de préparation,
 installation officielle de ClamAV, observation réseau et pare-feu strictement en
 lecture seule, avec historique d'instantanés vérifiable.
@@ -41,13 +41,14 @@ et 6 restent des preuves historiques.
 
 - **Aucune mutation de règle** : aucune API IPC, aucun bouton actif, aucun chemin
   de restauration. La décision reste volontairement bloquée.
-- La VM Windows 11 isolée a été créée et démarrée, mais le cycle complet
-  installation → sauvegarde → restauration → récupération n'est pas revendiqué
-  comme validé à la date de ce document.
-- Les scénarios pare-feu activé/désactivé dans la VM, l'installation NSIS 0.7,
-  la mise à niveau depuis 0.6 et la désinstallation doivent être consignés dans le
-  rapport VM dès qu'ils sont exécutés. Sans ces preuves, aucune affirmation de
-  « validé VM » n'est autorisée.
+- La VM Windows 11 isolée a validé l'installation 0.7, la mise à niveau 0.6 → 0.7,
+  le redémarrage, l'export d'instantané avec sidecar, la désinstallation et
+  l'observation d'un pare-feu activé. Le cycle complet de restauration n'est
+  toujours pas revendiqué : aucune API de mutation n'existe.
+- Les scénarios **ClamAV/FreshClam/scan/quarantaine** et **pare-feu désactivé dans
+  la VM** ne sont pas validés : `winget` et ClamAV sont absents de la VM, et le
+  compte de test est non administrateur. Ces points restent marqués partiels dans
+  le rapport.
 - L'installeur 0.7.0-dev reste non signé Authenticode ; son SHA-256 doit être
   vérifié manuellement.
 
@@ -67,6 +68,9 @@ et 6 restent des preuves historiques.
 | Services pare-feu | `MpsSvc` et `BFE` en cours d'exécution, démarrage automatique |
 | Microsoft Defender | Actif, protection temps réel active, aucune exclusion CBS Shield |
 | Visual Studio | 2022 Build Tools (C++) |
+| VM isolée | `CBS-Shield-Sprint7`, Windows 11 Enterprise Eval 26H2 build 26300, 6 Go, 4 vCPU |
+| Compte VM | `cbs`, non administrateur, français ; `winget` et ClamAV absents |
+| Pare-feu VM | activé 3/3 avant et après les tests, aucune mutation |
 
 ---
 
@@ -233,9 +237,17 @@ Binaire **release** installé puis piloté via CDP WebView2 :
   « Empreinte vérifiée » ; gate `backup_snapshot` devenue disponible, les autres
   gates restant non satisfaites.
 - Aucun appel de mutation pare-feu n'a été exécuté.
-- Détails : [`docs/SPRINT7_INSTALLER_AUDIT.md`](docs/SPRINT7_INSTALLER_AUDIT.md).
-- Cycle VM propre : **en cours / non terminé** ; voir
-  [`docs/SPRINT7_TEST_REPORT.md`](docs/SPRINT7_TEST_REPORT.md).
+- VM Windows 11 : installation 0.6 puis mise à niveau 0.7, code 0, version
+  `0.7.0-dev`, binaire installé recontrôlé par SHA-256, application lancée sans
+  élévation. Après redémarrage, 6 fichiers de données, la base SQLite et
+  l'instantané avec sidecar concordant sont toujours présents.
+- VM : désinstallation code 0, application et registre supprimés, données
+  conservées ; réinstallation 0.7 code 0. Le pare-feu est resté activé 3/3 et
+  aucune règle n'a été modifiée.
+- Non exécuté dans la VM : installation ClamAV/FreshClam, scan, quarantaine,
+  restauration et pare-feu désactivé (`winget` absent, compte non-admin).
+- Détails : [`docs/SPRINT7_INSTALLER_AUDIT.md`](docs/SPRINT7_INSTALLER_AUDIT.md)
+  et [`docs/SPRINT7_TEST_REPORT.md`](docs/SPRINT7_TEST_REPORT.md).
 
 ### 5.2 Sprint 6 (historique)
 
@@ -254,22 +266,24 @@ Binaire **release** installé puis piloté via CDP WebView2 :
 
 ### Bloqué
 
-- Validation sur **VM Windows 11 propre** : Windows 11 Home ne fournit ni Windows
-  Sandbox ni gestion Hyper-V utilisable sans modification non autorisée de
-  l'environnement hôte.
 - Matrice d'échec installeur : WebView2 absent, réseau coupé, disque plein, UAC
   refusé, mise à niveau inter-versions 0.5 → 0.6.
-- Installation réelle de ClamAV en **absence de moteur** : ClamAV 1.5.4 est déjà
-  installé ; sa désinstallation n'a pas été autorisée.
-- Scenario de pare-feu avec profil actif : les trois profils sont désactivés sur
-  l'hôte et les stratégies ne doivent pas être modifiées automatiquement.
+- Provisionnement ClamAV dans la VM : `winget` absent, aucun MSI officiel installé
+  et aucune base de signatures ; les scénarios scan/quarantaine/restauration n'ont
+  donc pas été exécutés dans l'environnement isolé.
+- Pare-feu **désactivé** dans la VM : le compte `cbs` est non administrateur et les
+  boîtes UAC ne sont pas automatisées. L'état 0/3 a été observé sur l'hôte
+  uniquement, sans mutation.
+- Altération d'un instantané dans la VM : couverte par les tests Rust, pas par une
+  manipulation réelle du fichier dans la VM.
 
 ### Non exécuté / limites
 
 - Sélecteur de langue NSIS en mode graphique : installation hôte testée en `/S`.
 - Restauration effective de règles de pare-feu : volontairement **non implémentée**.
 - Scan **Complet** de bout en bout et échec réseau FreshClam natif.
-- Accessibilité NVDA/Narrateur, contraste élevé et mouvement réduit visuel.
+- Accessibilité NVDA/Narrateur, contraste élevé et mouvement réduit visuel ; le
+  parcours clavier/UI Automation de la VM ne remplace pas un test lecteur d'écran.
 - Signature Authenticode de l'installeur : aucun certificat disponible.
 - Gestion active des règles de pare-feu : **non implémentée, non autorisée**.
 - Aucune protection temps réel, aucun pilote noyau.
@@ -305,9 +319,10 @@ Détail : [`SECURITY.md`](SECURITY.md) et
 | 3 | Design system, dashboard réel, FR/EN, tray | ✅ |
 | 4 | Antivirus avancé, profils, FreshClam, installeur | ✅ |
 | 5 | Assistant, provisionnement ClamAV, pare-feu enrichi, installeur 0.5 | ✅ historique ; validation VM partielle |
-| 6 | Fiabilité, installation propre, expérience sans terminal, diagnostic pare-feu | ⚠️ Code livré et tests locaux réussis ; VM propre et scénarios d'échec bloqués |
-| 7 | Gestion active du pare-feu | Non engagée — autorisation, VM isolée, rollback, revue requis |
-| 8 | YARA-X, planification, temps réel | Non commencée — service privilégié et revue requis |
+| 6 | Fiabilité, installation propre, expérience sans terminal, diagnostic pare-feu | ⚠️ Code livré et tests locaux réussis ; installation/mise à niveau/désinstallation validées en VM, scénarios AV et pare-feu désactivé partiels |
+| 7 | Pare-feu lecture seule, instantanés d'audit, interface premium | ✅ Code, tests et socle VM ; restauration et mutation non implémentées |
+| 8 | Gestion active du pare-feu | Non engagée — autorisation, VM isolée, rollback, revue requis |
+| 9 | YARA-X, planification, temps réel | Non commencée — service privilégié et revue requis |
 
 ---
 
@@ -344,7 +359,8 @@ CBS Shield 0.7.0-dev est un projet **expérimental**. Il ne remplace pas Microso
 Defender, qui doit rester actif. Il ne fournit aucune protection en temps réel,
 aucune modification de pare-feu, aucune capture de contenu réseau, et ne doit pas
 être présenté comme un antivirus complet. Le Sprint 7 **n'est pas déclaré prêt pour
-la production** tant que la VM Windows propre, l'installation en absence de ClamAV,
-la mise à niveau depuis 0.6, la désinstallation, les scénarios pare-feu
-activé/désactivé et la restauration de règles n'ont pas été validés dans un
-environnement isolé. La présence d'un snapshot vérifié ne remplace pas ces preuves.
+la production** : l'installation, la mise à niveau, le redémarrage, l'instantané et
+la désinstallation sont validés dans la VM, mais le provisionnement ClamAV, les
+signatures, le scan, la quarantaine/restauration, le pare-feu désactivé dans la VM
+et l'altération d'instantané restent non exécutés ou partiels. La présence d'un
+snapshot vérifié ne remplace pas ces preuves.

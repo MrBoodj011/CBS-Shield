@@ -1,11 +1,13 @@
 # Sprint 7 — Revue de sécurité et non-régression
 
 **Version :** `0.7.0-dev`
-**Date :** 27 octobre 2026
+**Date :** 28 octobre 2026
 **Périmètre :** pare-feu en lecture seule, instantanés d'audit, interface, IPC Tauri,
 installeur.
-**Statut :** contrôles statiques et tests locaux exécutés ; validation VM encore
-partielle. Aucune mutation de règle n'est exposée.
+**Statut :** contrôles statiques et tests locaux exécutés ; installation, mise à
+niveau, redémarrage, instantané et désinstallation validés dans la VM isolée. Les
+scénarios ClamAV/scan/quarantaine et pare-feu désactivé restent partiels ou non
+exécutés. Aucune mutation de règle n'est exposée.
 
 ---
 
@@ -80,6 +82,10 @@ le dossier d'audit CBS Shield.
 `mutationApiExposed` reste `false`. L'interface n'affiche aucun bouton de mutation
 actif et marque la restauration comme indisponible.
 
+Dans la VM, après l'export réel du `2026-10-28T15:00:21Z`, le sidecar concordait et
+la gate `backup_snapshot` est devenue disponible. Les trois autres gates sont
+restées non satisfaites et aucun bouton de mutation n'a été activé.
+
 ---
 
 ## 3. Interface et accessibilité
@@ -93,8 +99,11 @@ actif et marque la restauration comme indisponible.
 - Aucune couleur ne porte seule une information : badges + texte.
 - La distinction référence / décision effective est visible.
 
-Cette revue ne remplace pas un test lecteur d'écran (NVDA) ni un test clavier
-complet sur la VM ; ces points restent à exécuter dans `VM_TEST_PLAN.md`.
+La VM a été parcourue avec le clavier virtuel et UI Automation : fermeture de
+l'assistant par « Configurer plus tard », navigation vers Pare-feu et Sauvegardes,
+puis export de l'instantané. Cela prouve que les contrôles principaux sont
+atteignables sans terminal. Un test lecteur d'écran (NVDA/Narrateur) et une mesure
+complète de l'ordre de tabulation restent à exécuter.
 
 ---
 
@@ -151,8 +160,13 @@ pas une erreur et aucun code n'a été chargé depuis le réseau.
   `F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
   **NotSigned**.
 - Mise à niveau hôte 0.6 → 0.7 : code 0, registre `0.7.0-dev`.
-- L'installation doit encore être testée dans la VM isolée ; le test hôte ne
-  remplace pas ce scénario.
+- VM Windows 11 : installation 0.6 code 0, mise à niveau 0.7 code 0, binaire
+  installé recontrôlé par SHA-256, application lancée sans élévation.
+- VM : redémarrage, persistance de la base et de l'instantané, désinstallation
+  code 0 avec données conservées. Le pare-feu est resté activé 3/3 ; aucune règle
+  n'a été modifiée.
+- Les scénarios ClamAV/FreshClam/scan/quarantaine et le pare-feu désactivé dans la
+  VM ne sont pas validés par ce cycle.
 
 ---
 
@@ -165,13 +179,18 @@ pas une erreur et aucun code n'a été chargé depuis le réseau.
 | Build production frontend | ✅ |
 | Clippy + fmt | ✅ |
 | Build NSIS | ✅ |
-| Installation NSIS sur VM propre | ⏳ non terminée |
-| Absence de ClamAV sur VM | ⏳ non exécuté |
-| Scan fixture inoffensive sur VM | ⏳ non exécuté |
-| Pare-feu activé/désactivé sur VM | ⏳ non exécuté |
-| Instantané + altération sur VM | ⏳ non exécuté |
-| Désinstallation sur VM | ⏳ non exécuté |
+| Installation NSIS sur VM propre | ✅ code 0, version `0.7.0-dev` |
+| Mise à niveau VM 0.6 → 0.7 | ✅ code 0, données conservées |
+| Absence de ClamAV sur VM | ✅ message explicite observé |
+| Assistant de préparation sur VM | ⚠️ affiché et fermé ; provisionnement non exécuté |
+| Scan fixture inoffensive sur VM | ⏳ bloqué par l'absence de moteur |
+| Pare-feu activé sur VM | ✅ 3/3, aucune mutation |
+| Pare-feu désactivé sur VM | ⏳ non exécuté (non-admin/UAC) ; 0/3 observé sur l'hôte |
+| Instantané + sidecar sur VM | ✅ empreinte concordante, persistance après redémarrage |
+| Altération d'instantané sur VM | ⏳ couverte par test Rust, pas par preuve VM |
+| Désinstallation sur VM | ✅ code 0, données conservées |
 | Signature Authenticode | ❌ absente |
 
-Aucun résultat VM n'est déclaré comme validé avant la production des preuves
-correspondantes.
+Les résultats VM sont limités aux scénarios effectivement exécutés. Les preuves
+contiennent des chemins utilisateur et restent dans `target/sprint7-vm/` ; elles ne
+sont pas versionnées.
