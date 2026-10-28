@@ -1,68 +1,30 @@
+<div align="center">
+
+<img src="assets/icon.svg" width="88" alt="CBS Shield" />
+
 # CBS Shield
 
-> **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
-> Édité par **Cybrense** — version expérimentale **0.7.0-dev (Phase 7, sprint 7)**.
+**Scanner de sécurité manuel, open source et local pour Windows 10/11.**
 
-CBS Shield est une suite de sécurité modulaire pour Windows. La Phase 1 a livré
-une fonctionnalité réellement utilisable de bout en bout : **l'analyse antivirus
-manuelle de fichiers et de dossiers avec ClamAV**, l'historique local des rapports
-dans SQLite et une **quarantaine chiffrée** avec confirmation explicite de chaque
-action.
+[![Version](https://img.shields.io/badge/version-0.7.0--dev-3b82f6?style=flat-square)](DEVELOPMENT_STATUS.md)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-22c55e?style=flat-square)](LICENSE)
+[![Plateforme](https://img.shields.io/badge/plateforme-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](WINDOWS_COMPATIBILITY.md)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](ARCHITECTURE.md)
+[![Rust](https://img.shields.io/badge/Rust-1.85%2B-000000?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
+[![Statut](https://img.shields.io/badge/statut-exp%C3%A9rimental-f97316?style=flat-square)](DEVELOPMENT_STATUS.md)
 
-Le Sprint 2 ajoute deux modules **strictement observationnels, en lecture
-seule** : un **Moniteur réseau** (connexions TCP/UDP, ports, processus, trafic
-mesuré — métadonnées uniquement, aucune capture de contenu) et un **Pare-feu**
-(lecture des profils et règles Windows Firewall, détection de modification par
-empreinte). Aucune règle n'est jamais modifiée, aucun contenu réseau n'est lu.
+Édité par **Cybrense** — aucune télémétrie, aucun compte, aucune donnée envoyée.
 
-Le Sprint 3 transforme l'interface en produit : **design system « Midnight
-Navy »** (thèmes sombre/clair), **tableau de bord temps réel** alimenté
-exclusivement par le backend local, **pages Historique, Mises à jour et À
-propos & diagnostic**, **architecture de localisation FR/EN** (le shell, le
-tableau de bord et les nouveaux modules sont traduits ; la couverture a été
-étendue à toute l'interface au sprint 4), et **icône de zone de
-notification** minimale (ouvrir/quitter). Les compteurs réseau ont été corrigés :
-les sous-couches de filtres NDIS ne sont plus additionnées (mesure contrôlée de
-20 Mio : 160 Mo avant, 24,6 Mo après).
+</div>
 
-Le Sprint 4 livre l'**antivirus avancé** : profils **Rapide / Complète /
-Personnalisée**, cibles et exclusions documentées, progression mesurable,
-annulation sans corruption, limites de ressources, gestion **FreshClam**
-(manuelle et automatique, vérification, reprise, mode hors ligne), explication
-du compteur CVD **28 164**, **interface entièrement FR/EN**, export de rapports
-et **installeur NSIS 0.4.0-dev**. ClamAV reste un composant officiel externe
-(GPLv2) : il n'est ni embarqué ni installé silencieusement. Les limites et les
-tests non exécutés sont documentés dans
-[SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md) ; la validation sur VM
-propre reste **non exécutée**.
+![Tableau de bord CBS Shield — état réel du poste](docs/screenshots/readme/dashboard-fr.png)
 
-Le Sprint 5 a livré l'**assistant de préparation** en cinq étapes et un installeur
-NSIS `0.5.0-dev`. Ses rapports restent disponibles comme preuves historiques, mais
-son artefact est remplacé par celui du Sprint 6.
+CBS Shield est une suite de sécurité modulaire pour Windows, écrite en **Rust
+(Tauri 2)** avec une interface **React/TypeScript**. Elle analyse réellement des
+fichiers avec ClamAV, chiffre sa quarantaine et **observe** le réseau et le
+pare-feu Windows — sans jamais les modifier.
 
-Le Sprint 6 renforce la **fiabilité de production et l'expérience sans terminal** :
-installation officielle de ClamAV avec accord explicite, progression honnête,
-reprises et erreurs compréhensibles ; diagnostic des services du pare-feu,
-distinction entre règle déclarée et décision effective, export d'audit avec
-empreinte SHA-256 et plan de récupération explicitement non actif ; accessibilité
-clavier des dialogues, états FR/EN complets et statuts sans ambiguïté. Il livre un
-**installeur NSIS 0.6.0-dev** avec sélecteur de langue et dossier `Cybrense` dans
-le menu Démarrer. Le pare-feu reste **strictement observationnel** : aucune règle
-n'est créée, modifiée, activée ou désactivée. La validation sur VM Windows propre,
-les scénarios d'échec de l'installeur, l'installation réelle de ClamAV en absence
-de moteur et la restauration de règles restent **non exécutés** ; voir
-[SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md).
-
-Le Sprint 7 renforce le **Pare-feu en lecture seule** : vue d'ensemble et
-navigation par sections, filtres locaux, détail de règle, regroupement des
-connexions par application, historique d'instantanés avec sidecar `.sha256`,
-vérification bornée au dossier d'audit et matrice de capacités. La gate de
-sauvegarde exige désormais une empreinte concordante, et non un simple fichier
-JSON. La mutation de règle reste **indisponible** tant que l'isolation VM, la
-sauvegarde vérifiée et la répétition de restauration ne sont pas prouvées. Voir
-[FIREWALL_ARCHITECTURE.md](FIREWALL_ARCHITECTURE.md) et
-[docs/SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md).
-
+> [!IMPORTANT]
 > CBS Shield **ne remplace pas Microsoft Defender**. Il ne désactive pas Defender,
 > n'ajoute aucune exclusion, ne modifie aucune règle de pare-feu, n'installe aucun
 > pilote noyau et ne fournit **aucune protection en temps réel**.
@@ -71,6 +33,8 @@ sauvegarde vérifiée et la répétition de restauration ne sont pas prouvées. 
 
 ## Sommaire
 
+- [Parcours livré](#parcours-livré)
+- [Aperçu](#aperçu)
 - [État actuel](#état-actuel)
 - [Fonctionnalités](#fonctionnalités)
 - [Prérequis](#prérequis)
@@ -83,6 +47,43 @@ sauvegarde vérifiée et la répétition de restauration ne sont pas prouvées. 
 - [Test EICAR et Microsoft Defender](#test-eicar-et-microsoft-defender)
 - [Documentation](#documentation)
 - [Licences](#licences)
+
+---
+
+## Parcours livré
+
+| Étape | Ce qui a été livré | Preuves |
+| --- | --- | --- |
+| **Phase 1** | Antivirus manuel réel (ClamAV), historique SQLite, quarantaine chiffrée avec confirmation explicite. | [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) |
+| **Sprint 2** | Moniteur réseau et pare-feu **strictement observationnels** : métadonnées seulement, aucune règle touchée. | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| **Sprint 3** | Design system « Midnight Navy », thèmes sombre/clair, tableau de bord temps réel, pages Historique / Mises à jour / À propos, base FR-EN, icône de notification. | [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) |
+| **Sprint 4** | Antivirus avancé : profils Rapide / Complète / Personnalisée, exclusions, annulation, limites de ressources, FreshClam, interface FR/EN complète, installeur NSIS `0.4.0-dev`. | [SPRINT4_ANTIVIRUS.md](docs/SPRINT4_ANTIVIRUS.md) |
+| **Sprint 5** | Assistant de préparation en cinq étapes et installeur `0.5.0-dev` (artefact remplacé par le sprint 6). | [SPRINT5_TEST_REPORT.md](docs/SPRINT5_TEST_REPORT.md) |
+| **Sprint 6** | Fiabilité sans terminal : installation officielle de ClamAV avec accord explicite, reprises honnêtes, diagnostic des services du pare-feu, accessibilité clavier, installeur `0.6.0-dev`. | [SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md) |
+| **Sprint 7** | Pare-feu en lecture seule : sections, filtres, détail de règle, connexions par application, instantanés avec sidecar `.sha256`, matrice de capacités, installeur `0.7.0-dev`. | [FIREWALL_ARCHITECTURE.md](FIREWALL_ARCHITECTURE.md) · [SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md) |
+
+---
+
+## Aperçu
+
+*Captures réelles de la version **0.7.0-dev**, interface française, thème sombre.*
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/readme/antivirus-fr.png" alt="Antivirus" /><br />
+      <sub><b>Antivirus</b> — profils Rapide / Complète / Personnalisée, cibles résolues par le moteur, limites affichées.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/readme/network-fr.png" alt="Moniteur réseau" /><br />
+      <sub><b>Moniteur réseau</b> — connexions TCP/UDP, volumes mesurés par interface, métadonnées uniquement.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/readme/firewall-fr.png" alt="Pare-feu Windows" /><br />
+      <sub><b>Pare-feu</b> — profils, règles et alertes en lecture seule ; la décision effective n'est pas calculée.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -114,9 +115,11 @@ sauvegarde vérifiée et la répétition de restauration ne sont pas prouvées. 
 
 Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
 
+---
+
 ## Fonctionnalités
 
-### Antivirus (Phase 1, réel)
+### 🦠 Antivirus (Phase 1, réel)
 
 - Sélection de plusieurs fichiers et/ou dossiers via le sélecteur natif Windows.
 - Analyse réelle avec `clamscan.exe`, options récursive et PUA.
@@ -129,7 +132,7 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   des signatures. Absence de ClamAV ou de signatures = message explicite, pas de faux scan.
 - Mise à jour des signatures via `freshclam`, journal en direct, délai maximal de 30 min.
 
-### Assistant de préparation (Sprint 5, renforcé Sprint 6)
+### 🧭 Assistant de préparation (Sprint 5, renforcé Sprint 6)
 
 - Ouvert automatiquement une seule fois tant que la configuration initiale n'est
   pas terminée ; réouvrable depuis **Paramètres** ou **Mises à jour**.
@@ -151,13 +154,13 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   aucune élévation automatique de CBS Shield.
 - La progression est enregistrée dans les réglages locaux (`onboardingCompleted`).
 
-### Historique
+### 🗄️ Historique
 
 - Chaque scan est enregistré dans `cbs-shield.db` (SQLite, mode WAL).
 - Tableau de bord : nombre de scans, fichiers analysés, détections, quarantaine active.
 - Les erreurs de persistance sont affichées ; le rapport reste consultable en mémoire.
 
-### Quarantaine
+### 🔐 Quarantaine
 
 - Déplacement **uniquement sur confirmation explicite** depuis un rapport de détection.
 - Chiffrement **AES-256-GCM** par fichier, avec identifiant en données authentifiées.
@@ -166,7 +169,7 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
 - Suppression définitive du blob : case à cocher **et** saisie du mot `SUPPRIMER`.
 - Aucune suppression automatique de fichier, aucune exécution de fichier.
 
-### Firewall / Network Monitor (lecture seule)
+### 🛰️ Firewall / Network Monitor (lecture seule)
 
 - **Moniteur réseau** : connexions TCP/UDP, ports, PID et processus, volumes par
   interface mesurés via `GetIfTable2` ; métadonnées uniquement, aucun contenu,
@@ -184,6 +187,8 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   elle exige une autorisation explicite, une VM isolée et une restauration
   validée. Aucune commande de mutation n'est exposée.
 - Ces deux modules n'exigent aucune élévation et n'ont aucun effet de bord.
+
+---
 
 ## Prérequis
 
@@ -381,6 +386,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 
 ## Documentation
 
+<details>
+<summary><b>Architecture, design et sécurité</b></summary>
+
 - [ARCHITECTURE.md](ARCHITECTURE.md) — crates, flux de données, IPC, schéma SQLite.
 - [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) — jetons, typographie, mouvement, layout, accessibilité.
 - [UI_COMPONENTS.md](UI_COMPONENTS.md) — inventaire et contrats des composants UI.
@@ -389,6 +397,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SECURITY.md](SECURITY.md) — modèle de menace, chiffrement, signalement de vulnérabilité.
 - [LICENSES.md](LICENSES.md) — licences du code et des composants tiers.
 - [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) — état vérifié, tests, limites, feuille de route.
+- [FIREWALL_ARCHITECTURE.md](FIREWALL_ARCHITECTURE.md) — invariants lecture seule et matrice de capacités.
+
+</details>
+
+<details>
+<summary><b>Rapports de sprint (preuves historiques)</b></summary>
+
 - [SPRINT4_ANTIVIRUS.md](docs/SPRINT4_ANTIVIRUS.md) — profils, cibles, limites, signatures, mises à jour.
 - [SPRINT4_INSTALLER_AUDIT.md](docs/SPRINT4_INSTALLER_AUDIT.md) — contenu NSIS, dépendances, provisionnement ClamAV.
 - [SPRINT4_TEST_REPORT.md](docs/SPRINT4_TEST_REPORT.md) — tests exécutés, non exécutés et captures.
@@ -409,6 +424,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SPRINT7_SECURITY_REGRESSION.md](docs/SPRINT7_SECURITY_REGRESSION.md) — invariants lecture seule, sidecar, IPC et limites.
 - [SPRINT7_INSTALLER_AUDIT.md](docs/SPRINT7_INSTALLER_AUDIT.md) — artefact NSIS 0.7, SHA-256 et signature.
 - [VM_TEST_PLAN.md](VM_TEST_PLAN.md) — plan d'isolation et matrice Windows 11.
+
+</details>
 
 ## Licences
 
