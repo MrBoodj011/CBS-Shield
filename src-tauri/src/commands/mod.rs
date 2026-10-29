@@ -6,3 +6,4 @@ pub mod scans;
 pub mod settings;
 pub mod signatures;
 pub mod vault;
+pub mod webguard;

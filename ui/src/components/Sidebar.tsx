@@ -2,6 +2,7 @@ import {
   Activity,
   Archive,
   Flame,
+  Globe2,
   History,
   Info,
   LayoutDashboard,
@@ -40,6 +41,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "network", labelKey: "nav.network", icon: Activity },
       { id: "firewall", labelKey: "nav.firewall", icon: Flame },
+      { id: "webguard", labelKey: "nav.webguard", icon: Globe2 },
     ],
   },
   {

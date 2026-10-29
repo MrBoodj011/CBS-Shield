@@ -293,6 +293,13 @@ export interface ProvisioningStatus {
   docsUrl: string;
   licenseNote: string;
   checkedAt: string;
+  portableAvailable: boolean;
+  portableVersion: string;
+  portableUrl: string;
+  portableSha256: string;
+  portableSize: number;
+  portableInstallDir: string;
+  preferredMethod: "portable" | "winget" | "manual";
 }
 
 export type ClamavInstallOutcome =
@@ -308,7 +315,137 @@ export interface ClamavInstallResult {
   exitCode: number | null;
   installed: boolean;
   message: string;
+  method?: "winget" | "portable" | "none";
   engine: EngineStatus;
+}
+
+// ---------------------------------------------------------------------------
+// CBS Web Guard (Sprint 8 — local DNS filtering prototype)
+// ---------------------------------------------------------------------------
+
+export interface WebGuardDnsAdapter {
+  name: string;
+  description: string;
+  interfaceKind: string;
+  up: boolean;
+  dnsServers: string[];
+  dnsSuffix: string;
+  probableVpn: boolean;
+}
+
+export interface WebGuardDnsHealth {
+  checkedAt: string;
+  service: "running" | "stopped" | "unknown";
+  serviceObservable: boolean;
+  adapters: WebGuardDnsAdapter[];
+  resolvers: string[];
+  probableVpn: boolean;
+  encryptedDnsEvidence: boolean | null;
+  proxyConfigured: string | null;
+  healthy: boolean;
+  readOnly: boolean;
+}
+
+export interface WebGuardProxyStatus {
+  running: boolean;
+  endpoint: string;
+  mode: string;
+  startedAt: string | null;
+  lastError: string | null;
+  systemDnsModified: boolean;
+  activeEnforcement: boolean;
+}
+
+export interface WebGuardCounts {
+  blocklist: number;
+  allowlist: number;
+  filters: number;
+  malware: number;
+  phishing: number;
+  events: number;
+  blockedEvents: number;
+  allowedEvents: number;
+  errorEvents: number;
+}
+
+export interface WebGuardFilterSource {
+  id: string;
+  name: string;
+  category: "malware" | "phishing";
+  importedAt: string;
+  entryCount: number;
+  sha256: string;
+}
+
+export interface WebGuardBlockEntry {
+  domain: string;
+  category: "malware" | "phishing";
+  source: string;
+  importedAt: string;
+}
+
+export interface WebGuardAllowEntry {
+  domain: string;
+  note: string;
+  addedAt: string;
+}
+
+export interface WebGuardEvent {
+  id: string;
+  occurredAt: string;
+  domain: string;
+  action: "blocked" | "allowed" | "error";
+  category: "malware" | "phishing" | null;
+  matchedRule: string | null;
+  source: string;
+  upstream: string | null;
+  latencyMs: number | null;
+  detail: string;
+}
+
+export interface WebGuardView {
+  checkedAt: string;
+  health: WebGuardDnsHealth;
+  proxy: WebGuardProxyStatus;
+  counts: WebGuardCounts;
+  filters: WebGuardFilterSource[];
+  events: WebGuardEvent[];
+  allowlist: WebGuardAllowEntry[];
+  blocklist: WebGuardBlockEntry[];
+  blocklistTotal: number;
+  blocklistTruncated: boolean;
+  stateError: string | null;
+  systemDnsModified: boolean;
+  restorationRequired: boolean;
+  activeEnforcement: boolean;
+  limitationCodes: string[];
+}
+
+export interface WebGuardVerdict {
+  action: "blocked" | "allowed";
+  reason: "blocklist" | "allowlist" | "notListed";
+  category: "malware" | "phishing" | null;
+  matchedRule: string | null;
+  allowlistRule: string | null;
+}
+
+export interface WebGuardDomainTest {
+  domain: string;
+  verdict: WebGuardVerdict;
+  proxyRunning: boolean;
+  endpoint: string;
+  queryOutcome: "blocked" | "allowed" | "upstreamFailure" | "notRunning" | "error";
+  rcode: number | null;
+  latencyMs: number | null;
+  detail: string;
+}
+
+export interface WebGuardImportResult {
+  source: WebGuardFilterSource;
+  added: number;
+  updated: number;
+  ignoredLines: number;
+  totalBlocklist: number;
 }
 
 export interface ExportResult {
@@ -329,6 +466,7 @@ export type SectionId =
   | "quarantine"
   | "network"
   | "firewall"
+  | "webguard"
   | "settings"
   | "updates"
   | "about";

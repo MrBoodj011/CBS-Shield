@@ -6,7 +6,7 @@
 
 **Scanner de sécurité manuel, open source et local pour Windows 10/11.**
 
-[![Version](https://img.shields.io/badge/version-0.7.0--dev-3b82f6?style=flat-square)](DEVELOPMENT_STATUS.md)
+[![Version](https://img.shields.io/badge/version-0.8.0--dev-3b82f6?style=flat-square)](DEVELOPMENT_STATUS.md)
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-22c55e?style=flat-square)](LICENSE)
 [![Plateforme](https://img.shields.io/badge/plateforme-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](WINDOWS_COMPATIBILITY.md)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](ARCHITECTURE.md)
@@ -61,12 +61,13 @@ pare-feu Windows — sans jamais les modifier.
 | **Sprint 5** | Assistant de préparation en cinq étapes et installeur `0.5.0-dev` (artefact remplacé par le sprint 6). | [SPRINT5_TEST_REPORT.md](docs/SPRINT5_TEST_REPORT.md) |
 | **Sprint 6** | Fiabilité sans terminal : installation officielle de ClamAV avec accord explicite, reprises honnêtes, diagnostic des services du pare-feu, accessibilité clavier, installeur `0.6.0-dev`. | [SPRINT6_TEST_REPORT.md](docs/SPRINT6_TEST_REPORT.md) |
 | **Sprint 7** | Pare-feu en lecture seule : sections, filtres, détail de règle, connexions par application, instantanés avec sidecar `.sha256`, matrice de capacités, installeur `0.7.0-dev`. | [FIREWALL_ARCHITECTURE.md](FIREWALL_ARCHITECTURE.md) · [SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md) |
+| **Sprint 8** | Prototype **Web Guard** de filtrage DNS local : huit vues FR/EN, listes locales, résolveur loopback, diagnostics réseau lecture seule, installation portable ClamAV épinglée, installeur `0.8.0-dev`. | [SPRINT8_TEST_REPORT.md](docs/SPRINT8_TEST_REPORT.md) · [SPRINT8_DNS_FILTERING.md](docs/SPRINT8_DNS_FILTERING.md) |
 
 ---
 
 ## Aperçu
 
-*Captures réelles de la version **0.7.0-dev**, interface française, thème sombre.*
+*Captures réelles de la version **0.8.0-dev**, interface française, thème sombre.*
 
 <table>
   <tr>
@@ -106,11 +107,12 @@ pare-feu Windows — sans jamais les modifier.
 | Tableau de bord (données réelles) | Fonctionnel, vérifié |
 | Localisation FR/EN | Complète (interface, dates, nombres, dialogues) |
 | Icône de notification (ouvrir/quitter) | Fonctionnelle, vérifiée |
-| Installeur NSIS `currentUser` | Généré pour 0.7.0-dev, installé sur l'hôte et dans la VM Windows 11, sans ClamAV ni signatures |
+| Installeur NSIS `currentUser` | Généré pour 0.8.0-dev ; prévalidation de la VM non re-exécutée |
 | Firewall Windows | **Lecture seule** (profils, règles, alertes, changements, mapping, filtres, détail, diagnostic) |
 | Instantanés Pare-feu | JSON + sidecar `.sha256`, historique borné, vérification sans restauration |
 | Gestion des règles de pare-feu | **Désactivée** (architecture et prérequis seulement) |
 | Network Monitor | **Lecture seule** (métadonnées, volumes mesurés) |
+| Web Guard — filtrage DNS local | **Prototype loopback**, 8 vues FR/EN, aucune modification système, pas de filtre global |
 | Protection temps réel / pilote noyau | **Hors périmètre** |
 
 Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
@@ -187,6 +189,16 @@ Détail complet, y compris les limites connues : [DEVELOPMENT_STATUS.md](DEVELOP
   elle exige une autorisation explicite, une VM isolée et une restauration
   validée. Aucune commande de mutation n'est exposée.
 - Ces deux modules n'exigent aucune élévation et n'ont aucun effet de bord.
+
+### 🌐 Web Guard — filtrage DNS local (prototype)
+
+- Écoute uniquement sur `127.0.0.1` (port `5353`, repli `5354–5360` si occupé) ;
+  aucune modification DNS système, aucun certificat, aucun pilote.
+- Classement local : domaine, sous-domaines par labels, liste d'autorisations
+  prioritaire, listes de blocage, journal local borné, persistence atomique.
+- Réponses attachées au résolveur système ; aucune exfiltration, aucun feed distant.
+- Huit sous-vues FR/EN et un cadre honnête : pas de protection système globale,
+  pas de garantie antivirus, pas de remplacement de Defender ou du pare-feu.
 
 ---
 
@@ -279,17 +291,17 @@ Cette commande compile l'interface, le backend en mode `release`, puis génère 
 installeur **NSIS** :
 
 ```
-target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe
+target\release\bundle\nsis\CBS Shield_0.8.0-dev_x64-setup.exe
 target\release\cbs-shield.exe
 ```
 
-Artefact de référence du Sprint 7, vérifié le 28 octobre 2026 :
-**2 674 869 octets** (2,55 Mio), SHA-256
-`F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
+Artefact de référence du Sprint 8, vérifié le 30 octobre 2026 :
+**2 773 391 octets** (2,64 Mio), SHA-256
+`9F0377C511AE1EAC8EE408120F17154756EB26E09889783D0FE1A0882131796E`,
 **non signé**. Vérifiez ce hash avant exécution. L'absence de signature
 Authenticode empêche de garantir l'éditeur au niveau du système ; SmartScreen peut
 donc afficher un avertissement. Le détail est dans
-[SPRINT7_INSTALLER_AUDIT.md](docs/SPRINT7_INSTALLER_AUDIT.md).
+[SPRINT8_INSTALLER_AUDIT.md](docs/SPRINT8_INSTALLER_AUDIT.md).
 
 Le premier build télécharge l'outillage NSIS (mis en cache par Tauri). Comptez
 plusieurs minutes pour la compilation `release`. L'installeur est en mode
@@ -307,13 +319,11 @@ npm --prefix ui run build
 npm --prefix ui test
 ```
 
-Résultat final Sprint 7 : **95 tests Rust réussis, 1 ignoré** (EICAR manuel) et
-**28 tests UI réussis** dans 9 fichiers. La VM Windows 11 isolée a validé
-l'installation 0.7, la mise à niveau 0.6 → 0.7, le redémarrage, l'export
-d'instantané avec sidecar, la désinstallation et l'observation d'un pare-feu
-activé. L'installation ClamAV/FreshClam, le scan, la quarantaine/restauration, le
-pare-feu désactivé dans la VM et une signature Authenticode restent non exécutés ou
-bloqués ; voir le rapport de test.
+Résultat final Sprint 8 : **116 tests Rust réussis, 1 ignoré** (EICAR manuel) et
+**34 tests UI réussis** dans 10 fichiers. L'installeur NSIS a été reconstruit,
+mais **l'installation finale 0.8.0-dev n'a pas été réinstallée dans la VM**, et le
+cycle antivirus VM isolé reste non exécuté ; l'implémentation portable ClamAV est
+testée unitairement, et le Web Guard prototype est validé sur l'hôte.
 
 Les tests d'intégration ClamAV sont **ignorés automatiquement** (avec message) si
 ClamAV ou la base de signatures est absent. Ils n'utilisent aucun malware :
@@ -426,6 +436,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\eicar-manual-test.ps1
 - [SPRINT7_TEST_REPORT.md](docs/SPRINT7_TEST_REPORT.md) — tests locaux, build, matrice VM et résultats honnêtes.
 - [SPRINT7_SECURITY_REGRESSION.md](docs/SPRINT7_SECURITY_REGRESSION.md) — invariants lecture seule, sidecar, IPC et limites.
 - [SPRINT7_INSTALLER_AUDIT.md](docs/SPRINT7_INSTALLER_AUDIT.md) — artefact NSIS 0.7, SHA-256 et signature.
+- [SPRINT8_TEST_REPORT.md](docs/SPRINT8_TEST_REPORT.md) — tests locaux, build, prototype Web Guard, validation hôte.
+- [SPRINT8_ARCHITECTURE_THREAT_MODEL.md](docs/SPRINT8_ARCHITECTURE_THREAT_MODEL.md) — architecture Web Guard et menaces.
+- [SPRINT8_DNS_FILTERING.md](docs/SPRINT8_DNS_FILTERING.md) — filtrage DNS local réellement testé.
+- [SPRINT8_SECURITY_REGRESSION.md](docs/SPRINT8_SECURITY_REGRESSION.md) — garanties et non-régression Sprint 8.
+- [SPRINT8_VM_AV.md](docs/SPRINT8_VM_AV.md) — statut antivirus simplifié et écart VM.
+- [SPRINT8_INSTALLER_AUDIT.md](docs/SPRINT8_INSTALLER_AUDIT.md) — artefact NSIS 0.8, SHA-256 et état d'exécution.
 - [VM_TEST_PLAN.md](VM_TEST_PLAN.md) — plan d'isolation et matrice Windows 11.
 
 </details>

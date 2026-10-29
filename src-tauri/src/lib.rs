@@ -58,6 +58,7 @@ pub fn run() {
             commands::signatures::provisioning_status,
             commands::signatures::open_documentation,
             commands::signatures::install_clamav,
+            commands::signatures::install_clamav_portable,
             commands::vault::quarantine_file,
             commands::vault::list_quarantine,
             commands::vault::restore_quarantine,
@@ -74,6 +75,15 @@ pub fn run() {
             commands::firewall::firewall_snapshot_history,
             commands::firewall::firewall_verify_snapshot,
             commands::firewall::firewall_management_status,
+            commands::webguard::webguard_snapshot,
+            commands::webguard::webguard_start_monitor,
+            commands::webguard::webguard_stop_monitor,
+            commands::webguard::webguard_test_domain,
+            commands::webguard::webguard_import_filter,
+            commands::webguard::webguard_add_allowlist,
+            commands::webguard::webguard_remove_allowlist,
+            commands::webguard::webguard_clear_history,
+            commands::webguard::webguard_clear_blocklist,
             tray::set_tray_language,
         ])
         .run(tauri::generate_context!())

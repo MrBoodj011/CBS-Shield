@@ -16,6 +16,7 @@ import { NetworkMonitor } from "./sections/NetworkMonitor";
 import { Quarantine } from "./sections/Quarantine";
 import { Settings } from "./sections/Settings";
 import { Updates } from "./sections/Updates";
+import { WebGuard } from "./sections/WebGuard";
 import type {
   AppInfo,
   DashboardStats,
@@ -51,6 +52,10 @@ const SECTION_META: Record<SectionId, { title: TranslationKey; subtitle: Transla
   firewall: {
     title: "section.firewall.title",
     subtitle: "section.firewall.subtitle",
+  },
+  webguard: {
+    title: "section.webguard.title",
+    subtitle: "section.webguard.subtitle",
   },
   settings: {
     title: "section.settings.title",
@@ -344,6 +349,8 @@ export default function App() {
 
               {section === "firewall" && <Firewall />}
 
+              {section === "webguard" && <WebGuard />}
+
               {section === "network" && <NetworkMonitor />}
 
               {section === "quarantine" && (
@@ -389,7 +396,7 @@ export default function App() {
 
             <footer className="app-footer">
               <span>
-                CBS Shield v{info?.version ?? "0.7.0-dev"} - {info?.vendor ?? "Cybrense"}
+                CBS Shield v{info?.version ?? "0.8.0-dev"} - {info?.vendor ?? "Cybrense"}
               </span>
               <span>{t("shell.disclaimer")}</span>
             </footer>

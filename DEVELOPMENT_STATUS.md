@@ -1,16 +1,16 @@
-# État du développement — CBS Shield 0.7.0-dev
+# État du développement — CBS Shield 0.8.0-dev
 
-**Date de vérification :** 28 octobre 2026
-**Branche :** `main` (Sprint 7 fusionné depuis `sprint-7`, base Sprint 6 `888e0ac`)
-**Nature :** version expérimentale — antivirus manuel, assistant de préparation,
-installation officielle de ClamAV, observation réseau et pare-feu strictement en
-lecture seule, avec historique d'instantanés vérifiable.
+**Date de vérification :** 30 octobre 2026
+**Branche :** `sprint-8` (base Sprint 7, commit `6aa1e48`)
+**Nature :** version expérimentale — antivirus manuel, assistant de préparation, installation
+officielle de ClamAV, observation réseau et pare-feu strictement en lecture seule,
+prototype Web Guard de filtrage DNS local, historique de sécurité et de données.
 
 Ce document décrit ce qui a été **réellement implémenté et vérifié**, ce qui reste
 **bloqué ou non exécuté**, et les limites connues. Aucune fonctionnalité non testée
 n'est présentée comme opérationnelle. Le détail de recette est dans
-[`docs/SPRINT7_TEST_REPORT.md`](docs/SPRINT7_TEST_REPORT.md). Les rapports Sprint 5
-et 6 restent des preuves historiques.
+[`docs/SPRINT8_TEST_REPORT.md`](docs/SPRINT8_TEST_REPORT.md). Les rapports Sprint 5,
+6 et 7 restent des preuves historiques.
 
 ---
 
@@ -54,27 +54,69 @@ et 6 restent des preuves historiques.
 
 ---
 
+## 0. Sprint 8 — état réel
+
+### 0.1 Livré
+
+- **Web Guard** : prototype de filtrage DNS local, réellement exécuté sur l'hôte.
+  Huit sous-vues FR/EN (Vue d'ensemble, Filtrage DNS, Blocage, Autorisations,
+  Activité locale, Listes, Diagnostic DNS, Limites & sécurité), données backend
+  réelles, aucune donnée simulée.
+- Classificateur real : listes de blocage par domaine/label, liste d'autorisations
+  prioritaire, import de listes `hosts`/adblock, historique borné, persistence
+  atomique locale, pas de télémétrie.
+- Proxy DNS loopback réellement actif sur `127.0.0.1:5354` après repli (le port
+  `5353` était occupé par mDNS, `os error 10013`). Aucune modification DNS
+  système, aucun certificat, aucun conflit de pare-feu, aucun service.
+- Vues « Diagnostic DNS » en lecture seule avec distinction VPN probable et
+  réseau technologie.
+- Full spectrum of tests: `cargo fmt`, clippy, `cargo test --workspace` (116 passés,
+  1 ignoré), UI tests (34 passés), build/NSIS final.
+- Installeur final `CBS Shield_0.8.0-dev_x64-setup.exe` reconstruit à 12:51 le
+  30 octobre 2026, 2 773 391 octets,
+  SHA-256 `9F0377C511AE1EAC8EE408120F17154756EB26E09889783D0FE1A0882131796E`.
+
+### 0.2 Ce que le Sprint 8 ne fait pas
+
+- Pas de protection système globale.
+- Pas de filtrage global (Web Guard est un prototype local).
+- Pas d'interception TLS, pas de décryptage, pas de certificat racine.
+- Pas de pare-feu, pas d'exclusion Defender, pas de service installé.
+- Pas de télémétrie.
+- **La VM Windows 11 isolée n'a pas fourni un environnement migré stable pour
+  la validation Sprint 8.** L'installeur final n'a pas été réinstallé dans la VM.
+  L'antivirus est donc validé sur l'hôte, pas dans la VM.
+
+### 0.3 Statut des anticorps
+
+Antivirus : implémenté et testé sur l'hôte. Portable ClamAV install implémenté et
+testé unitairement, mais non validé de bout en bout sur une machine propre.
+
+Filtrage DNS Web Guard : implémenté et testé sur l'hôte (prototype loopback).
+Validation VM isolée pas encore effectuée.
+
+---
+
 ## 1. Environnement de validation
 
 | Élément | Valeur |
 | --- | --- |
-| Système | Windows 11 Home, build 26200, x64 |
+| Système | Windows 11, hôte ; VM isolée non exploitable en Sprint 8 |
 | Rust | 1.99.1, toolchain MSVC |
 | Node.js / npm | 24.18 / 12 |
 | WebView2 | Runtime 155 |
-| ClamAV | 1.5.4 (`winget`, `Cisco.ClamAV`) |
-| Base de signatures | `daily.cld` révision 28165, 3 642 895 signatures officielles |
-| Pare-feu Windows | **désactivé sur les trois profils** — constaté, non modifié |
-| Services pare-feu | `MpsSvc` et `BFE` en cours d'exécution, démarrage automatique |
-| Microsoft Defender | Actif, protection temps réel active, aucune exclusion CBS Shield |
+| ClamAV | 1.5.4, install officielle sur l'hôte |
+| Base de signatures | `daily.cvd` v28168, `main.cvd` v63, `bytecode.cvd` v339 — 3 642 945 signatures officielles |
+| Web Guard | prototype loopback actif sur `127.0.0.1:5354` (repli depuis `5353`) |
+| Microsoft Defender | Actif, jamais désactivé, aucune exclusion CBS Shield |
 | Visual Studio | 2022 Build Tools (C++) |
-| VM isolée | `CBS-Shield-Sprint7`, Windows 11 Enterprise Eval 26H2 build 26300, 6 Go, 4 vCPU |
-| Compte VM | `cbs`, non administrateur, français ; `winget` et ClamAV absents |
-| Pare-feu VM | activé 3/3 avant et après les tests, aucune mutation |
+| VM isolée | `CBS-Shield-Sprint7` précédemment exploitable; état Sprint 8 non stable |
+| Compte VM | `cbs`, non administrateur, français |
+| Pare-feu VM | état inchangé pendant la validation Sprint 8 |
 
 ---
 
-## 2. Ce que le Sprint 6 a livré
+## 2. Historique Sprint 6 (livré)
 
 ### 2.1 Installation ClamAV sans terminal
 
@@ -165,10 +207,10 @@ et 6 restent des preuves historiques.
 
 ## 4. Tests et résultats
 
-### Rust
+### Sprint 8 (courant)
 
 Commande : `cargo test --workspace`
-**93 réussis, 0 échec, 1 ignoré** (EICAR manuel).
+**116 réussis, 0 échec, 1 ignoré** (EICAR manuel).
 
 | Suite | Tests | Résultat |
 | --- | --- | --- |
@@ -178,22 +220,26 @@ Commande : `cargo test --workspace`
 | `cbs-firewall` | 8 | ✅ 8 |
 | `cbs-netmon` | 7 | ✅ 7 |
 | `cbs-quarantine` | 9 | ✅ 9 |
-| `cbs-shield` | 27 | ✅ 27 |
+| `cbs-webguard` | 14 | ✅ 14 |
+| `cbs-shield` | 36 | ✅ 36 |
 | `cbs-store` | 7 | ✅ 7 |
-| **Total** | **94** | **93 réussis, 1 ignoré** |
+| **Total** | **117** | **116 réussis, 1 ignoré** |
 
-Le test ajouté au Sprint 6 vérifie le parsing des codes réels de `sc query` et refuse
-d'inventer un état inconnu.
+Nouveau test Web Guard : `proxy_bind_stays_on_loopback_and_in_the_expected_port_range`
+garantit que le protocole reste lié à `127.0.0.1` dans la plage attendue, même lors
+d'un repli de port.
 
 ### Frontend et qualité
 
 | Commande | Résultat |
 | --- | --- |
-| `npm run ui:test` | ✅ **26 tests / 9 fichiers** |
-| `npm run ui:build` | ✅ TypeScript strict + Vite (1 960 modules) |
+| `npm run ui:test` | ✅ **34 tests / 10 fichiers** |
+| `npm run ui:build` | ✅ TypeScript strict + Vite (1 961 modules) |
 | `cargo fmt --all -- --check` | ✅ propre |
 | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ aucun avertissement |
 | `npm run build` | ✅ release + installeur NSIS final |
+
+### Sprint 6 (historique)
 
 Les tests UI couvrent notamment le piège de focus du dialogue, le parcours assistant
 sans commande brute, l'export de snapshot avec SHA-256, les alertes de service et la
@@ -218,7 +264,17 @@ Binaire **release** installé puis piloté via CDP WebView2 :
 
 ## 5. Installation et distribution
 
-### 5.1 Sprint 7 (courant)
+### 5.0 Sprint 8 (courant)
+
+- Installeur NSIS `CBS Shield_0.8.0-dev_x64-setup.exe`, **2 773 391 octets**,
+  SHA-256 `9F0377C511AE1EAC8EE408120F17154756EB26E09889783D0FE1A0882131796E`,
+  **non signé (Authenticode : NotSigned)**.
+- Binaire release : **7 680 000 octets**, SHA-256
+  `BAF8CAB6B539DCD114532B906FF3BC420E5C93940D6293FAF1F71A41096CAEFC`.
+- Application release exécutée et testée en Web Guard ; **installeur final non
+  réinstallé dans la VM**.
+
+### 5.1 Sprint 7 (historique)
 
 - Installeur NSIS `CBS Shield_0.7.0-dev_x64-setup.exe`, **2 674 869 octets**,
   SHA-256 `F09AAA014DCEE3DE875B6A1016A9B077887563353D706DFAFD08F3196B6AD4AF`,
@@ -320,9 +376,10 @@ Détail : [`SECURITY.md`](SECURITY.md) et
 | 4 | Antivirus avancé, profils, FreshClam, installeur | ✅ |
 | 5 | Assistant, provisionnement ClamAV, pare-feu enrichi, installeur 0.5 | ✅ historique ; validation VM partielle |
 | 6 | Fiabilité, installation propre, expérience sans terminal, diagnostic pare-feu | ⚠️ Code livré et tests locaux réussis ; installation/mise à niveau/désinstallation validées en VM, scénarios AV et pare-feu désactivé partiels |
-| 7 | Pare-feu lecture seule, instantanés d'audit, interface premium | ✅ Code, tests et socle VM ; restauration et mutation non implémentées |
-| 8 | Gestion active du pare-feu | Non engagée — autorisation, VM isolée, rollback, revue requis |
-| 9 | YARA-X, planification, temps réel | Non commencée — service privilégié et revue requis |
+| 7 | Pare-feu lecture seule, instantanés d'audit, interface premium | ✅ historique ; validation VM partielle |
+| 8 | Web Guard prototype + install portable ClamAV | ⚠️ Code livré et tests locaux réussis ; VM isolée non achevée |
+| 9 | Gestion active du pare-feu | Non engagée — autorisation, VM isolée, rollback, revue requis |
+| 10 | YARA-X, planification, temps réel | Non commencée — service privilégié et revue requis |
 
 ---
 
@@ -346,21 +403,20 @@ npm run build
 
 # Hash et signature de l'installeur
 Get-FileHash -Algorithm SHA256 `
-  'target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe'
+  'target\release\bundle\nsis\CBS Shield_0.8.0-dev_x64-setup.exe'
 Get-AuthenticodeSignature `
-  'target\release\bundle\nsis\CBS Shield_0.7.0-dev_x64-setup.exe'
+  'target\release\bundle\nsis\CBS Shield_0.8.0-dev_x64-setup.exe'
 ```
 
 ---
 
 ## 10. Avertissement final
 
-CBS Shield 0.7.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
+CBS Shield 0.8.0-dev est un projet **expérimental**. Il ne remplace pas Microsoft
 Defender, qui doit rester actif. Il ne fournit aucune protection en temps réel,
 aucune modification de pare-feu, aucune capture de contenu réseau, et ne doit pas
-être présenté comme un antivirus complet. Le Sprint 7 **n'est pas déclaré prêt pour
-la production** : l'installation, la mise à niveau, le redémarrage, l'instantané et
-la désinstallation sont validés dans la VM, mais le provisionnement ClamAV, les
-signatures, le scan, la quarantaine/restauration, le pare-feu désactivé dans la VM
-et l'altération d'instantané restent non exécutés ou partiels. La présence d'un
-snapshot vérifié ne remplace pas ces preuves.
+être présenté comme un antivirus complet. Le Sprint 8 **n'est pas déclaré prêt pour
+la production** : l'implémentation locale et les tests sont réels, mais la validation
+VM isolée n'a pas été achevée, l'installeur final n'a pas été réinstallé dans la VM,
+et la road map de mutation pare-feu reste non engagée. La présence d'un prototype
+Web Guard actif ne remplace pas ces preuves.

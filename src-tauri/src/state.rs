@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use cbs_netmon::InterfaceTraffic;
 use cbs_quarantine::Quarantine;
 use cbs_store::Store;
+use cbs_webguard::WebGuard;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -39,6 +40,7 @@ pub struct AppState {
     pub paths: AppPaths,
     pub store: Arc<Store>,
     pub quarantine: Quarantine,
+    pub webguard: Arc<WebGuard>,
     scan_slot: Arc<Mutex<Option<ActiveScan>>>,
     /// Last observed interface counters, used to compute measured traffic
     /// deltas between two Network Monitor captures.
@@ -59,10 +61,12 @@ impl Drop for UpdateLease {
 
 impl AppState {
     pub fn new(paths: AppPaths, store: Arc<Store>, quarantine: Quarantine) -> Self {
+        let webguard = Arc::new(WebGuard::load(paths.webguard_dir.join("state.json")));
         Self {
             paths,
             store,
             quarantine,
+            webguard,
             scan_slot: Arc::new(Mutex::new(None)),
             netmon_last: Arc::new(Mutex::new(None)),
             update_running: Arc::new(AtomicBool::new(false)),

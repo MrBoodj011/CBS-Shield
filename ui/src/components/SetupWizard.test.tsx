@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "../lib/i18n";
 import { api } from "../lib/api";
@@ -112,6 +112,16 @@ vi.mock("../lib/api", () => ({
         "winget install --id Cisco.ClamAV --exact --source winget --interactive --accept-package-agreements --accept-source-agreements",
       probeCommand: "winget list --id Cisco.ClamAV --exact",
       docsUrl: "https://www.clamav.net/downloads",
+      portableAvailable: false,
+      portableVersion: "1.5.4",
+      portableUrl:
+        "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.5.4/clamav-1.5.4.win.x64.zip",
+      portableSha256:
+        "0d9e0228b2674137ea1a2853566c98a0278ad52ab2582c3d6dbd75373848c395",
+      portableSize: 225774978,
+      portableInstallDir:
+        "C:\\Users\\adjar\\AppData\\Local\\Cybrense\\CBS Shield\\clamav\\portable",
+      preferredMethod: "winget",
       licenseNote: "ClamAV est publié sous licence GPLv2 par Cisco Talos.",
       checkedAt: "2026-10-26T09:00:00Z",
     })),
@@ -132,6 +142,16 @@ vi.mock("../lib/api", () => ({
       exitCode: 0,
       installed: true,
       message: "ClamAV est maintenant détecté.",
+      engine: installedEngine,
+    })),
+    installClamavPortable: vi.fn(async () => ({
+      attempted: true,
+      success: true,
+      outcome: "installed",
+      exitCode: null,
+      installed: true,
+      message: "ClamAV portable installé.",
+      method: "portable",
       engine: installedEngine,
     })),
     updateSignatures: vi.fn(),
@@ -169,6 +189,10 @@ function renderWizard(engine: EngineStatus | null) {
 }
 
 describe("SetupWizard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("requires explicit authorization before launching the official install", async () => {
     renderWizard(missingEngine);
 
@@ -242,5 +266,38 @@ describe("SetupWizard", () => {
     expect(
       await screen.findByText(/1 alerte\(s\) de sécurité observée\(s\)/),
     ).toBeInTheDocument();
+  });
+
+  it("uses the pinned portable archive when winget is unavailable", async () => {
+    vi.mocked(api.provisioningStatus).mockResolvedValueOnce({
+      wingetAvailable: false,
+      wingetVersion: null,
+      clamavInstalled: false,
+      clamscanPath: null,
+      databasePath: null,
+      installCommand: "winget install --id Cisco.ClamAV",
+      probeCommand: "winget list --id Cisco.ClamAV",
+      docsUrl: "https://www.clamav.net/downloads",
+      licenseNote: "ClamAV GPLv2.",
+      checkedAt: "2026-10-26T09:00:00Z",
+      portableAvailable: true,
+      portableVersion: "1.5.4",
+      portableUrl:
+        "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.5.4/clamav-1.5.4.win.x64.zip",
+      portableSha256:
+        "0d9e0228b2674137ea1a2853566c98a0278ad52ab2582c3d6dbd75373848c395",
+      portableSize: 225774978,
+      portableInstallDir:
+        "C:\\Users\\adjar\\AppData\\Local\\Cybrense\\CBS Shield\\clamav\\portable",
+      preferredMethod: "portable",
+    });
+    renderWizard(missingEngine);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Continuer/ }));
+    expect(await screen.findByText(/Archive portable officielle/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Installer ClamAV avec mon accord/ }));
+
+    await waitFor(() => expect(api.installClamavPortable).toHaveBeenCalledWith(true));
   });
 });
