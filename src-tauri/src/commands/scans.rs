@@ -110,7 +110,49 @@ pub async fn start_scan(
     let scan_result = scanner.scan(&scan_id, &request, sink, cancel).await;
     drop(lease);
 
-    let report = scan_result?;
+    let report = match scan_result {
+        Ok(report) => report,
+        Err(err) => {
+            // Native notification (deduplicated by engine-failure key).
+            if let Ok(mut ring) = state.notify_ring.lock() {
+                if ring.admit("scan-engine-failure") {
+                    crate::notify::show(
+                        &app,
+                        "CBS Shield",
+                        "Échec du moteur antivirus (ClamAV). Vérifiez les mises à jour. / Antivirus engine failure. Check updates.",
+                    );
+                }
+            }
+            return Err(CommandError::from(err));
+        }
+    };
+
+    // Native notification for completed scans; detections get a dedicated,
+    // non-repeatable key so one scan can never spam the same alert.
+    {
+        let (title, body, key) = if report.detections.is_empty() {
+            (
+                "CBS Shield".to_string(),
+                "Analyse terminée : aucun fichier malveillant détecté. / Scan completed: no malware detected.".to_string(),
+                format!("scan-done-{}", scan_id),
+            )
+        } else {
+            (
+                "CBS Shield".to_string(),
+                format!(
+                    "Menace détectée : {} fichier(s) signalé(s). Ouvrez la quarantaine. / Threat detected: {} file(s) flagged. Open quarantine.",
+                    report.detections.len(),
+                    report.detections.len()
+                ),
+                format!("scan-detections-{}", scan_id),
+            )
+        };
+        if let Ok(mut ring) = state.notify_ring.lock() {
+            if ring.admit(&key) {
+                crate::notify::show(&app, &title, &body);
+            }
+        }
+    }
 
     let (record_id, persistence_error) = match state.store.save_scan(&report) {
         Ok(id) => (Some(id), None),

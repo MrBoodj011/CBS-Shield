@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod notify;
 mod paths;
 mod state;
 mod tray;
@@ -17,6 +18,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Audit fix: canonicalize the data directory (also creates the
             // layout) so every containment check compares comparable paths.
@@ -84,6 +86,16 @@ pub fn run() {
             commands::webguard::webguard_remove_allowlist,
             commands::webguard::webguard_clear_history,
             commands::webguard::webguard_clear_blocklist,
+            commands::proactive::proactive_snapshot,
+            commands::proactive::proactive_set_directories,
+            commands::proactive::proactive_set_config,
+            commands::proactive::proactive_set_auto_watch,
+            commands::proactive::proactive_start,
+            commands::proactive::proactive_pause,
+            commands::proactive::proactive_resume,
+            commands::proactive::proactive_stop,
+            commands::proactive::proactive_drain,
+            commands::proactive::proactive_clear,
             tray::set_tray_language,
         ])
         .run(tauri::generate_context!())

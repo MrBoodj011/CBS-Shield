@@ -3522,3 +3522,78 @@ button.event-row:hover {
     justify-self: start;
   }
 }
+
+/* ---------------------------------------------------------------
+   Proactive Monitor (Sprint 9)
+   Explicit, resource-bounded file observation. Not real-time AV.
+   --------------------------------------------------------------- */
+
+.proactive__manual {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 14px;
+}
+
+.proactive__manual .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.proactive__config {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.proactive__events {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.proactive__event {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--motion) var(--ease);
+}
+
+.proactive__event:hover {
+  border-color: var(--panel-hover, var(--border));
+}
+
+.proactive__event-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.proactive__event-time {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .proactive__config {
+    grid-template-columns: 1fr;
+  }
+
+  .proactive__event {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .proactive__manual {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -30,6 +30,8 @@ import type {
   WebGuardDomainTest,
   WebGuardImportResult,
   WebGuardView,
+  ProactiveStatus,
+  ProactiveConfig,
 } from "../types";
 
 export const api = {
@@ -126,6 +128,21 @@ export const api = {
     invoke<WebGuardView>("webguard_clear_history", { confirm }),
   webguardClearBlocklist: (confirm: boolean) =>
     invoke<WebGuardView>("webguard_clear_blocklist", { confirm }),
+
+  proactiveSnapshot: () =>
+    invoke<ProactiveStatus>("proactive_snapshot"),
+  proactiveSetDirectories: (directories: string[]) =>
+    invoke<ProactiveStatus>("proactive_set_directories", { directories }),
+  proactiveSetConfig: (config: ProactiveConfig) =>
+    invoke<ProactiveStatus>("proactive_set_config", { config }),
+  proactiveSetAutoWatch: (enabled: boolean) =>
+    invoke<ProactiveStatus>("proactive_set_auto_watch", { enabled }),
+  proactiveStart: () => invoke<ProactiveStatus>("proactive_start"),
+  proactivePause: () => invoke<ProactiveStatus>("proactive_pause"),
+  proactiveResume: () => invoke<ProactiveStatus>("proactive_resume"),
+  proactiveStop: () => invoke<ProactiveStatus>("proactive_stop"),
+  proactiveDrain: () => invoke<string[]>("proactive_drain"),
+  proactiveClear: () => invoke<ProactiveStatus>("proactive_clear"),
 };
 
 export function errorMessage(error: unknown): string {

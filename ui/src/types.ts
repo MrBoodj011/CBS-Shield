@@ -467,9 +467,43 @@ export type SectionId =
   | "network"
   | "firewall"
   | "webguard"
+  | "proactive"
   | "settings"
   | "updates"
   | "about";
+
+export interface ProactiveConfig {
+  cycleSeconds: number;
+  maxFilesPerCycle: number;
+  maxFileSizeMb: number;
+  maxDepth: number;
+}
+
+export type ProactiveEventKind = "created" | "modified" | "rejected";
+
+export interface ProactiveEvent {
+  id: string;
+  occurredAt: string;
+  kind: ProactiveEventKind;
+  path: string;
+  detail: string;
+}
+
+export interface ProactiveStatus {
+  running: boolean;
+  paused: boolean;
+  autoWatch: boolean;
+  config: ProactiveConfig;
+  directories: string[];
+  trackedFiles: number;
+  queueCount: number;
+  events: ProactiveEvent[];
+  lastCycleAt: string | null;
+  lastError: string | null;
+  activeEnforcement: boolean;
+  notRealTime: boolean;
+}
+
 
 // ---------------------------------------------------------------------------
 // Network Monitor (Sprint 2 — read-only observation)

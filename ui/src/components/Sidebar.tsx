@@ -6,6 +6,7 @@ import {
   History,
   Info,
   LayoutDashboard,
+  Radar,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -32,6 +33,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
       { id: "antivirus", labelKey: "nav.antivirus", icon: ShieldCheck },
+      { id: "proactive", labelKey: "nav.proactive", icon: Radar },
       { id: "history", labelKey: "nav.history", icon: History },
       { id: "quarantine", labelKey: "nav.quarantine", icon: Archive },
     ],

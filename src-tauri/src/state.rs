@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cbs_netmon::InterfaceTraffic;
+use cbs_proactive::ProactiveMonitor;
 use cbs_quarantine::Quarantine;
 use cbs_store::Store;
 use cbs_webguard::WebGuard;
@@ -41,6 +42,9 @@ pub struct AppState {
     pub store: Arc<Store>,
     pub quarantine: Quarantine,
     pub webguard: Arc<WebGuard>,
+    pub proactive: ProactiveMonitor,
+    /// De-duplication for native notifications (Sprint 9).
+    pub notify_ring: Mutex<crate::notify::NotifyRing>,
     scan_slot: Arc<Mutex<Option<ActiveScan>>>,
     /// Last observed interface counters, used to compute measured traffic
     /// deltas between two Network Monitor captures.
@@ -62,11 +66,14 @@ impl Drop for UpdateLease {
 impl AppState {
     pub fn new(paths: AppPaths, store: Arc<Store>, quarantine: Quarantine) -> Self {
         let webguard = Arc::new(WebGuard::load(paths.webguard_dir.join("state.json")));
+        let proactive = ProactiveMonitor::load(&paths.proactive_config);
         Self {
             paths,
             store,
             quarantine,
             webguard,
+            proactive,
+            notify_ring: Mutex::new(crate::notify::NotifyRing::default()),
             scan_slot: Arc::new(Mutex::new(None)),
             netmon_last: Arc::new(Mutex::new(None)),
             update_running: Arc::new(AtomicBool::new(false)),

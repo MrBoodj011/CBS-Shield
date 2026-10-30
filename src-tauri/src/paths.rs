@@ -17,6 +17,7 @@ pub struct AppPaths {
     pub freshclam_log: PathBuf,
     pub firewall_backups: PathBuf,
     pub webguard_dir: PathBuf,
+    pub proactive_config: PathBuf,
     pub portable_engine_dir: PathBuf,
     pub bundled_clamav_dir: Option<PathBuf>,
 }
@@ -60,6 +61,7 @@ impl AppPaths {
             freshclam_log: clamav_dir.join("freshclam.log"),
             firewall_backups: data_dir.join("firewall-backups"),
             webguard_dir: data_dir.join("webguard"),
+            proactive_config: data_dir.join("proactive.json"),
             portable_engine_dir: clamav_dir.join("portable"),
             clamav_dir,
             bundled_clamav_dir,

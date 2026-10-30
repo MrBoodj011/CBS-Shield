@@ -19,6 +19,7 @@ export type Language = "fr" | "en";
 const fr = {
   "nav.dashboard": "Dashboard",
   "nav.antivirus": "Antivirus",
+  "nav.proactive": "Surveillance proactive",
   "nav.history": "Historique des scans",
   "nav.quarantine": "Quarantaine",
   "nav.network": "Moniteur réseau",
@@ -38,6 +39,8 @@ const fr = {
   "section.dashboard.subtitle": "État réel de la protection locale, sans télémétrie.",
   "section.antivirus.title": "Antivirus",
   "section.antivirus.subtitle": "Analyse manuelle réelle par ClamAV, sans surveillance temps réel.",
+  "section.proactive.title": "Surveillance proactive",
+  "section.proactive.subtitle": "Observation des fichiers nouveaux ou modifiés, file bornée — pas un antivirus temps réel.",
   "section.history.title": "Historique des scans",
   "section.history.subtitle": "Tous les rapports enregistrés localement dans SQLite.",
   "section.quarantine.title": "Quarantaine",
@@ -471,6 +474,7 @@ export type TranslationKey = keyof typeof fr;
 const en: Record<TranslationKey, string> = {
   "nav.dashboard": "Dashboard",
   "nav.antivirus": "Antivirus",
+  "nav.proactive": "Proactive Monitor",
   "nav.history": "Scan history",
   "nav.quarantine": "Quarantine",
   "nav.network": "Network monitor",
@@ -490,6 +494,8 @@ const en: Record<TranslationKey, string> = {
   "section.dashboard.subtitle": "Real local protection status, with no telemetry.",
   "section.antivirus.title": "Antivirus",
   "section.antivirus.subtitle": "Real on-demand ClamAV scanning, without real-time monitoring.",
+  "section.proactive.title": "Proactive Monitor",
+  "section.proactive.subtitle": "New or modified file observation with a bounded queue — not a real-time antivirus.",
   "section.history.title": "Scan history",
   "section.history.subtitle": "Every report stored locally in SQLite.",
   "section.quarantine.title": "Quarantine",

@@ -1,4 +1,5 @@
 import { ShieldAlert } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Sidebar } from "./components/Sidebar";
@@ -13,6 +14,7 @@ import { Dashboard } from "./sections/Dashboard";
 import { Firewall } from "./sections/Firewall";
 import { History } from "./sections/History";
 import { NetworkMonitor } from "./sections/NetworkMonitor";
+import { ProactiveMonitor } from "./sections/ProactiveMonitor";
 import { Quarantine } from "./sections/Quarantine";
 import { Settings } from "./sections/Settings";
 import { Updates } from "./sections/Updates";
@@ -36,6 +38,10 @@ const SECTION_META: Record<SectionId, { title: TranslationKey; subtitle: Transla
   antivirus: {
     title: "section.antivirus.title",
     subtitle: "section.antivirus.subtitle",
+  },
+  proactive: {
+    title: "section.proactive.title",
+    subtitle: "section.proactive.subtitle",
   },
   history: {
     title: "section.history.title",
@@ -251,6 +257,19 @@ export default function App() {
 
   const t = (key: TranslationKey) => translate(language, key);
   const L = (fr: string, en: string) => (language === "en" ? en : fr);
+
+  // Tray destinations ("Open Quarantine" / "Open Network Monitor") navigate
+  // through the normal section state; the tray never mutates anything else.
+  useEffect(() => {
+    const unlistenPromise = listen<string>("tray-navigate", (event) => {
+      if (event.payload === "quarantine" || event.payload === "network") {
+        setSection(event.payload);
+      }
+    });
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
   const meta = {
     title: t(SECTION_META[section].title),
     subtitle: t(SECTION_META[section].subtitle),
@@ -344,6 +363,8 @@ export default function App() {
                   onOpenSetup={() => setSetupOpen(true)}
                 />
               )}
+
+              {section === "proactive" && <ProactiveMonitor />}
 
               {section === "history" && <History onNavigate={setSection} />}
 

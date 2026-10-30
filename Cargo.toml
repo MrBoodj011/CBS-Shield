@@ -7,11 +7,12 @@ members = [
     "crates/cbs-netmon",
     "crates/cbs-firewall",
     "crates/cbs-webguard",
+    "crates/cbs-proactive",
     "src-tauri",
 ]
 
 [workspace.package]
-version = "0.8.0-dev"
+version = "0.9.0-dev"
 edition = "2021"
 authors = ["Cybrense"]
 license = "Apache-2.0"
