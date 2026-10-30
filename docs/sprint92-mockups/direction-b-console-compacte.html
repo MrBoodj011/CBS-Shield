@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBS Shield — Direction B « Console compacte » (MAQUETTE)</title>
+<style>
+  :root{
+    --bg:#050b16; --surface:#0b1524; --surface-2:#111d30; --line:#1f2f47;
+    --text:#e8f0fb; --text-dim:#93a6c0; --text-mute:#6b7f9b;
+    --accent:#4ea7ff; --accent-ink:#04101f;
+    --ok:#3fe0a6; --warning:#ffb454; --danger:#ff6178; --info:#8ab4f8;
+    --radius:10px; --radius-sm:6px;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  html[data-theme="light"]{
+    --bg:#f4f7fb; --surface:#ffffff; --surface-2:#eef3fa; --line:#d8e2ee;
+    --text:#0d1726; --text-dim:#4a5c74; --text-mute:#71839a;
+    --accent:#0f6fdc; --accent-ink:#ffffff;
+    --ok:#0f8a62; --warning:#a35a00; --danger:#c22a44; --info:#2a5aa8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.45}
+  .banner{
+    position:sticky;top:0;z-index:50;display:flex;gap:10px;align-items:center;justify-content:center;
+    padding:6px 12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+    background:repeating-linear-gradient(135deg,#3a2600,#3a2600 10px,#4a3100 10px,#4a3100 20px);
+    color:#ffd591;border-bottom:1px solid #6b4700;
+  }
+  .banner .dot{width:7px;height:7px;border-radius:50%;background:#ffb454;box-shadow:0 0 8px #ffb454}
+  .app{max-width:1240px;margin:0 auto;padding:14px 18px 40px}
+
+  /* ---------- Top bar ---------- */
+  .topbar{display:flex;align-items:center;gap:14px;padding:8px 0 12px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.02em}
+  .brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(160deg,var(--accent),#2b6fd0);
+    display:grid;place-items:center;color:var(--accent-ink);font-weight:800;font-size:12px}
+  .brand small{display:block;font-weight:500;font-size:10px;color:var(--text-mute);letter-spacing:.06em}
+  nav.tabs{display:flex;gap:2px;margin-left:10px}
+  nav.tabs button{
+    background:transparent;border:0;color:var(--text-dim);font:inherit;font-size:12.5px;font-weight:600;
+    padding:7px 11px;border-radius:var(--radius-sm);cursor:pointer;border-bottom:2px solid transparent;
+  }
+  nav.tabs button:hover{background:var(--surface-2);color:var(--text)}
+  nav.tabs button[aria-selected="true"]{color:var(--text);background:var(--surface-2);border-bottom-color:var(--accent)}
+  .topbar .spacer{flex:1}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line);
+    border-radius:999px;font-size:11px;color:var(--text-dim);background:var(--surface)}
+  .chip b{color:var(--text);font-weight:600}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--warning)}
+  .iconbtn{background:var(--surface);border:1px solid var(--line);color:var(--text-dim);border-radius:var(--radius-sm);
+    padding:6px 9px;font:inherit;font-size:11.5px;cursor:pointer}
+  .iconbtn:hover{color:var(--text);border-color:var(--accent)}
+
+  /* ---------- Layout ---------- */
+  .grid{display:grid;grid-template-columns:1.55fr 1fr;gap:12px;margin-top:12px}
+  .col{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+  .card h2{margin:0 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-mute);font-weight:700}
+  .card .sub{font-size:11px;color:var(--text-mute)}
+  .hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .hd h2{margin:0}
+
+  /* status tile */
+  .statusline{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);
+    background:color-mix(in srgb, var(--warning) 12%, transparent);border:1px solid color-mix(in srgb, var(--warning) 40%, transparent)}
+  .statusline .bar{width:4px;align-self:stretch;border-radius:2px;background:var(--warning)}
+  .statusline strong{display:block;font-size:13px}
+  .statusline span{font-size:11px;color:var(--text-dim)}
+
+  /* tiles row */
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .tile{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 10px}
+  .tile .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute);font-weight:700}
+  .tile .v{font-size:19px;font-weight:700;margin-top:2px}
+  .tile .v small{font-size:11px;font-weight:600;color:var(--text-dim)}
+  .tile.ok .v{color:var(--ok)} .tile.warn .v{color:var(--warning)} .tile.dim .v{color:var(--text-dim)}
+  .tile .note{font-size:10.5px;color:var(--text-mute);margin-top:2px}
+
+  .btn{border:0;border-radius:var(--radius-sm);font:inherit;font-weight:700;cursor:pointer;padding:8px 14px}
+  .btn.primary{background:var(--accent);color:var(--accent-ink)}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent;color:var(--text-dim);border:1px solid var(--line)}
+  .btn.ghost:hover{color:var(--text);border-color:var(--accent)}
+  .btn.sm{padding:5px 9px;font-size:11px;font-weight:600}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute);
+    font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:var(--mono);font-size:10.5px;color:var(--text-dim);word-break:break-all}
+  .sev{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em}
+  .sev.info{background:color-mix(in srgb,var(--info) 18%,transparent);color:var(--info)}
+  .sev.sus{background:color-mix(in srgb,var(--warning) 18%,transparent);color:var(--warning)}
+  .sev.conf{background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger)}
+  .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;
+    background:var(--surface-2);color:var(--text-dim);border:1px solid var(--line)}
+
+  /* log / timeline */
+  .log{font-family:var(--mono);font-size:10.8px;max-height:230px;overflow:auto}
+  .log .row{display:grid;grid-template-columns:70px 60px 1fr;gap:8px;padding:4px 2px;border-bottom:1px dashed color-mix(in srgb,var(--line) 55%,transparent)}
+  .log .row:last-child{border-bottom:0}
+  .log .t{color:var(--text-mute)}
+  .log .who{color:var(--info)}
+  .log .msg{color:var(--text-dim)}
+
+  /* session / progress */
+  .progress{height:5px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin-top:8px}
+  .progress i{display:block;height:100%;width:38%;background:var(--accent)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:11.5px}
+  .kv dt{color:var(--text-mute)}
+  .kv dd{margin:0;text-align:right;font-weight:600}
+
+  /* forms */
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .field label{font-size:11px;font-weight:700;color:var(--text-dim)}
+  .field .hint{font-size:10.5px;color:var(--text-mute)}
+  .field select,.field input[type=text]{
+    background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+    color:var(--text);font:inherit;font-size:11.5px;padding:6px 8px}
+  .switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;
+    border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+  .switch:last-child{border-bottom:0}
+  .switch .lbl{font-size:11.5px;font-weight:600}
+  .switch .lbl small{display:block;font-weight:400;color:var(--text-mute);font-size:10.5px}
+  .toggle{width:32px;height:18px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);position:relative;flex:0 0 auto}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text-mute);transition:.15s}
+  .toggle[data-on="true"]{background:color-mix(in srgb,var(--ok) 30%,transparent);border-color:var(--ok)}
+  .toggle[data-on="true"]::after{left:16px;background:var(--ok)}
+  .toggle[data-on="off"]{opacity:.5}
+
+  .note{font-size:10.5px;color:var(--text-mute);border-left:2px solid var(--line);padding-left:8px;margin-top:10px}
+  .inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .screens{display:block}
+  .screens[hidden]{display:none}
+  .foot{margin-top:18px;padding-top:10px;border-top:1px solid var(--line);display:flex;justify-content:space-between;
+    font-size:10.5px;color:var(--text-mute)}
+  @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div class="banner"><span class="dot"></span>MAQUETTE — concept visuel, non implémenté · aucune fonctionnalité de cette page n'est active · en attente d'approbation du propriétaire</div>
+
+<div class="app">
+
+  <!-- ================= TOP BAR ================= -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">CS</span>
+      <span>CBS Shield<small>0.9.0-dev · console</small></span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Navigation principale">
+      <button role="tab" data-go="dash" aria-selected="true">Synthèse</button>
+      <button role="tab" data-go="av" aria-selected="false">Antivirus</button>
+      <button role="tab" data-go="prot" aria-selected="false">Protection</button>
+      <button role="tab" data-go="net" aria-selected="false">Réseau</button>
+      <button role="tab" data-go="settings" aria-selected="false">Réglages</button>
+    </nav>
+    <div class="spacer"></div>
+    <span class="chip"><span class="dot"></span> Temps réel <b>non disponible</b></span>
+    <button class="iconbtn" id="theme">Clair / Sombre</button>
+  </header>
+
+  <!-- ================= 1. SYNTHÈSE ================= -->
+  <section class="screens" id="scr-dash">
+    <div class="grid">
+      <div class="col">
+
+        <div class="card">
+          <div class="hd"><h2>État</h2><span class="sub">dernière vérification : il y a 2 min</span></div>
+          <div class="statusline">
+            <span class="bar"></span>
+            <div>
+              <strong>Analyse manuelle disponible · pas de protection en temps réel</strong>
+              <span>Le module résident n'est pas fourni dans cette version. Le statut ne peut pas être « protégé ».</span>
+            </div>
+          </div>
+
+          <div class="tiles">
+            <div class="tile ok"><div class="k">Moteur</div><div class="v">1.5.4</div><div class="note">ClamAV local, signées 30/10</div></div>
+            <div class="tile warn"><div class="k">Dernière analyse</div><div class="v">145 <small>fichiers</small></div><div class="note">28/10 08:43 · 1 détection</div></div>
+            <div class="tile dim"><div class="k">Quarantaine</div><div class="v">—</div><div class="note">stockage à vérifier</div></div>
+          </div>
+
+          <div class="inline" style="margin-top:10px">
+            <button class="btn primary" data-go="av">Analyser maintenant</button>
+            <button class="btn ghost" data-go="net">Voir les alertes</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>Journal local</h2><span class="sub">conservé sur cette machine uniquement</span></div>
+          <div class="log">
+            <div class="row"><span class="t">08:43:12</span><span class="who">scan</span><span class="msg">Analyse rapide terminée — 145 fichiers, 0 erreur, 1 détection</span></div>
+            <div class="row"><span class="t">08:39:58</span><span class="who">clamav</span><span class="msg">Base chargée — 3 631 204 signatures</span></div>
+            <div class="row"><span class="t">08:39:02</span><span class="who">freshclam</span><span class="msg">Mise à jour des signatures (transitoire : erreur réseau au 1er essai)</span></div>
+            <div class="row"><span class="t">08:38:44</span><span class="who">app</span><span class="msg">Démarrage — profil local, aucune télémétrie</span></div>
+          </div>
+        </div>
+
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Les trois domaines</h2></div>
+          <table>
+            <thead><tr><th>Domaine</th><th>Ce qui est vrai</th><th>Limite</th></tr></thead>
+            <tbody>
+              <tr><td><b>Appareil</b></td><td>Analyse à la demande, quarantaine chiffrée</td><td>Pas de temps réel</td></tr>
+              <tr><td><b>Internet</b></td><td>Filtrage DNS local</td><td>Proxy en boucle locale seulement</td></tr>
+              <tr><td><b>Réseau</b></td><td>Observation des connexions</td><td>Aucune action sur le pare-feu</td></tr>
+            </tbody>
+          </table>
+          <div class="note">Aucun domaine n'est affiché comme « protégé » tant que la fonction correspondante n'est pas réellement active.</div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Raccourcis</h2></div>
+          <div class="inline">
+            <button class="btn ghost sm" data-go="av">Analyse complète</button>
+            <button class="btn ghost sm" data-go="settings">Mises à jour</button>
+            <button class="btn ghost sm" data-go="prot">Centre de protection</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 2. ANTIVIRUS ================= -->
+  <section class="screens" id="scr-av" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Analyse</h2><span class="sub">moteur local · aucune donnée envoyée</span></div>
+          <div class="inline" style="margin-bottom:10px">
+            <button class="btn primary">Analyse rapide</button>
+            <button class="btn ghost">Analyse complète</button>
+            <button class="btn ghost">Personnalisée…</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-dim)">Analyse rapide en cours — dossier utilisateur</div>
+          <div class="progress"><i></i></div>
+          <div class="tiles" style="grid-template-columns:repeat(4,1fr)">
+            <div class="tile"><div class="k">Fichiers</div><div class="v">62</div><div class="note">sur ~145</div></div>
+            <div class="tile"><div class="k">Détections</div><div class="v">0</div><div class="note">aucune pour l'instant</div></div>
+            <div class="tile"><div class="k">Indexés</div><div class="v">62</div><div class="note">cible courante</div></div>
+            <div class="tile warn"><div class="k">Erreurs</div><div class="v">0</div><div class="note">fichiers illisibles</div></div>
+          </div>
+          <div class="inline" style="margin-top:10px"><button class="btn ghost sm">Arrêter</button></div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>Résultats</h2><span class="sub">1 détection · session précédente</span></div>
+          <table>
+            <thead><tr><th>Menace</th><th>Fichier</th><th>Taille</th><th>SHA-256</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="sev conf">Eicar-Test</span></td>
+                <td class="mono">C:\Users\cbs\Documents\cbs-eicar-check.txt</td>
+                <td>68 o</td>
+                <td class="mono">275a021b…f92f</td>
+                <td><button class="btn ghost sm">Mettre en quarantaine</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note">La mise en quarantaine échoue actuellement (voir rapport QA) — l'action reste visible mais le résultat réel doit être affiché sans masquer l'échec.</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Quarantaine</h2><span class="sub">chiffrée AES-256-GCM</span></div>
+          <table>
+            <thead><tr><th>Élément</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td>—</td><td>—</td><td><span class="tag">vide</span></td></tr>
+            </tbody>
+          </table>
+          <div class="note">État vide assumé : mieux vaut « vide » qu'un compteur inventé.</div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Base de signatures</h2></div>
+          <dl class="kv">
+            <dt>Version</dt><dd>3 631 204</dd>
+            <dt>Mise à jour</dt><dd>30/10 08:39</dd>
+            <dt>Source</dt><dd>freshclam (local)</dd>
+          </dl>
+          <div class="inline" style="margin-top:8px"><button class="btn ghost sm">Mettre à jour</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 3. PROTECTION ================= -->
+  <section class="screens" id="scr-prot" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Centre de protection</h2><span class="sub">ce qui est actif, ce qui ne l'est pas</span></div>
+          <table>
+            <thead><tr><th>Module</th><th>État réel</th><th>Portée</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Analyse antivirus</td><td><span class="sev info">À la demande</span></td><td>Fichiers choisis</td><td><button class="btn ghost sm" data-go="av">Ouvrir</button></td></tr>
+              <tr><td>Surveillance proactive</td><td><span class="sev sus">Inactive</span></td><td>Consentement requis</td><td><button class="btn ghost sm">Activer…</button></td></tr>
+              <tr><td>Web Guard</td><td><span class="sev info">DNS local</span></td><td>Boucle locale uniquement</td><td><button class="btn ghost sm" data-go="net">Détails</button></td></tr>
+              <tr><td>Pare-feu</td><td><span class="sev info">Observation seule</span></td><td>Aucune règle modifiée</td><td><button class="btn ghost sm" data-go="net">Détails</button></td></tr>
+              <tr><td>Temps réel</td><td><span class="sev sus">Non fourni</span></td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+          <div class="note">Un module n'est jamais marqué « actif » sans preuve d'exécution. « Observation seule » signifie : lit, ne modifie rien.</div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>Surveillance proactive</h2><span class="sub">analyse automatique planifiée</span></div>
+          <div class="switch"><div class="lbl">Activer la surveillance<small>consentement explicite, révocable</small></div><div class="toggle" data-on="false"></div></div>
+          <div class="switch"><div class="lbl">Intervalle<small>valeur appliquée après activation</small></div><div class="tag">30 min</div></div>
+          <div class="switch"><div class="lbl">Notifications Windows<small>1 résumé par cycle, pas de rafale</small></div><div class="toggle" data-on="false"></div></div>
+          <div class="note">Sans consentement, aucune analyse n'est lancée en arrière-plan.</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Ce qui n'est pas couvert</h2></div>
+          <table>
+            <thead><tr><th>Limite</th><th>Conséquence</th></tr></thead>
+            <tbody>
+              <tr><td>Pas de temps réel</td><td>Un fichier peut s'exécuter avant toute analyse</td></tr>
+              <tr><td>Proxy local</td><td>Navigateurs non configurés = non filtrés</td></tr>
+              <tr><td>Pare-feu</td><td>Aucun blocage réseau n'est réalisé</td></tr>
+              <tr><td>Signatures</td><td>Dépend de freshclam et du réseau</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Historique</h2></div>
+          <div class="log">
+            <div class="row"><span class="t">28/10</span><span class="who">protection</span><span class="msg">Surveillance désactivée (défaut)</span></div>
+            <div class="row"><span class="t">28/10</span><span class="who">protection</span><span class="msg">Web Guard démarré en mode DNS local</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 4. RÉSEAU ================= -->
+  <section class="screens" id="scr-net" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Alertes réseau</h2><span class="sub">observation seule · aucune action automatique</span></div>
+          <table>
+            <thead><tr><th>Heure</th><th>Source</th><th>Niveau</th><th>Constat</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">08:41</td><td>Réseau</td><td><span class="sev info">Observé</span></td><td>Connexion sortante 443 vers un domaine inconnu</td></tr>
+              <tr><td class="mono">08:22</td><td>Web Guard</td><td><span class="sev sus">Suspecté</span></td><td>Requête DNS vers un domaine listé localement</td></tr>
+              <tr><td class="mono">07:58</td><td>Pare-feu</td><td><span class="sev info">Observé</span></td><td>Écoute entrante détectée sur un port haut</td></tr>
+            </tbody>
+          </table>
+          <div class="note">Niveaux autorisés : Observé · Suspecté · Confirmé. « Bloqué » n'existe pas dans cette version car aucun blocage n'est effectué.</div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>Connexions actuelles</h2><span class="sub">instantané, non persistant</span></div>
+          <table>
+            <thead><tr><th>Processus</th><th>Destination</th><th>Port</th><th>État</th></tr></thead>
+            <tbody>
+              <tr><td>cbsshield.exe</td><td class="mono">127.0.0.1</td><td>8787</td><td><span class="tag">écoute locale</span></td></tr>
+              <tr><td>msedge.exe</td><td class="mono">13.107.x.x</td><td>443</td><td><span class="tag">établie</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Filtrage DNS</h2><span class="sub">proxy en boucle locale</span></div>
+          <dl class="kv">
+            <dt>Écoute</dt><dd>127.0.0.1:8787</dd>
+            <dt>Couverture</dt><dd>applications configurées</dd>
+            <dt>Bloqués (24 h)</dt><dd>0</dd>
+          </dl>
+          <div class="note">Sans configuration système, ce filtrage ne couvre pas tout le poste. Il ne doit jamais être présenté comme « filtrage global ».</div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Pare-feu</h2><span class="sub">lecture seule</span></div>
+          <table>
+            <thead><tr><th>Règle</th><th>Direction</th><th>Action observée</th></tr></thead>
+            <tbody>
+              <tr><td>Profil domaine</td><td>Entrée</td><td><span class="tag">autoriser</span></td></tr>
+              <tr><td>Profil privé</td><td>Entrée</td><td><span class="tag">autoriser</span></td></tr>
+            </tbody>
+          </table>
+          <div class="note">Aucune règle n'est créée, modifiée ni supprimée. CBS Shield n'a pas la main sur le pare-feu Windows.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5. RÉGLAGES ================= -->
+  <section class="screens" id="scr-settings" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Général</h2></div>
+          <div class="field"><label>Langue</label><select><option>Français</option><option>English</option></select></div>
+          <div class="field"><label>Thème</label><select><option>Sombre</option><option>Clair</option><option>Système</option></select></div>
+          <div class="switch"><div class="lbl">Démarrer avec Windows<small>démarrage en arrière-plan, icône de notification</small></div><div class="toggle" data-on="false"></div></div>
+          <div class="switch"><div class="lbl">Minimiser dans la zone de notification<small>fermeture = réduction, pas arrêt</small></div><div class="toggle" data-on="true"></div></div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Antivirus</h2></div>
+          <div class="field"><label>Dossier de données</label><input type="text" value="%LOCALAPPDATA%\Cybrense\CBS Shield" readonly><span class="hint">chemin local, non synchronisé</span></div>
+          <div class="switch"><div class="lbl">Mise à jour automatique des signatures<small>freshclam, réseau local sortant uniquement</small></div><div class="toggle" data-on="true"></div></div>
+          <div class="switch"><div class="lbl">Notifications Windows<small>résumé par cycle, pas de rafale</small></div><div class="toggle" data-on="true"></div></div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Avancé</h2><span class="sub">section secondaire</span></div>
+          <div class="inline">
+            <button class="btn ghost sm">Journal détaillé</button>
+            <button class="btn ghost sm">Exporter le diagnostic</button>
+            <button class="btn ghost sm">Réinitialiser les réglages</button>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>À propos</h2></div>
+          <dl class="kv">
+            <dt>Version</dt><dd>0.9.0-dev</dd>
+            <dt>Moteur</dt><dd>ClamAV 1.5.4</dd>
+            <dt>Télémétrie</dt><dd>aucune</dd>
+            <dt>Réseau sortant</dt><dd>mises à jour uniquement</dd>
+          </dl>
+          <div class="note">Cette maquette ne décrit aucune fonctionnalité nouvelle : elle réorganise l'existant et nomme les limites.</div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Accessibilité</h2></div>
+          <table>
+            <thead><tr><th>Point</th><th>Cible</th></tr></thead>
+            <tbody>
+              <tr><td>Contraste</td><td>AA (4.5:1 texte)</td></tr>
+              <tr><td>Navigation clavier</td><td>complète, focus visible</td></tr>
+              <tr><td>Zooms</td><td>100–200 % sans perte</td></tr>
+              <tr><td>Lecteur d'écran</td><td>libellés ARIA sur icônes</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>Direction B — « Console compacte » · maquette statique</span>
+    <span>5 écrans · FR/EN · thème clair/sombre · 2026-10-30</span>
+  </div>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('theme');
+    toggle.addEventListener('click', function(){
+      var html = document.documentElement;
+      html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+    function show(id){
+      document.querySelectorAll('.screens').forEach(function(s){ s.hidden = true; });
+      var el = document.getElementById('scr-' + id);
+      if (el) el.hidden = false;
+      document.querySelectorAll('nav.tabs button').forEach(function(b){
+        b.setAttribute('aria-selected', b.getAttribute('data-go') === id ? 'true' : 'false');
+      });
+      window.scrollTo({top:0, behavior:'instant'});
+    }
+    document.querySelectorAll('[data-go]').forEach(function(b){
+      b.addEventListener('click', function(){ show(b.getAttribute('data-go')); });
+    });
+    // decorative toggles are inert on purpose: this is a concept, not a working app
+    document.querySelectorAll('.toggle').forEach(function(t){
+      t.addEventListener('click', function(e){
+        e.preventDefault();
+        t.title = 'Maquette : commutateur inactif';
+      });
+    });
+  })();
+</script>
+</body>
+</html>

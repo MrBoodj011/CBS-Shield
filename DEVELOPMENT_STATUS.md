@@ -17,6 +17,50 @@ non testée n'est présentée comme opérationnelle. Le détail de recette est d
 
 ---
 
+## 0. Sprint 9.2 — QA finale (30 octobre 2026)
+
+Sprint de **vérification et de conception uniquement** : aucun fichier source n'a
+été modifié, l'artefact reste celui produit à `9b2c832`.
+
+**Récupéré et prouvé :**
+
+- Accès VM `CBS-Shield-Sprint7` rétabli (agent de file, pilote souris DPI-aware,
+  réveil d'affichage) ; méthodes Sprint 7 reprises sans modification.
+- Installeur invité **byte-identique** au bundle hôte (`D5A8B626…B1FD`) :
+  c'est bien l'artefact `0.9.0-dev` qui a été testé.
+- ClamAV portable provisionné et vérifié (225 774 978 o, SHA-256 conforme,
+  moteur chargé, 3 631 204 signatures).
+- Analyse rapide **in-app** exécutée deux fois : 145 fichiers, 0 erreur, 1 détection réelle.
+- Échec `freshclam` (curl 60) requalifié **transitoire** : le même binaire a
+  ensuite réussi, corrélé à une dérive d'horloge invitée de −7 h.
+- Suites locales rejouées : `cargo fmt --check` et Clippy propres,
+  **125 tests Rust réussis + 1 ignoré**, **34 tests frontend réussis**,
+  build Vite propre, installeur re-haché.
+  *Le chiffre « 148 tests Rust » annoncé en 9.1 n'est pas reproduit sur l'arbre
+  courant ; le décompte 9.2 (10 binaires de test) fait foi.*
+
+**Anomalies ouvertes (détail : `docs/SPRINT92_RISK_REGISTER.md`) :**
+
+- A1 — aucune persistance SQLite détectée (WAL immobile) · **critique**
+- A2 — quarantaine sans blob `.cbsq`, source disparue · **critique**
+- A3 — `store()` détruit l'unique copie si la suppression de la source échoue · **critique**
+- A4 — signature `custom.ndb` non appliquée par le scan in-app · **majeure**
+- A5 — pas de garde mono-instance · **majeure**
+- A6 — état d'accueil uniquement dans le profil WebView2 · mineure
+- A7 — horloge invitée décalée de −7 h · environnement
+
+**Conception livrée (non implémentée) :**
+
+- [`docs/SPRINT92_UI_UX_REDESIGN.md`](docs/SPRINT92_UI_UX_REDESIGN.md) + deux
+  directions de maquettes dans `docs/sprint92-mockups/` — **en attente d'approbation**.
+- [`docs/SPRINT92_INTRUSION_GUARD.md`](docs/SPRINT92_INTRUSION_GUARD.md) —
+  architecture défensive en lecture seule, non implémentée.
+- [`docs/SPRINT92_VM_VALIDATION.md`](docs/SPRINT92_VM_VALIDATION.md),
+  [`docs/SPRINT92_NATIVE_TEST_REPORT.md`](docs/SPRINT92_NATIVE_TEST_REPORT.md),
+  [`docs/SPRINT92_SECURITY_REGRESSION.md`](docs/SPRINT92_SECURITY_REGRESSION.md).
+
+---
+
 ## 1. Livré (Sprint 9 + 9.1)
 
 - Module **CBS Proactive Monitor** (crate `cbs-proactive`) : scrutation bornée,
@@ -41,14 +85,16 @@ non testée n'est présentée comme opérationnelle. Le détail de recette est d
 
 ## 2. Non livré / bloqué
 
-- Validation VM complète (installation, ClamAV portable, upgrade, désinstallation,
-  restauration réseau) : **bloquée** (instabilité historique de la VM Sprint 7 ;
-  démarrage et capture d'écran VM réussis, mais aucune installation exécutée).
+- Validation VM complète : **partiellement exécutée en 9.2** (accès rétabli,
+  installeur vérifié, ClamAV provisionné, analyse in-app réelle). Restent
+  **non exécutés** : upgrade inter-versions, désinstallation, parcours ClamAV
+  absent, analyse complète, cycle de surveillance proactive observé, et le
+  parcours quarantaine → restauration invalidé par A1/A2/A3.
 - Notifications live non observées (Microsoft Defender bloque la lecture EICAR
   par ClamAV, erreur 225) — aucune exclusion ajoutée.
 - Plateau Windows non exercé en interaction réelle (code compilé et revu).
-- Thème clair non capturé ; scan/quarantaine non exécutés dans l'interface
-  graphique (pilotage par boîte de dialogue non automatisable proprement).
+- Thème clair non capturé ; scan rapide **exécuté en 9.2** dans l'interface
+  graphique de la VM, mais quarantaine/restauration non valides (A1/A2/A3).
 - Installeur non signé (Authenticode : NotSigned) — volontaire, pas de
   certificat disponible.
 
