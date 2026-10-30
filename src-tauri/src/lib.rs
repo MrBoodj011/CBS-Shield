@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod notify;
 mod paths;
+mod proactive_worker;
 mod state;
 mod tray;
 
@@ -29,6 +30,11 @@ pub fn run() {
             quarantine.ensure_layout()?;
 
             app.manage(AppState::new(paths, store, quarantine));
+
+            // Sprint 9.1: start the consent-controlled proactive scanning
+            // worker only when the user previously opted in (persisted flag).
+            // The worker itself re-checks the engine every cycle.
+            crate::proactive_worker::spawn_if_enabled(app.handle().clone());
 
             // Sprint 3: optional native tray entry point. The stored language is
             // read here so the menu starts in the user's language.
@@ -90,6 +96,8 @@ pub fn run() {
             commands::proactive::proactive_set_directories,
             commands::proactive::proactive_set_config,
             commands::proactive::proactive_set_auto_watch,
+            commands::proactive::proactive_set_auto_scan,
+            commands::proactive::proactive_scan_status,
             commands::proactive::proactive_start,
             commands::proactive::proactive_pause,
             commands::proactive::proactive_resume,

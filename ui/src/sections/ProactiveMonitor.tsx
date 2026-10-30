@@ -1,4 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import {
   CircleAlert,
   Folder,
@@ -19,7 +20,12 @@ import { useToast } from "../components/Toasts";
 import { api, errorMessage } from "../lib/api";
 import { formatDateTime, formatNumber, truncateMiddle } from "../lib/format";
 import { useI18n } from "../lib/i18n";
-import type { ProactiveConfig, ProactiveEvent, ProactiveStatus } from "../types";
+import type {
+  ProactiveAutoScanStatus,
+  ProactiveConfig,
+  ProactiveEvent,
+  ProactiveStatus,
+} from "../types";
 
 type Localize = (fr: string, en: string) => string;
 type Busy =
@@ -31,6 +37,7 @@ type Busy =
   | "stop"
   | "drain"
   | "clear"
+  | "autoscan"
   | "refresh"
   | null;
 
@@ -58,6 +65,7 @@ export function ProactiveMonitor() {
   const toast = useToast();
 
   const [status, setStatus] = useState<ProactiveStatus | null>(null);
+  const [autoScan, setAutoScan] = useState<ProactiveAutoScanStatus | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [pathInput, setPathInput] = useState("");
   const [configDraft, setConfigDraft] = useState<ProactiveConfig | null>(null);
@@ -94,6 +102,31 @@ export function ProactiveMonitor() {
   useEffect(() => {
     void load(true);
   }, [load]);
+
+  const refreshAutoScan = useCallback(async (silent: boolean) => {
+    if (!silent) setBusy("autoscan");
+    try {
+      setAutoScan(await api.proactiveScanStatus());
+    } catch {
+      // Status is auxiliary: a transient IPC hiccup must not break the page.
+    } finally {
+      if (!silent) setBusy(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAutoScan(true);
+  }, [refreshAutoScan]);
+
+  // Live updates from the background worker.
+  useEffect(() => {
+    const unlistenPromise = listen<unknown>("proactive:auto-scan", () => {
+      void refreshAutoScan(true);
+    });
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [refreshAutoScan]);
 
   const runAction = useCallback(
     async (
@@ -552,6 +585,126 @@ export function ProactiveMonitor() {
             "Draining the queue starts no analysis: send the files to the Antivirus tab; detection stays manual.",
           )}
         </p>
+      </section>
+
+      <section className="panel" aria-label={L("Analyse automatique", "Automatic analysis")}>
+        <div className="panel__head">
+          <div>
+            <span className="panel__eyebrow">{L("Analyse automatique", "Automatic analysis")}</span>
+            <h2>{L("Analyse ClamAV de la file d'observation", "ClamAV analysis of the review queue")}</h2>
+          </div>
+          <div className="row-actions">
+            <Badge tone={autoScan?.running ? "ok" : "neutral"} dot subtle>
+              {autoScan === null
+                ? L("État inconnu", "Unknown state")
+                : autoScan.running
+                  ? L("Ouvrier actif", "Worker active")
+                  : L("Ouvrier arrêté", "Worker stopped")}
+            </Badge>
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              disabled={busyLock}
+              onClick={() => void refreshAutoScan(false)}
+            >
+              {busy === "autoscan" ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
+              {L("Actualiser", "Refresh")}
+            </button>
+          </div>
+        </div>
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            checked={autoScan?.enabled ?? false}
+            disabled={busyLock || noDirectories}
+            onChange={(event) => {
+              const wanted = event.target.checked;
+              setBusy("autoscan");
+              api
+                .proactiveSetAutoScan(wanted)
+                .then(setAutoScan)
+                .catch((err) => {
+                  toast({
+                    tone: "error",
+                    title: L("Consentement impossible", "Could not change consent"),
+                    message: errorMessage(err),
+                  });
+                  void refreshAutoScan(true);
+                })
+                .finally(() => setBusy(null));
+            }}
+          />
+          <span>
+            <strong>
+              {L(
+                "Analyser automatiquement les fichiers de la file (opt-in explicite)",
+                "Automatically analyze queued files (explicit opt-in)",
+              )}
+            </strong>
+            <small>
+              {L(
+                "Les fichiers ne sont jamais supprimés ni mis en quarantaine automatiquement : une détection vous est signalée et reste à traiter par vous. Désactiver arrête l'analyse en cours.",
+                "Files are never deleted or quarantined automatically: a detection is reported and left for you to handle. Toggling off stops the in-flight analysis.",
+              )}
+            </small>
+          </span>
+        </label>
+        {autoScan?.lastError && (
+          <div className="banner banner--danger">
+            <CircleAlert size={16} aria-hidden="true" />
+            <p>{autoScan.lastError}</p>
+          </div>
+        )}
+        {autoScan?.busyFiles && autoScan.busyFiles.length > 0 && (
+          <p className="panel__note">
+            {L(
+              `Analyse en cours : ${autoScan.busyFiles.length} fichier(s).`,
+              `Analysis in progress: ${autoScan.busyFiles.length} file(s).`,
+            )}
+          </p>
+        )}
+        {autoScan?.lastBatch && (
+          <div className="metric-grid proactive__batch-grid">
+            <div className="metric-card">
+              <div className="metric-card__top">
+                <span className="metric-card__label">{L("Dernier lot", "Last batch")}</span>
+              </div>
+              <span className="metric-card__value">{formatNumber(autoScan.lastBatch.files)}</span>
+              <span className="metric-card__hint">
+                {autoScan.lastBatch.finishedAt ? formatDateTime(autoScan.lastBatch.finishedAt) : "—"}
+              </span>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card__top">
+                <span className="metric-card__label">{L("Détections", "Detections")}</span>
+              </div>
+              <span className="metric-card__value">{formatNumber(autoScan.lastBatch.detections)}</span>
+              <span className="metric-card__hint">
+                {autoScan.lastBatch.outcome === "detected"
+                  ? L("À traiter dans l'onglet Antivirus", "Handle in the Antivirus tab")
+                  : autoScan.lastBatch.outcome === "failed"
+                    ? L("Échec enregistré dans l'historique", "Failure recorded in history")
+                    : L("Rien à signaler", "Nothing to report")}
+              </span>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card__top">
+                <span className="metric-card__label">{L("Échecs d'accès", "Access failures")}</span>
+              </div>
+              <span className="metric-card__value">{formatNumber(autoScan.lastBatch.failures)}</span>
+              <span className="metric-card__hint">{L("Tracés dans l'historique", "Traced in history")}</span>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card__top">
+                <span className="metric-card__label">{L("Rapport", "Report")}</span>
+              </div>
+              <span className="metric-card__value">
+                {autoScan.lastBatch.recordId === null ? "—" : `#${autoScan.lastBatch.recordId}`}
+              </span>
+              <span className="metric-card__hint">{L("Historique des scans", "Scan history")}</span>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

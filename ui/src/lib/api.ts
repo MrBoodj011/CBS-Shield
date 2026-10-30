@@ -32,6 +32,7 @@ import type {
   WebGuardView,
   ProactiveStatus,
   ProactiveConfig,
+  ProactiveAutoScanStatus,
 } from "../types";
 
 export const api = {
@@ -143,6 +144,9 @@ export const api = {
   proactiveStop: () => invoke<ProactiveStatus>("proactive_stop"),
   proactiveDrain: () => invoke<string[]>("proactive_drain"),
   proactiveClear: () => invoke<ProactiveStatus>("proactive_clear"),
+  proactiveSetAutoScan: (enabled: boolean) =>
+    invoke<ProactiveAutoScanStatus>("proactive_set_auto_scan", { enabled }),
+  proactiveScanStatus: () => invoke<ProactiveAutoScanStatus>("proactive_scan_status"),
 };
 
 export function errorMessage(error: unknown): string {

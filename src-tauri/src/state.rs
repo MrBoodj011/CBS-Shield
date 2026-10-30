@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +16,62 @@ use crate::paths::AppPaths;
 struct ActiveScan {
     scan_id: String,
     cancel: Arc<Notify>,
+}
+
+/// Aggregate result of one proactive background batch (Sprint 9.1).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchSummary {
+    pub files: usize,
+    pub files_scanned: u64,
+    pub detections: usize,
+    pub failures: usize,
+    pub outcome: String,
+    pub record_id: Option<i64>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Runtime snapshot of the consent-controlled proactive auto-scan worker.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoScanStatus {
+    pub enabled: bool,
+    pub running: bool,
+    pub cancel_requested: bool,
+    pub busy_files: Option<Vec<String>>,
+    pub last_error: Option<String>,
+    pub last_batch: Option<BatchSummary>,
+}
+
+/// Mutable worker coordination state (guarded by the AppState mutex).
+pub struct AutoScanState {
+    pub enabled: bool,
+    pub running: bool,
+    pub cancel_requested: bool,
+    /// Worker identity; bumped on every start so a stale worker can never
+    /// mutate current state or run concurrently with a new one.
+    pub generation: u64,
+    pub cancel: Arc<Notify>,
+    pub busy: Option<Vec<String>>,
+    pub last_error: Option<String>,
+    pub last_batch: Option<BatchSummary>,
+}
+
+impl Default for AutoScanState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            running: false,
+            cancel_requested: false,
+            generation: 0,
+            cancel: Arc::new(Notify::new()),
+            busy: None,
+            last_error: None,
+            last_batch: None,
+        }
+    }
 }
 
 /// Clears the active scan slot even if the command returns early or panics.
@@ -45,6 +102,8 @@ pub struct AppState {
     pub proactive: ProactiveMonitor,
     /// De-duplication for native notifications (Sprint 9).
     pub notify_ring: Mutex<crate::notify::NotifyRing>,
+    /// Consent-controlled proactive auto-scan worker state (Sprint 9.1).
+    pub auto_scan: Mutex<AutoScanState>,
     scan_slot: Arc<Mutex<Option<ActiveScan>>>,
     /// Last observed interface counters, used to compute measured traffic
     /// deltas between two Network Monitor captures.
@@ -74,6 +133,7 @@ impl AppState {
             webguard,
             proactive,
             notify_ring: Mutex::new(crate::notify::NotifyRing::default()),
+            auto_scan: Mutex::new(AutoScanState::default()),
             scan_slot: Arc::new(Mutex::new(None)),
             netmon_last: Arc::new(Mutex::new(None)),
             update_running: Arc::new(AtomicBool::new(false)),

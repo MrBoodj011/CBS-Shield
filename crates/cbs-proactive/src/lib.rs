@@ -741,11 +741,9 @@ mod tests {
         let persisted: PersistedState = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(persisted.directories.len(), 1);
         assert!(persisted.auto_watch);
-        assert!(matches!(
-            serde_json::from_slice::<serde_json::Value>(&bytes)
-                .unwrap()
-                .get("config"),
-            Some(_)
-        ));
+        assert!(serde_json::from_slice::<serde_json::Value>(&bytes)
+            .unwrap()
+            .get("config")
+            .is_some());
     }
 }

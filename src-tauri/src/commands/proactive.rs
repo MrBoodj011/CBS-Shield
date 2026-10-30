@@ -3,12 +3,12 @@
 //! The monitor is an observation layer only: it never claims real-time
 //! antivirus protection and never changes any protection behaviour.
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
-use cbs_proactive::{MonitorConfig, MonitorStatus};
-
+use crate::commands::engine::{probe_with_settings, signatures_blocked};
 use crate::error::CommandError;
-use crate::state::AppState;
+use crate::state::{AppState, AutoScanStatus};
+use cbs_proactive::{MonitorConfig, MonitorStatus};
 
 impl From<cbs_proactive::MonitorError> for CommandError {
     fn from(error: cbs_proactive::MonitorError) -> Self {
@@ -96,4 +96,63 @@ pub fn proactive_drain(state: State<'_, AppState>) -> Result<Vec<String>, Comman
 #[tauri::command]
 pub fn proactive_clear(state: State<'_, AppState>) -> Result<MonitorStatus, CommandError> {
     state.proactive.clear().map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn proactive_scan_status(state: State<'_, AppState>) -> AutoScanStatus {
+    let inner = state
+        .auto_scan
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    AutoScanStatus {
+        enabled: inner.enabled,
+        running: inner.running,
+        cancel_requested: inner.cancel_requested,
+        busy_files: inner.busy.clone(),
+        last_error: inner.last_error.clone(),
+        last_batch: inner.last_batch.clone(),
+    }
+}
+
+/// Explicit user consent for automatic analysis of the proactive review
+/// queue. The consent is persisted; the worker starts/stops cooperatively.
+#[tauri::command]
+pub async fn proactive_set_auto_scan(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<AutoScanStatus, CommandError> {
+    let state = app.state::<AppState>();
+    if enabled {
+        // Consent requires a working engine: never start a worker that can
+        // only produce failures.
+        let settings = state.store.settings()?;
+        let status = probe_with_settings(state.inner(), &settings);
+        if !status.installed {
+            return Err(CommandError::new("engineMissing", status.message));
+        }
+        if signatures_blocked(&status) {
+            return Err(CommandError::new("signaturesMissing", status.message));
+        }
+    }
+    state
+        .store
+        .set_setting("proactiveAutoScan", if enabled { "true" } else { "false" })?;
+    if enabled {
+        crate::proactive_worker::start(app.clone());
+    } else {
+        crate::proactive_worker::stop(&app);
+    }
+    let state = app.state::<AppState>();
+    let inner = state
+        .auto_scan
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Ok(AutoScanStatus {
+        enabled: inner.enabled,
+        running: inner.running,
+        cancel_requested: inner.cancel_requested,
+        busy_files: inner.busy.clone(),
+        last_error: inner.last_error.clone(),
+        last_batch: inner.last_batch.clone(),
+    })
 }

@@ -504,6 +504,35 @@ export interface ProactiveStatus {
   notRealTime: boolean;
 }
 
+export type ProactiveBatchOutcome =
+  | "clean"
+  | "detected"
+  | "cancelled"
+  | "completedWithErrors"
+  | "failed";
+
+export interface ProactiveBatchSummary {
+  files: number;
+  filesScanned: number;
+  detections: number;
+  failures: number;
+  outcome: ProactiveBatchOutcome;
+  recordId: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+}
+
+/** State of the consent-controlled background analysis worker (Sprint 9.1). */
+export interface ProactiveAutoScanStatus {
+  enabled: boolean;
+  running: boolean;
+  cancelRequested: boolean;
+  busyFiles: string[] | null;
+  lastError: string | null;
+  lastBatch: ProactiveBatchSummary | null;
+}
+
 
 // ---------------------------------------------------------------------------
 // Network Monitor (Sprint 2 — read-only observation)
