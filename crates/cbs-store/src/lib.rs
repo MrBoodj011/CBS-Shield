@@ -167,7 +167,12 @@ pub struct NewQuarantine {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum QuarantineStatus {
+    /// Encrypted blob stored and verified; the source file has been removed.
     Active,
+    /// The blob exists but the source could not be removed (locked file,
+    /// sharing violation…). Nothing is lost: the item can be retried, restored
+    /// or purged after an explicit action.
+    Pending,
     Restored,
     Deleted,
 }
@@ -176,6 +181,7 @@ impl QuarantineStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::Pending => "pending",
             Self::Restored => "restored",
             Self::Deleted => "deleted",
         }
@@ -185,6 +191,7 @@ impl QuarantineStatus {
         match value {
             "restored" => Self::Restored,
             "deleted" => Self::Deleted,
+            "pending" => Self::Pending,
             _ => Self::Active,
         }
     }
@@ -380,7 +387,7 @@ impl Store {
             |row| row.get(0),
         )?;
         let active_quarantine: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM quarantine WHERE status = 'active'",
+            "SELECT COUNT(*) FROM quarantine WHERE status IN ('active','pending')",
             [],
             |row| row.get(0),
         )?;
@@ -412,13 +419,31 @@ impl Store {
     }
 
     pub fn insert_quarantine(&self, item: &NewQuarantine) -> Result<QuarantineRecord, StoreError> {
+        self.insert_quarantine_with_status(item, QuarantineStatus::Active)
+    }
+
+    /// Record an incomplete transition: the encrypted blob is stored but the
+    /// source file could not be removed. Keeping the row (and the blob) means
+    /// the user can reconcile it later instead of losing either copy.
+    pub fn insert_quarantine_pending(
+        &self,
+        item: &NewQuarantine,
+    ) -> Result<QuarantineRecord, StoreError> {
+        self.insert_quarantine_with_status(item, QuarantineStatus::Pending)
+    }
+
+    fn insert_quarantine_with_status(
+        &self,
+        item: &NewQuarantine,
+        status: QuarantineStatus,
+    ) -> Result<QuarantineRecord, StoreError> {
         let created_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         let connection = self.conn()?;
         connection.execute(
             r#"INSERT INTO quarantine (
                 item_id, file_name, original_path, stored_path, sha256, size_bytes,
                 threat_name, status, created_at, source_scan_id
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9)"#,
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
             params![
                 item.item_id,
                 item.file_name,
@@ -427,6 +452,7 @@ impl Store {
                 item.sha256,
                 item.size_bytes as i64,
                 item.threat_name,
+                status.as_str(),
                 created_at,
                 item.source_scan_id,
             ],
@@ -436,6 +462,41 @@ impl Store {
 
         self.quarantine_by_id(id)?
             .ok_or_else(|| StoreError::Invalid("entrée de quarantaine introuvable".to_string()))
+    }
+
+    /// Promote a pending item once its source removal actually succeeded.
+    pub fn mark_quarantine_active(&self, id: i64) -> Result<(), StoreError> {
+        let connection = self.conn()?;
+        let updated = connection.execute(
+            "UPDATE quarantine SET status = 'active' WHERE id = ?1 AND status = 'pending'",
+            [id],
+        )?;
+        if updated == 0 {
+            return Err(StoreError::Invalid(
+                "cette entrée n'est pas en attente".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Is this exact original path already tracked by an active or pending
+    /// quarantine entry? Used to refuse duplicate concurrent operations.
+    pub fn quarantine_by_original_path(
+        &self,
+        original_path: &str,
+    ) -> Result<Option<QuarantineRecord>, StoreError> {
+        let connection = self.conn()?;
+        Ok(connection
+            .query_row(
+                r#"SELECT id, item_id, file_name, original_path, stored_path, sha256, size_bytes,
+                          threat_name, status, created_at, restored_at, source_scan_id
+                   FROM quarantine
+                   WHERE original_path = ?1 AND status IN ('active','pending')
+                   ORDER BY id DESC LIMIT 1"#,
+                [original_path],
+                map_quarantine_row,
+            )
+            .optional()?)
     }
 
     pub fn list_quarantine(&self) -> Result<Vec<QuarantineRecord>, StoreError> {
@@ -470,7 +531,7 @@ impl Store {
         let restored_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         let connection = self.conn()?;
         let updated = connection.execute(
-            "UPDATE quarantine SET status = 'restored', restored_at = ?1 WHERE id = ?2 AND status = 'active'",
+            "UPDATE quarantine SET status = 'restored', restored_at = ?1 WHERE id = ?2 AND status IN ('active','pending')",
             params![restored_at, id],
         )?;
         if updated == 0 {
@@ -484,7 +545,7 @@ impl Store {
     pub fn mark_quarantine_deleted(&self, id: i64) -> Result<(), StoreError> {
         let connection = self.conn()?;
         let updated = connection.execute(
-            "UPDATE quarantine SET status = 'deleted' WHERE id = ?1 AND status = 'active'",
+            "UPDATE quarantine SET status = 'deleted' WHERE id = ?1 AND status IN ('active','pending')",
             [id],
         )?;
         if updated == 0 {
@@ -920,5 +981,54 @@ CREATE TABLE IF NOT EXISTS settings (
         store.set_setting("theme", "light").unwrap();
         assert_eq!(store.setting("theme").unwrap().as_deref(), Some("light"));
         assert_eq!(store.settings().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn pending_quarantine_is_tracked_and_promoted() {
+        let store = Store::open_in_memory().unwrap();
+        let pending = store
+            .insert_quarantine_pending(&NewQuarantine {
+                item_id: "item-p".to_string(),
+                file_name: "locked.txt".to_string(),
+                original_path: r"C:\tmp\locked.txt".to_string(),
+                stored_path: r"C:\vault\item-p.cbsq".to_string(),
+                sha256: "cafebabe".to_string(),
+                size_bytes: 12,
+                threat_name: "CBS_Test_Synthetic".to_string(),
+                source_scan_id: None,
+            })
+            .unwrap();
+        assert_eq!(pending.status, QuarantineStatus::Pending);
+
+        // A second attempt on the same path must be detectable.
+        let duplicate = store
+            .quarantine_by_original_path(r"C:\tmp\locked.txt")
+            .unwrap()
+            .expect("pending entry must be found");
+        assert_eq!(duplicate.id, pending.id);
+
+        // Pending items can still be reconciled.
+        store.mark_quarantine_active(pending.id).unwrap();
+        assert_eq!(
+            store.quarantine_by_id(pending.id).unwrap().unwrap().status,
+            QuarantineStatus::Active
+        );
+        assert!(store.mark_quarantine_active(pending.id).is_err());
+
+        // The dashboard counts pending items as tracked protection state.
+        let pending_again = store
+            .insert_quarantine_pending(&NewQuarantine {
+                item_id: "item-q".to_string(),
+                file_name: "other.txt".to_string(),
+                original_path: r"C:\tmp\other.txt".to_string(),
+                stored_path: r"C:\vault\item-q.cbsq".to_string(),
+                sha256: "feedface".to_string(),
+                size_bytes: 4,
+                threat_name: "CBS_Test_Synthetic".to_string(),
+                source_scan_id: None,
+            })
+            .unwrap();
+        assert_eq!(pending_again.status, QuarantineStatus::Pending);
+        assert_eq!(store.dashboard_stats().unwrap().active_quarantine, 2);
     }
 }

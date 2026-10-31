@@ -174,7 +174,7 @@ export interface DashboardStats {
   lastScan: ScanRecord | null;
 }
 
-export type QuarantineStatus = "active" | "restored" | "deleted";
+export type QuarantineStatus = "pending" | "active" | "restored" | "deleted";
 
 export interface QuarantineRecord {
   id: number;

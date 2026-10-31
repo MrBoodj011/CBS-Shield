@@ -60,6 +60,7 @@ impl From<cbs_quarantine::QuarantineError> for CommandError {
             QuarantineError::TooLarge(_) => "fileTooLarge",
             QuarantineError::NotAFile(_) => "notAFile",
             QuarantineError::InvalidVault(_) | QuarantineError::Crypto(_) => "vaultError",
+            QuarantineError::SourceRetained { .. } => "sourceLocked",
             QuarantineError::Io(_) => "quarantineIo",
         };
         Self::new(code, error.to_string())

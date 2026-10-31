@@ -18,6 +18,16 @@ use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
+        // Must be registered first: a second launch exits before any other
+        // plugin initialises, so there is only ever one store owner, one
+        // proactive worker and one quarantine vault.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {

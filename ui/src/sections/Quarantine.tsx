@@ -29,6 +29,10 @@ type Localize = (fr: string, en: string) => string;
 
 function statusBadge(item: QuarantineRecord, L: Localize) {
   switch (item.status) {
+    case "pending":
+      // The encrypted copy is verified but the original could not be removed
+      // (file locked). The user must be able to recover or purge it.
+      return <Badge tone="warning" dot>{L("Récupérable", "Recoverable")}</Badge>;
     case "restored":
       return <Badge tone="info" dot>{L("Restauré", "Restored")}</Badge>;
     case "deleted":
@@ -46,7 +50,9 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
   const [pendingDelete, setPendingDelete] = useState<QuarantineRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const activeCount = items.filter((item) => item.status === "active").length;
+  const activeCount = items.filter(
+    (item) => item.status === "active" || item.status === "pending",
+  ).length;
 
   const restore = async () => {
     if (!pendingRestore) return;
@@ -160,7 +166,12 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className={item.status !== "active" ? "is-muted" : ""}>
+                  <tr
+                    key={item.id}
+                    className={
+                      item.status === "active" || item.status === "pending" ? "" : "is-muted"
+                    }
+                  >
                     <td>
                       <div className="cell-main">
                         <strong>{item.fileName}</strong>
@@ -179,7 +190,7 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
                     <td>{formatDateTime(item.createdAt)}</td>
                     <td>{statusBadge(item, L)}</td>
                     <td>
-                      {item.status === "active" ? (
+                      {item.status === "active" || item.status === "pending" ? (
                         <div className="row-actions">
                           <button
                             type="button"
@@ -289,10 +300,15 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
                 )}
               </strong>
               <span>
-                {L(
-                  "Cette action supprime la copie de quarantaine. Elle n'affecte pas le fichier d'origine (déjà déplacé) et ne peut pas être annulée. L'entrée d'audit restera visible avec le statut « supprimé ».",
-                  "This action deletes the quarantine copy. It does not affect the original file (already moved) and cannot be undone. The audit entry will remain visible with the “deleted” status.",
-                )}
+                {pendingDelete?.status === "pending"
+                  ? L(
+                      "Cette action supprime la seule copie chiffrée vérifiée de ce fichier. Le fichier d'origine est peut-être encore en place (il n'a pas pu être déplacé). L'action est irréversible ; l'entrée d'audit restera visible avec le statut « supprimé ».",
+                      "This action deletes the only verified encrypted copy of this file. The original may still be in place (it could not be moved). The action cannot be undone; the audit entry will remain visible with the “deleted” status.",
+                    )
+                  : L(
+                      "Cette action supprime la copie de quarantaine. Elle n'affecte pas le fichier d'origine (déjà déplacé) et ne peut pas être annulée. L'entrée d'audit restera visible avec le statut « supprimé ».",
+                      "This action deletes the quarantine copy. It does not affect the original file (already moved) and cannot be undone. The audit entry will remain visible with the “deleted” status.",
+                    )}
               </span>
             </div>
             {pendingDelete && (
