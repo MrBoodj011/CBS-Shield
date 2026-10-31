@@ -1,7 +1,7 @@
 # État du développement — CBS Shield 0.9.0-dev
 
-**Date de vérification :** 30 octobre 2026
-**Branche :** `sprint-9` (commit `0160f2f` + Sprint 9.1)
+**Date de vérification :** 31 octobre 2026
+**Branche :** `sprint-9.3` (Sprint 9.2 `758199f`, correctifs 9.3 `74b24b3`)
 **Nature :** version expérimentale — antivirus manuel, assistant de préparation,
 installation officielle de ClamAV, observation réseau et pare-feu strictement en
 lecture seule, prototype Web Guard de filtrage DNS local, historique de sécurité,
@@ -58,6 +58,31 @@ Sprint de **vérification et de conception uniquement** : aucun fichier source n
 - [`docs/SPRINT92_VM_VALIDATION.md`](docs/SPRINT92_VM_VALIDATION.md),
   [`docs/SPRINT92_NATIVE_TEST_REPORT.md`](docs/SPRINT92_NATIVE_TEST_REPORT.md),
   [`docs/SPRINT92_SECURITY_REGRESSION.md`](docs/SPRINT92_SECURITY_REGRESSION.md).
+
+---
+
+## 0.1 Sprint 9.3 — Correctifs de suivi (30-31 octobre 2026)
+
+Suite aux anomalies du registre 9.2, le code a été corrigé et testé
+unitairement. **Aucun de ces correctifs n'a encore été revalidé dans la VM
+avec un installeur reconstruit.**
+
+- **A1 requalifié** en faux positif de mesure : la WAL est bien écrite ; les
+  scans et détections sont présents après rejeu. Tests d'intégration ajoutés
+  (`crates/cbs-store/tests/persistence.rs`).
+- **A2/A3 corrigés** : quarantaine en deux phases `pending → active`, blob
+  chiffré vérifié avant suppression de la source, `NotFound` traité comme
+  succès, `SourceRetained` si la source est verrouillée.
+- **A4 requalifié** en faux positif de test : une signature discriminante est
+  bien appliquée par le scan intégré.
+- **A5 corrigé** : `tauri-plugin-single-instance` enregistré en premier.
+- **A7** : diagnostic TLS/heure explicite, vérification TLS jamais désactivée.
+- **A6** : non corrigé (état d'accueil toujours dans le profil WebView2).
+
+Suites : 136 tests Rust / 0 échec, 37 tests frontend, Clippy et fmt propres,
+build Vite et installeur NSIS reconstruits. Détails :
+[`docs/SPRINT92_FINAL_EVIDENCE.md`](docs/SPRINT92_FINAL_EVIDENCE.md),
+[`docs/SPRINT93_ROOT_CAUSE_ANALYSIS.md`](docs/SPRINT93_ROOT_CAUSE_ANALYSIS.md).
 
 ---
 
