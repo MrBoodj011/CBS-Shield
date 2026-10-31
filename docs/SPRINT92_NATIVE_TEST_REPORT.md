@@ -86,3 +86,31 @@ Aucun de ces défauts ne peut être contourné par la documentation : ils doiven
 
 > Registre consolidé, gravités et conditions de sortie : `docs/SPRINT92_RISK_REGISTER.md`.
 > Régression de sécurité de ce sprint : `docs/SPRINT92_SECURITY_REGRESSION.md`.
+
+---
+
+## 5. Index des captures réelles (versionnées)
+
+Les captures de l'application installée dans la VM sont conservées dans
+[`docs/sprint92-screenshots/`](sprint92-screenshots/README.md) avec leur
+provenance et leurs limites. Les concepts d'interface restent dans
+`docs/sprint92-mockups/` et sont explicitement étiquetés comme concepts.
+
+## 6. Addendum Sprint 9.3 (suivi des anomalies)
+
+Après ce rapport, les anomalies suivantes ont été réexaminées sur la branche
+`sprint-9.3` (les correctifs sont testés unitairement, mais **pas encore
+revalidés dans la VM avec un nouvel installeur**) :
+
+| Anomalie | Résultat 9.3 | Document |
+|---|---|---|
+| A1 — persistance SQLite | **Faux positif de mesure** : la WAL est bien écrite, les lignes sont présentes après rejeu | `SPRINT93_SQLITE_PERSISTENCE.md` |
+| A2/A3 — quarantaine | Correctif : écriture en deux phases (`pending` → `active`), blob vérifié avant suppression de la source, `SourceRetained` si la source est verrouillée | `SPRINT93_ROOT_CAUSE_ANALYSIS.md` |
+| A4 — signatures `.ndb` | **Faux positif de test** : une signature discriminante est bien appliquée par le scan intégré | `SPRINT93_SIGNATURE_REGRESSION.md` |
+| A5 — mono-instance | Correctif : `tauri-plugin-single-instance` enregistré en premier | `SPRINT93_ROOT_CAUSE_ANALYSIS.md` |
+| A7 — horloge invitée | Diagnostic TLS explicite ajouté ; la vérification TLS n'est jamais désactivée | `SPRINT93_ROOT_CAUSE_ANALYSIS.md` |
+
+**Important :** ces correctifs ne changent pas le verdict de ce rapport pour
+l'installeur 9.1 déjà testé. Une nouvelle campagne VM reste nécessaire avec un
+installeur reconstruit pour prononcer la quarantaine, la persistance après
+redémarrage et la désinstallation.
