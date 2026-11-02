@@ -37,10 +37,11 @@ The 136 Rust passes reconcile the earlier 132 figure: the four new `cbs-store/te
 | Tray and native notifications | **Not executed in 9.4** | Historical evidence does not count as a new pass |
 | FR/EN and dark/light | **Partial** | FR/dark visible in current captures; queued switch to EN/light did not return evidence before VM stall |
 | Installer upgrade | **Pass, limited** | In-place upgrade of pre-existing 0.9.0-dev to fixed 0.9.0-dev; hash match and preserved DB files |
+| Isolated clone follow-up | **Partial** | Owner-authorized clone booted after Windows update rollback; exact candidate upgraded with matching hash, new direct ClamAV fixture detected; app GUI stalled before a scan result |
 | Uninstall and reinstall | **Not executed** | Defer until other VM checks and app-data backup are complete |
 
 No real malware was used. Defender real-time and tamper protection were both reported active before the fixture scan. The application remains a manual experimental scanner; the firewall monitor is read-only and Web Guard's DNS prototype is local and stopped by default.
 
 ## Release gate
 
-The mandatory end-to-end sequence is not complete until the approved explicit purge, retained audit row, and post-action database integrity are proven. A later VM stall blocked that action and the remaining native matrix; saved-state recovery and a hash-verified VDI copy are documented in [VM validation](SPRINT94_VM_VALIDATION.md). Native failure injection and the wider monitor/installer matrix also remain open. The guest clock is about 7 hours 45 minutes ahead of host UTC, making time-based TLS and audit assertions unreliable. **Do not label Sprint 9.4 complete or promote this build.** See [risk register](SPRINT94_RISK_REGISTER.md).
+The mandatory end-to-end sequence is not complete until the approved explicit purge, retained audit row, and post-action database integrity are proven. A later original-VM stall blocked that action and the remaining native matrix. An authorized isolated clone upgraded to the exact candidate but also stalled during GUI automation, before a new in-app scan result. Saved-state recovery and a hash-verified VDI copy are documented in [VM validation](SPRINT94_VM_VALIDATION.md). Native failure injection and the wider monitor/installer matrix also remain open. The guest clock discrepancy makes time-based TLS and audit assertions unreliable. **Do not label Sprint 9.4 complete or promote this build.** See [risk register](SPRINT94_RISK_REGISTER.md).

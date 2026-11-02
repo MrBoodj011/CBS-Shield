@@ -19,5 +19,8 @@ These are unmodified screenshots captured from the running `CBS-Shield-Sprint7` 
 | `13-webguard.jpg` | Web Guard in installed GUI | Prototype stopped; no filtering assertion |
 | `14-proactive.jpg` | Proactive Monitor in installed GUI | Monitor stopped; no observation assertion |
 | `15-settings.jpg` | Settings page in installed GUI | FR/dark state; no language or theme change assertion |
+| `16-clone-update-rollback.png` | Isolated clone reverting a failed Windows update | Boot diagnostic, not application acceptance |
+| `17-clone-gui-unresponsive.png` | Clone's candidate app marked “Not Responding” | GUI scan result not obtained |
+| `18-clone-after-reset.png` | Clone returned to signed-in desktop after reset | Does not establish app or database health |
 
 The guest clock was misconfigured; visible timestamps should not be used as an independent wall-clock reference.

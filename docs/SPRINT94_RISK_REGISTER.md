@@ -11,6 +11,7 @@
 | R94-5 | Medium | The tested installer is unsigned (`NotSigned`). The local Sprint 9.4 rebuild differs in size/hash and was not installed. | Sign intended release artifact and publish exact SHA-256; validate the exact signed artifact. |
 | R94-6 | Medium | Original aborted-state log has no definitive crash/abort code; host interruption is inferred. Active VM uses a preserved working VDI copy. | Retain original logs/disks; do not claim root cause without a corresponding VirtualBox or host event record. |
 | R94-7 | High | Later guest input/agent stall persisted after saved-state resume; ACPI shutdown did not complete. A 40,761,294,848-byte saved-state VDI copy was full-hash verified against the active VDI at the saved point (`372945A0B5F1CA25EE688D3EBB7FA28554E14A5B6EF98F19913C959EBCA2608A`). No force reset was used. | Diagnose the guest/VirtualBox input stall using preserved logs and disk; resume native tests only when responsive. |
+| R94-8 | High | Owner-authorized isolated clone booted after Automatic Repair and Windows update rollback; candidate upgrade and direct synthetic ClamAV check passed, but the app window became unresponsive during the first GUI scan attempt. The clone was reset after ACPI shutdown failed; Windows returned, then input stalled again before a GUI result. Both VMs are saved; original VM and source VDI were untouched. | Diagnose guest and app responsiveness on the isolated clone; rerun the complete native sequence with a unique fixture and SQL evidence. |
 
 ## Earlier A1–A7 disposition
 
