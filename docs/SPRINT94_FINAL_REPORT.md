@@ -70,3 +70,33 @@ Priorities 3–4 (native notifications, tray interaction, real Proactive Monitor
 - Revive the guest agent on the original VM and run the remaining priority-3/4 probes.
 - Produce the final passed/failed/blocked/not-executed matrix.
 - Write final commit.
+
+
+---
+
+## 6. Addendum - 2026-11-05 closure session (PRIORITIES A-D execution)
+
+### 6.1 Priority A - Restore native VM automation (in progress / outcome)
+
+- HTTP transport inspected: host servers :8000 (static) and :8002 (collector) both listening.
+- VM states inspected: CBS-Shield-Sprint7 = running; CBS-Shield-Sprint94-Fresh = saved -> resumed during this session.
+- Guest agent queue inspected; agent state file stale; collector inbox 196 files / 29 sums.
+- Agent restore attempted through keyboard input lane on the fresh VM resume; the agent lane was re-activated and consumed queued probes (vm94-o6 -> 404, vm94-o7 -> executed, vm94-o8 -> parse error then corrected). The lane then wedged again after the corrected probe run.
+
+### 6.2 Priority B - Tray / notifications / proactive (NOT EXECUTED this session)
+
+- Planned probes (vm94-o4 proactive + tray) could not complete because the agent lane degraded; no new tray/notifications/proactive-cycle evidence was produced in this addendum session.
+
+### 6.3 Priority C - Full UI acceptance (NOT EXECUTED this session)
+
+- 11-section FR/EN x light/dark sweep not executed in this addendum session.
+
+### 6.4 Priority D - Closure
+
+- Regression gates re-confirmed this session: cargo fmt PASS, cargo clippy -D warnings PASS, cargo test suites OK, UI tests 37/37 PASS.
+- Final report and risk register updated (R94-2/R94-3/R94-4/R94-5 dispositions refreshed; R94-3 resolved; R94-4 partially resolved with uninstall matrix now evidenced).
+
+### 6.5 Current blocking state
+
+- The guest keyboard/agent lane on the running VMs is currently degraded; both VMs report running.
+- Remaining blocker to Sprint 9.4 formal closure: execution of Priorities B, C and the final D paperwork (commits after the addendum).
