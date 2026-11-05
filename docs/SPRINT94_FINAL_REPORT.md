@@ -203,3 +203,29 @@ Defender AV and Windows Firewall left enabled throughout; no host security weake
 | P5 Final deliverables / go-no-go | **NO-GO** for closure; screenshots + TLS documented |
 
 
+
+
+---
+
+## 9. Operational finalisation addendum — disk recovery and post-recovery green gates (2026-11-05)
+
+### 9.1 Host disk recovery (finalisation priority 1)
+
+- Pre-recovery free space on C: was approximately 0 GB; cargo test failed with `rustc-LLVM ERROR: no space on device` and `LNK1106: invalid file or disk full`.
+- Cleaned only regenerable build caches (target debug/release and incremental directories). VM disks, snapshots, SQLite databases, quarantine blobs, installers, screenshots and logs were preserved.
+- Post-cleanup free space was approximately 22.7 GB; after the post-recovery full rebuild it was approximately 6.3 GB.
+- No alternative filesystem volume with sufficient free space was available on the host for relocation of Rust build outputs.
+
+### 9.2 Regression gates after recovery (finalisation priority 2)
+
+- `cargo fmt --all -- --check`: PASS (exit 0).
+- `cargo clippy --workspace --all-targets -- -D warnings`: PASS (exit 0).
+- `cargo test --workspace -- --test-threads=4`: **PASS** (exit 0) after cache recovery.
+- Frontend vitest: **PASS** (11 files / 37 tests, exit 0).
+- SQLite and quarantine regression suites: OK.
+
+### 9.3 Closure impact
+
+Automated gates are GREEN after host disk recovery. Native GUI acceptance and TLS diagnosis remain BLOCKED / NOT EXECUTED pending manual interaction.
+
+
