@@ -149,3 +149,57 @@ Remaining blockers to CBS Shield 1.0:
 3. 11-section FR/EN x theme UI acceptance sweep with screenshots and defect list.
 4. Signed installer artifact (R94-5).
 
+
+
+---
+
+## 8. Final native acceptance close-out — 2026-11-05 (FINAL MANUAL GUI ACCEPTANCE)
+
+### 8.1 Phase 1 — VM agent diagnosis
+
+**Inspection executed this session:** HTTP transport health (collector :8002 and static server :8000) listening; VM states (`CBS-Shield-Sprint7` = running, `CBS-Shield-Sprint94-Fresh` = running after resume); guest agent queue inspected and cleared; agent lane re-activated on fresh-VM resume and consumed queued probes (HTTP 404, PowerShell parse error) proving the iwr ? agent ? collector chain; the lane then degraded again; guest keyboard input lane degraded; agent restart loop stopped per the final manual-GUI instruction.
+
+### 8.2 Phase 2 — Windows integration (tray / notifications / proactive)
+
+**State: NOT EXECUTED.** No tray, notification or proactive-monitor execution evidence was produced this session. Blocker: unstable guest-agent automation, which was stopped and replaced by direct VirtualBox GUI interaction per the final brief.
+
+### 8.3 Phase 3 — Full UI matrix (11 sections × FR/EN × light/dark)
+
+**State: NOT EXECUTED.** 44-case matrix not run. Same blocker.
+
+### 8.4 Phase 4 — Final security and regression gates (final run this session)
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | **PASS** (exit 0) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | **PASS** (exit 0) |
+| `cargo test --workspace -- --test-threads=4` | **FAIL** (exit 101) — host disk-full (`rustc-LLVM ERROR: IO failure ... no space on device`; `LNK1106: invalid file or disk full`). Environment failure, not a code failure. Prior run on 2026-11-05 was GREEN. |
+| UI vitest (`ui`) | **PASS** (11 files / 37 tests) (exit 0) |
+
+Defender AV and Windows Firewall left enabled throughout; no host security weakening; harmless synthetic fixtures only.
+
+### 8.5 Phase 5 — Final deliverables and final go/no-go
+
+- Screenshots captured this session via `VBoxManage controlvm screenshotpng`: `final-manual-fresh-app.png`, `final-manual-fresh-desktop.png`, `final-manual-orig-app.png`, `final-manual-orig-desktop.png` (under `target/sprint94-vm-evidence/`).
+- Defect matrix: not produced (Phases B/C not executed).
+- TLS diagnosis: fresh-guest FreshClam `freshclam` failed with `Download failed (60)` (exit 5) for `daily.cvd`; custom `.ndb` still detected the harmless fixture; guest clock/timezone aligned (R94-3).
+- Final decision: **NO-GO** — Sprint 9.4 cannot be formally closed; CBS Shield 1.0 production readiness **NOT claimable**.
+
+### 8.6 Final verdict
+
+- Sprint 9.4 **CANNOT** be formally closed while mandatory native acceptance (Priorities B and C) remain **NOT EXECUTED**.
+- Essential acceptance criteria unmet ? application remains **experimental**; release gate remains **closed**.
+
+---
+
+### 8.7 Final session status summary (FINAL MANUAL GUI ACCEPTANCE)
+
+| Criterion | State |
+| --- | --- |
+| P1 VM agent diagnosis | PASS (inspection) / lane unstable thereafter |
+| P2 Windows integration (tray, notifications, proactive) | **NOT EXECUTED** |
+| P3 UI matrix (11 sections × FR/EN × light/dark) | **NOT EXECUTED** |
+| P4 Regression/security gates | fmt **PASS**, clippy **PASS**, cargo test **FAIL**(disk-full), UI **PASS** |
+| P5 Final deliverables / go-no-go | **NO-GO** for closure; screenshots + TLS documented |
+
+
