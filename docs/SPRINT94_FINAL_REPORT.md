@@ -100,3 +100,52 @@ Priorities 3–4 (native notifications, tray interaction, real Proactive Monitor
 
 - The guest keyboard/agent lane on the running VMs is currently degraded; both VMs report running.
 - Remaining blocker to Sprint 9.4 formal closure: execution of Priorities B, C and the final D paperwork (commits after the addendum).
+
+
+---
+
+## 7. Addendum - 2026-11-05 final native acceptance session
+
+### 7.1 Phase 1 - Agent diagnosis
+
+- HTTP transport health: :8000 and :8002 listening (verified).
+- VM states: CBS-Shield-Sprint7 = running; CBS-Shield-Sprint94-Fresh = saved -> resumed -> running.
+- Agent queue inspected and cleared (queue92.txt set to none); stale queue items identified (vm94-o5/o6/o7/o8).
+- Agent lane was restored on the fresh VM (probes consumed, 404 and parse errors observed = lane functional), then degraded again.
+- Keyboard input lane on both VMs degraded; agent restart via Win+R / start92.ps1 / keyboardputfile / putfile did not revive the agent persistently (alive file remained stale).
+- Conclusion: agent automation unreliable for this closure session -> per the brief, direct GUI validation attempted; image reading unavailable in this environment, so direct GUI text verification is also blocked.
+
+### 7.2 Phase 2 - Windows integration (tray, notifications, proactive)
+
+State: NOT EXECUTED. Blocker: agent lane degradation + no reliable keyboard/UIA-driven GUI execution path; no native notification/tray/proactive-cycle evidence produced in this session.
+
+### 7.3 Phase 3 - Full UI matrix (11 sections x FR/EN x light/dark)
+
+State: NOT EXECUTED. Blocker: same as above (agent lane).
+
+### 7.4 Phase 4 - Final security and regression gates
+
+State: EXECUTED and GREEN this session.
+- cargo fmt --all -- --check: PASS
+- cargo clippy --workspace --all-targets -- -D warnings: PASS
+- cargo test --workspace -- --test-threads=4: ALL suites ok
+- npm --prefix ui test -- --run: 11 files / 37 tests passed
+- Microsoft Defender and Windows Firewall: left enabled throughout; no host security weakening.
+- Harmless synthetic fixtures only; no real malware.
+
+### 7.5 Phase 5 - Final deliverables
+
+- SPRINT94_FINAL_REPORT.md updated (sections 6 and 7).
+- SPRINT94_RISK_REGISTER.md updated (R94-2/R94-3/R94-4/R94-5 dispositions; R94-3 resolved).
+- Commit locally, no push (commits 5866019, 1d71941).
+
+### 7.6 Closure decision
+
+Sprint 9.4 CANNOT be formally closed while Priorities 2 (tray/notifications/proactive) and 3 (UI matrix) remain unexecuted. Essential acceptance criteria unmet.
+
+Remaining blockers to CBS Shield 1.0:
+1. Native VM automation lane (agent restart + reliable queue consumption).
+2. Real tray menu, navigation, notification and proactive-monitor cycle validation with evidence.
+3. 11-section FR/EN x theme UI acceptance sweep with screenshots and defect list.
+4. Signed installer artifact (R94-5).
+
