@@ -24,3 +24,27 @@
 - **A7 (clock/TLS):** the guest UTC discrepancy was resolved on 2026-11-05 via the guest clock correction (R94-3); a past FreshClam success does not resolve the current state.
 
 No UI redesign or Intrusion Guard implementation was undertaken. Previous general product limits remain: manual scanning only, read-only firewall observation, loopback-only Web Guard, and unsigned development installer.
+
+
+---
+
+## Sprint 9.5 final blocker resolution addendum (2026-11-05)
+
+- R94-1 (Resolved): quarantine lifecycle, interruption, restore, purge — previously validated; preserved.
+- R94-2 (High): access-denial / disk-full injections — GUI missing-path injection validated; isolated ACL/quota cases still open.
+- R94-3 (High): guest clock corrected; FreshClam TLS `Download failed (60)` diagnosed but fix not applied in finalization; open.
+- R94-4 (High): clean shutdown validated; full native monitor/tray/notification/FR/EN/theme matrix not executed in finalization; open.
+- R94-5 (Medium): installer unsigned; rebuild not required (source unchanged); open for release signing.
+- R94-6 (Medium): original abort-state log; open (retain).
+- R94-7 (Resolved with limits): VM reset; input/agent stall root cause not fully diagnosed; open follow-up.
+- R94-8 (High): isolated clone GUI unresponsive; open.
+- R94-9 (High): fresh VM bugcheck 0xA IRQL_NOT_LESS_OR_EQUAL; open.
+
+### Finalization actions and current dispositions
+
+- Host disk recovered (regenerable build caches cleaned); free space recovered to approximately 11.6 GB.
+- Automated regression gates: all PASS after recovery.
+- Native Windows GUI acceptance, proactive end-to-end, UI 44-case matrix, FreshClam corrective fix: BLOCKED / NOT EXECUTED in finalization.
+- Final release go / no-go: NO-GO for formal Sprint 9.4 closure; CBS Shield 1.0 production readiness not claimable.
+
+
