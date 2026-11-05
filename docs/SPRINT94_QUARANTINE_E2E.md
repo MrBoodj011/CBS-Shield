@@ -1,6 +1,6 @@
 # Sprint 9.4 — installed-app quarantine E2E
 
-**Status:** quarantine → app restart → restore → second quarantine passed for the installed Sprint 9.3 candidate. The owner approved purging the second synthetic item, but the VM stalled before the native purge could execute; purge remains unverified.
+**Status:** quarantine → app restart → restore → second quarantine → **explicit purge with typed confirmation all passed** for the installed Sprint 9.3 candidate. The purge was executed on 2026-11-05 after the original guest was recovered by an authorized reset and re-bootstrapped.
 
 ## Fixture and engine
 
@@ -30,6 +30,18 @@ Before any purge, a separate 69-byte recovery copy was written to `target/sprint
 
 The 14 passing `cbs-quarantine` tests cover missing source, a source vanishing between staging and commit, a locked source that remains on disk while the encrypted blob is preserved, missing/corrupt blob refusal, stale temporary files from an interrupted write, truncated/corrupt ciphertext, and eight concurrent stores leaving eight blobs and zero temp files. The installed GUI was used for the normal transition above. A distinct access-denied ACL case and a genuine disk-full simulation in an isolated volume were **not executed**; the locked-source test exercises the same `SourceRetained` branch but is not labeled an access-denied test.
 
-## Remaining sequence
+## Purge executed — 2026-11-05
 
-The owner explicitly approved purging **only** `67469744-b7ee-4046-87dd-e15f792cb1eb`. A native GUI script was prepared to check the exact blob hash, require one matching active row, show the file name in the confirmation dialog, enter the required checkbox and phrase, and verify the blob and SQL afterward. It was **not executed**: the guest stopped accepting input before this step. The active `.cbsq` blob was not intentionally deleted, and the separate verified plaintext recovery copy remains. Once the VM is safely responsive, complete that exact dialog sequence and verify the second row transitions to `purged` while the first stays `restored`. Until then, the complete release criterion is **not met**.
+After the 2026-11-03 stall the original guest was unresponsive to input. On 2026-11-05 the owner-authorized reset path was used: a VM reset returned the guest to the signed-in desktop with no credential bypass, the Windows PowerShell console was launched through the Start menu with keyboard scancodes, and the documented Sprint 9.2 HTTP queue/collector agent was re-bootstrapped. The host static HTTP server (`:8000`) and collector (`:8002`) were restarted after they were found down; a guest `iwr` connect failure was resolved when they came back.
+
+State at session start matched the documented 2026-11-01 end state: the vault held exactly one blob `67469744-b7ee-4046-87dd-e15f792cb1eb.cbsq` (102 bytes, SHA-256 `F1DC872CDD6060FCAA9F640A099EF294BB0DF15471E8741388B184EF237D98EF`) and no fixture copy existed on the Desktop (`target/sprint94-vm-evidence/sum94p3purge-result.txt`).
+
+The purge ran through the installed 0.9.0-dev GUI, two-part so each action returned evidence before the following one:
+
+1. **Dialog** — the app was launched (no wizard; onboarding already completed), the Quarantine page showed `1 actif`, the row `Supprimer` button opened the confirmation dialog titled “Supprimer définitivement cet élément ?”. Its caption restates the exact semantics in `ui/src/components/ConfirmDialog.tsx`: deleting only the quarantine copy, never the (already moved) original, not reversible, with the audit row remaining visible. Guest output `target/sprint7-vm/inbox/20261105-154832-agent92out.txt`; captures `shot94pgquarantinepage-result.jpg` and `shot94pgpurgedialog-result.jpg` in `target/sprint94-vm-evidence/`.
+2. **Confirmation and execution** — the dialog was already open with the checkbox `On` from the first pass; the follow-up (`target/sprint7-vm/inbox/20261105-154941-agent92out.txt`, summary `target/sprint94-vm-evidence/sum94p3purge2-result.txt`) re-verified the checkbox state, set the phrase input value to `SUPPRIMER` via UIA `ValuePattern` (`PHRASE_VALUE=[SUPPRIMER]` read back), observed the three dialog buttons `Fermer` / `Annuler` / `Supprimer définitivement` with the confirm **enabled=True** (both guards satisfied), invoked it, and then observed:
+   - quarantine directory blob count `QFILES_PRE=1` → `QFILES_POST=0`;
+   - page texts `0 actif`, `Élément supprimé définitivement`, and `cbs94-qz-43eeae00.txt a été retiré du coffre.`;
+   - captures `shot94pg2beforeconfirm-result.jpg` (checkbox `On`, phrase filled) and `shot94pg2afterconfirm-result.jpg` (dialog closed, quarantine page `0 actif`) in `target/sprint94-vm-evidence/`.
+
+The SQL verification of the post-purge database is in [SQLite persistence](SPRINT94_SQLITE_PERSISTENCE.md): the second row is now `status='deleted'` and the first row remains `restored`, exactly the audit behavior the dialog caption promised. The remaining release criterion formerly titled "**not met**" for purge is therefore met for this exact item. The byte-verified separate recovery copy is retained (its deletion was never the intent of the sweep; it is a lab file).

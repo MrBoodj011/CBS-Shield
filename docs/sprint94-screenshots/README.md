@@ -22,5 +22,15 @@ These are unmodified screenshots captured from the running `CBS-Shield-Sprint7` 
 | `16-clone-update-rollback.png` | Isolated clone reverting a failed Windows update | Boot diagnostic, not application acceptance |
 | `17-clone-gui-unresponsive.png` | Clone's candidate app marked “Not Responding” | GUI scan result not obtained |
 | `18-clone-after-reset.png` | Clone returned to signed-in desktop after reset | Does not establish app or database health |
+| `19-fresh-empty-disk.png` | Newly created VM shows only an 80 GB unallocated disk at Windows Setup | Establishes clean disk selection, not completed installation |
+| `20-fresh-first-boot.png` | Fresh VM reached Windows “Getting ready” | OS setup progress only |
+| `21-fresh-oobe-wait.png` | Fresh VM at Windows “Just a moment...” | OOBE progress; later completed |
+| `22-fresh-oobe-error.png` | OOBE update check displayed `OOBELOCAL` | Built-in retry subsequently succeeded |
+| `23-fresh-desktop.png` | Standard local account signed in to fresh Windows desktop | Clean OS reached; application installed afterward |
+| `24-fresh-first-run.png` | Exact candidate running on fresh Windows, showing dashboard after wizard dismissal | First native launch; SQL first-run snapshot gives database evidence |
+| `25-purge-quarantine-page-1-active.jpg` | Quarantine page with `1 actif` before the approved purge (2026-11-05) | Blob identity is in guest filesystem output, not the image |
+| `26-purge-dialog-opened.jpg` | Native purge dialog “Supprimer définitivement cet élément ?” | Caption matches `ui/src/components/ConfirmDialog.tsx` semantics |
+| `27-purge-checkbox-and-typed-phrase.jpg` | Dialog with consent checkbox `On` and phrase input filled | Checkbox state and `PHRASE_VALUE=[SUPPRIMER]` echo are in guest output |
+| `28-purge-after-confirm-zero-active.jpg` | Page after confirm: `0 actif` with purge toast | Blob removal = SQL decode in `target/sprint94-vm-evidence/db94afterpurge/` |
 
 The guest clock was misconfigured; visible timestamps should not be used as an independent wall-clock reference.
