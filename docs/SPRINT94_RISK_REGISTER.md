@@ -30,8 +30,8 @@ No UI redesign or Intrusion Guard implementation was undertaken. Previous genera
 
 ## Sprint 9.5 final blocker resolution addendum (2026-11-05)
 
-- R94-1 (Resolved): quarantine lifecycle, interruption, restore, purge � previously validated; preserved.
-- R94-2 (High): access-denial / disk-full injections � GUI missing-path injection validated; isolated ACL/quota cases still open.
+- R94-1 (Resolved): quarantine lifecycle, interruption, restore, purge � previously validated; preserved.
+- R94-2 (High): access-denial / disk-full injections � GUI missing-path injection validated; isolated ACL/quota cases still open.
 - R94-3 (High): guest clock corrected; FreshClam TLS `Download failed (60)` diagnosed but fix not applied in finalization; open.
 - R94-4 (High): clean shutdown validated; full native monitor/tray/notification/FR/EN/theme matrix not executed in finalization; open.
 - R94-5 (Medium): installer unsigned; rebuild not required (source unchanged); open for release signing.
@@ -46,5 +46,13 @@ No UI redesign or Intrusion Guard implementation was undertaken. Previous genera
 - Automated regression gates: all PASS after recovery.
 - Native Windows GUI acceptance, proactive end-to-end, UI 44-case matrix, FreshClam corrective fix: BLOCKED / NOT EXECUTED in finalization.
 - Final release go / no-go: NO-GO for formal Sprint 9.4 closure; CBS Shield 1.0 production readiness not claimable.
+
+### Final VM Repair & Windows Acceptance execution addendum (2026-11-06)
+
+- R94-3 (High): FreshClam TLS `Download failed (60)` — corrective fix NOT applied; disposable VM `CBS-Shield-Sprint94-Fresh` started for follow-up; acceptance NOT met; remains OPEN.
+- R94-4 (High): Native Windows GUI acceptance (tray/notifications/proactive) and UI 44-case matrix — NOT EXECUTED / BLOCKED during final execution; real VM boot evidence acquired (Sprint7 booted, screenshots `boot-clean-sprint7-01.png`, `boot-clean-sprint7-02.png`); manual product-owner/authorized-tester interactions required; remains open.
+- Storage cleanup executed: three confirmed-unnecessary VM files removed (pre-recovery VDI ≈38.76 GB, repair VHD ≈32.55 GiB, Sprint7 VDI ≈16.58 GB); ≈93.1 GB recovered; stale VirtualBox media registrations safely closed via `closemedium disk` (no `--delete`); both obsolete entries removed; active VM disks remain healthy.
+- Final host disk measurement: free ≈230.86 GB after final cleanup.
+- Final release go / no-go: NO-GO; CBS Shield 1.0 production readiness not claimable.
 
 
