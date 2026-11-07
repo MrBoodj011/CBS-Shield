@@ -926,6 +926,25 @@ body {
   background: #ffffff;
 }
 
+/* Responsive tables always use fixed layout so columns stay bounded by the
+   container width at every viewport size (not only inside the 980px media
+   query). Column proportions are refined inside the narrow-media block. */
+.table--responsive {
+  table-layout: fixed;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Quarantine table column proportions — apply at all widths so the table
+   never exceeds its container, even above the 980px media-query boundary. */
+.table--responsive .col-file { width: 20%; }
+.table--responsive .col-threat { width: 10%; }
+.table--responsive .col-location { width: 25%; }
+.table--responsive .col-size { width: 8%; }
+.table--responsive .col-date { width: 15%; }
+.table--responsive .col-status { width: 12%; }
+.table--responsive .col-actions { width: 10%; }
+
 .table th {
   position: sticky;
   top: 0;
