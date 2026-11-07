@@ -152,7 +152,16 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
           />
         ) : (
           <div className="table-wrap">
-            <table className="table table--quarantine">
+            <table className="table table--responsive">
+              <colgroup>
+                <col className="col-file" />
+                <col className="col-threat" />
+                <col className="col-location" />
+                <col className="col-size" />
+                <col className="col-date" />
+                <col className="col-status" />
+                <col className="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>{L("Fichier", "File")}</th>

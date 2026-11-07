@@ -3658,6 +3658,15 @@ button.event-row:hover {
   .table--responsive .col-duration { width: 12%; }
   .table--responsive .col-outcome { width: 14%; }
   .table--responsive .col-details { width: 14%; }
+
+  /* Quarantine table column proportions */
+  .table--responsive .col-file { width: 22%; }
+  .table--responsive .col-threat { width: 12%; }
+  .table--responsive .col-location { width: 28%; }
+  .table--responsive .col-size { width: 10%; }
+  .table--responsive .col-date { width: 15%; }
+  .table--responsive .col-status { width: 10%; }
+  .table--responsive .col-actions { width: 10%; }
 }
 
 @media (max-width: 880px) {
