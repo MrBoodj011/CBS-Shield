@@ -3636,6 +3636,7 @@ button.event-row:hover {
   .table--responsive {
     table-layout: fixed;
     min-width: 0;
+    width: 100%;
   }
 
   .table--responsive th {
