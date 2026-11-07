@@ -16,13 +16,28 @@
 | D96-05 / D96-06 source corrections | **Implemented** (commit `c418351`) |
 | Phase E corrective gates after corrections | **PASS** (fmt, clippy `-D warnings`, Rust workspace tests, UI build, UI tests) |
 | Release candidate installer rebuilt | **PASS** (build exit 0; SHA-256 `668BAE31210D33E19DE1ECC2962309F743D6432F0444E3051A98F5CD1150B341`; 2,920,878 bytes; Authenticode **NotSigned**) |
-| Native GUI regression (44 cases, 6 defects) | **BLOCKED** — not re-executed (guest input channel unavailable) |
+| Native GUI regression (44 cases, 6 defects) | **BLOCKED** → **PARTIALLY LIFTED** (2026-11-07 task harness executed GUI probe/responsive/installer/firewall tasks; full 44-case re-run pending) — not re-executed conclusively |
 | Setup Wizard native execution | **NOT EXECUTED** (mission pending; guest input unavailable) |
 | Firewall Modal native execution | **NOT EXECUTED** (mission pending; guest input unavailable) |
 | Design mockups (Mission 6) | **CREATED** (2 directions, FR/EN + light/dark) — implementation **NOT** started; approval **pending** |
 | Final GO / NO-GO | **NO-GO for 1.0** — unsigned installer, unresolved native evidence, design approval pending |
 
 Sprint 9.7 definition of done: **not met** at the time of this report.
+
+---
+
+## 10. Native execution update — 2026-11-07 (automated task harness)
+
+During the final acceptance execution window the previously blocked native GUI path was re-attempted through a materially different, supported strategy: an in-process task harness using native Windows UI Automation (`UIAutomationClient` / `UIAutomationTypes`), `System.Windows.Forms.SendKeys`, GDI screenshot capture and user32 window control, delivered through the existing task/listener channel (`127.0.0.1:8099`, task scripts in `target/sprint96-channel/tasks`, results via `/out`, screenshots via `/blob`).
+
+Executed task evidence (2026-11-07):
+
+- `phase97gui_probe`: RC executable started (pid 11148); UIA window `Tauri Window` **FOUND**; window bounds set (1016x740); GDI screenshot OK; result posted.
+- `phase97resp`: responsive sweep executed at 800x560 / 813x600 / 1024x768 / 1366x768 / 1920x1080 — window bounds applied exactly; screenshots OK; overflow flags computed (0 flags at 800x560).
+- `phase97install`: RC installer lifecycle task executed — download (2,920,878 bytes), SHA-256 `668B…B341`, Authenticode **NotSigned**, install exit 0, installed exe verified, app relaunched (pid 28416) running.
+- `phase97mods`: firewall nav interaction task executed — window found, click `Pare-feu` performed, screenshots captured.
+
+Consequence: the earlier blocker ("guest input channel unavailable") is **partially lifted** — native automated interaction, window management, screenshot capture and installer-lifecycle execution now function via the task harness. Remaining mandatory native acceptance steps (six failed-case re-run, full 44-case matrix, Setup Wizard, full security runtime regression, installer upgrade/uninstall/reinstall cycle for this RC) are still pending execution.
 
 ---
 
@@ -109,6 +124,17 @@ Source changed → rebuild required (Mission 1 source corrections).
 - Source commit for this build: `c418351`.
 
 Native install/upgrade/uninstall/data-preservation verification in a guest: **BLOCKED** (guest input unavailable). Must be executed before this RC can be accepted.
+
+### 6.1 2026-11-07 automated task-harness execution (installer lifecycle task `phase97install`)
+
+- RC installer downloaded via task endpoint: OK (2,920,878 bytes).
+- Installer SHA-256: `668BAE31210D33E19DE1ECC2962309F743D6432F0444E3051A98F5CD1150B341`.
+- Authenticode: **NotSigned**.
+- NSIS install (`/S`) exit code: 0.
+- Installed executable verified present (8,165,888 bytes, v0.9.0-dev).
+- Application relaunched after install and running.
+
+Full upgrade/uninstall/reinstall cycles for this RC: **OUTSTANDING**.
 
 ---
 
