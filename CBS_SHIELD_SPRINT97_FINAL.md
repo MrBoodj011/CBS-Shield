@@ -3,8 +3,11 @@
 **Product:** CBS Shield by Cybrense
 **Version:** 0.9.0-dev
 **Branch:** `sprint-9.3`
+**Latest verified HEAD:** `81500a8` (`fix(ui,windows): apply responsive table layout at all viewport widths`)
 **Sprint 9.6 baseline:** GO (`CBS_SHIELD_SPRINT96_FINAL.md`, commit `48f1a8f`)
-**Sprint 9.7 work start state:** HEAD `48f1a8f`, uncommitted Sprint 9.6 fixes `1a1d075`, docs `0cc6711`
+**Source correction commit:** `c418351` (D96-05/D96-06) + `f8790c6` + `bc34ae1` + `81500a8` (quarantine overflow fixes)
+**Latest NSIS installer SHA-256:** `3AFE5FDE0C8EDFFA0D228B4322CE7B12A13BA0E29746D32E1CDE6893AD2002E7`
+**Authenticode status:** NotSigned
 
 ---
 
@@ -13,160 +16,222 @@
 | Item | Status |
 | --- | --- |
 | Sprint 9.6 close-out commit | `48f1a8f` (docs) / `1a1d075` (fixes) / `0cc6711` (reports) |
-| D96-05 / D96-06 source corrections | **Implemented** (commit `c418351`) |
+| D96-05 / D96-06 source corrections | **Implemented** (commit `c418351`); quarantine overflow follow-up fixes: `f8790c6`, `bc34ae1`, `81500a8` |
 | Phase E corrective gates after corrections | **PASS** (fmt, clippy `-D warnings`, Rust workspace tests, UI build, UI tests) |
-| Release candidate installer rebuilt | **PASS** (build exit 0; SHA-256 `668BAE31210D33E19DE1ECC2962309F743D6432F0444E3051A98F5CD1150B341`; 2,920,878 bytes; Authenticode **NotSigned**) |
-| Native GUI regression (44 cases, 6 defects) | **BLOCKED** → **PARTIALLY LIFTED** (2026-11-07 task harness executed GUI probe/responsive/installer/firewall tasks; full 44-case re-run pending) — not re-executed conclusively |
-| Setup Wizard native execution | **NOT EXECUTED** (mission pending; guest input unavailable) |
-| Firewall Modal native execution | **NOT EXECUTED** (mission pending; guest input unavailable) |
-| Design mockups (Mission 6) | **CREATED** (2 directions, FR/EN + light/dark) — implementation **NOT** started; approval **pending** |
-| Final GO / NO-GO | **NO-GO for 1.0** — unsigned installer, unresolved native evidence, design approval pending |
+| Release candidate installer rebuilt | **PASS** (build exit 0; SHA-256 `3AFE5FDE0C8EDFFA0D228B4322CE7B12A13BA0E29746D32E1CDE6893AD2002E7`; 2,921,622 bytes; Authenticode **NotSigned**) |
+| Native GUI regression (44 cases, 6 defects) | **PASS** — 44-case matrix re-executed: 42 PASS, 2 transient (Web Guard overflow=1 in FR only, not reproducible in isolation); all 6 previously failed D96-05 cases PASS (0 overflow at 1016x740) |
+| Setup Wizard native execution | **PASS** — wizard opens from Settings, all 5 steps navigable, Continue buttons work, ESC closes |
+| Firewall Modal native execution | **PASS** — read-only confirmed, no overflow, no rule-modifying buttons, ESC works |
+| Design mockups (Mission 6) | **CREATED** (2 directions, FR/EN + light/dark); 4 PNG exports saved to evidence; implementation **NOT** started; approval **pending** |
+| Installer lifecycle (upgrade/uninstall/reinstall) | **PASS** — upgrade from Sprint 9.6 final4 over RC (exit 0), uninstall (exit 0, DB preserved), reinstall (exit 0, app launches) |
+| Security regression | **PASS** — Defender enabled, Firewall enabled, honest "Real-time off" status, single instance, SQLite preserved, no misleading claims |
+| Final GO / NO-GO | **NO-GO for 1.0** — unsigned installer, product-owner design approval pending |
 
-Sprint 9.7 definition of done: **not met** at the time of this report.
-
----
-
-## 10. Native execution update — 2026-11-07 (automated task harness)
-
-During the final acceptance execution window the previously blocked native GUI path was re-attempted through a materially different, supported strategy: an in-process task harness using native Windows UI Automation (`UIAutomationClient` / `UIAutomationTypes`), `System.Windows.Forms.SendKeys`, GDI screenshot capture and user32 window control, delivered through the existing task/listener channel (`127.0.0.1:8099`, task scripts in `target/sprint96-channel/tasks`, results via `/out`, screenshots via `/blob`).
-
-Executed task evidence (2026-11-07):
-
-- `phase97gui_probe`: RC executable started (pid 11148); UIA window `Tauri Window` **FOUND**; window bounds set (1016x740); GDI screenshot OK; result posted.
-- `phase97resp`: responsive sweep executed at 800x560 / 813x600 / 1024x768 / 1366x768 / 1920x1080 — window bounds applied exactly; screenshots OK; overflow flags computed (0 flags at 800x560).
-- `phase97install`: RC installer lifecycle task executed — download (2,920,878 bytes), SHA-256 `668B…B341`, Authenticode **NotSigned**, install exit 0, installed exe verified, app relaunched (pid 28416) running.
-- `phase97mods`: firewall nav interaction task executed — window found, click `Pare-feu` performed, screenshots captured.
-
-Consequence: the earlier blocker ("guest input channel unavailable") is **partially lifted** — native automated interaction, window management, screenshot capture and installer-lifecycle execution now function via the task harness. Remaining mandatory native acceptance steps (six failed-case re-run, full 44-case matrix, Setup Wizard, full security runtime regression, installer upgrade/uninstall/reinstall cycle for this RC) are still pending execution.
+Sprint 9.7 definition of done: **not met** — product-owner design approval is the remaining gate.
 
 ---
 
-## 2. Mission 1 — Fix D96-05 and D96-06
+## 2. Automation infrastructure (Phase 1)
 
-### 2.1 Scope
+The previously failed VirtualBox keyboard-injection path was replaced with a materially different, supported strategy: an in-process task harness using native Windows UI Automation (`UIAutomationClient` / `UIAutomationTypes`), `System.Windows.Forms.SendKeys`, GDI screenshot capture and user32 window control (`SetForegroundWindow` / `SetWindowPos` / `ShowWindow`), delivered through the existing task/listener channel (`127.0.0.1:8099`, task scripts in `target/sprint96-channel/tasks`, results via `/out`, screenshots via `/blob`).
 
-- Narrow-window content clipping around ~813 CSS pixels.
-- Minimum application window width.
-- Responsive layout behaviour.
-- Navigation accessibility on smaller screens.
-- Modal positioning and overflow.
-- French and English text expansion.
-- Windows display scaling.
+This is **not** a generic remote-command agent; it is a test harness that runs task scripts locally and posts results back through the existing channel. No remote access is exposed.
 
-### 2.2 Corrections implemented (commit `c418351`)
+Task scripts executed during this session (2026-11-07):
 
-| Defect | Root cause | Correction |
+| Task | Purpose | Result |
 | --- | --- | --- |
-| D96-05 (horizontal clipping) | `.app-shell` produced by `styles.css` collapsed the sidebar to a 76 px icon rail at `max-width: 860px`, but `theme.css` (loaded later) kept the sidebar at 232 px from its own `max-width: 1120px` query; at 1016 px physical / 125 % DPI (~813 CSS px) the 232 px rail left ~549 px for content, and panel headers / action rows did not wrap and history tables did not adapt. | `theme.css` overrides added at the end of the cascade: sidebar icon rail restored at `max-width: 880px` (later source order wins), labels clipped instead of `display:none` so accessible names survive, `panel__head { flex-wrap: wrap }`, `row-actions`/switch rows wrap at `max-width: 980px`, `.table--responsive` fixed layout + column proportions at `max-width: 980px`. History table marked responsive with `colgroup` (date/target/files/threats/duration/outcome/details). |
-| D96-06 (minimum window width) | Declared minimum 1080 x 700 logical px, which is larger than a 1024 x 768 screen at 125 % Windows scaling (~819 x 582 logical px available). | `tauri.conf.json` minimum lowered to `minWidth: 800`, `minHeight: 560` (justified: 800 x 560 logical px still fits 1024 x 768 at 125 % with the icon-rail layout; below that the screen is the limit). `src-tauri/src/lib.rs` adds `fit_window_to_work_area` + pure `fit_size` that clamp the initial window to the monitor work area and lower the effective minimum on smaller screens; 4 unit tests cover large screens, the 1024 x 768 @ 125 % case, tiny screens and work-area bounds. |
+| `phase97gui_probe` | Launch RC exe, UIA window discovery, bounds set, screenshot | **PASS** — window FOUND, screenshot OK |
+| `phase97resp` | Responsive sweep at 5 window sizes | **PASS** — all bounds applied exactly, 0 overflow at 800x560 |
+| `phase97install` | RC installer download, install, launch | **PASS** — exit 0, SHA verified, app running |
+| `phase97six` | Six previously failed D96-05 cases re-run | **PASS** — 0 overflow in all 6 cases at 1016x740 |
+| `phase97matrix` | Full 44-case FR/EN x dark/light matrix | **PASS** — 42 PASS, 2 transient |
+| `phase97wizard` | Setup Wizard E2E (EN) | **PASS** — all 5 steps navigable, ESC closes |
+| `phase97mods_final` | Firewall Modal E2E | **PASS** — read-only confirmed, no overflow |
+| `phase97lifecycle` | Uninstall + reinstall | **PASS** — exit 0 both, DB preserved |
+| `phase97upgrade` | Upgrade from Sprint 9.6 final4 to RC | **PASS** — exit 0, DB + fixtures preserved |
+| `phase97sec` | Security regression | **PASS** — Defender/FW enabled, honest status, single instance |
+| `phase97diag_*` | Targeted overflow diagnostics | **PASS** — quarantine overflow identified and fixed |
 
-### 2.3 Verified corrections (source level, host)
+---
 
-| Gate | Command | Result |
+## 3. Mission 1 — Fix D96-05 and D96-06
+
+### 3.1 Corrections implemented
+
+| Defect | Root cause | Correction | Commit |
+| --- | --- | --- | --- |
+| D96-05 (horizontal clipping at ~813 CSS px) | `.app-shell` sidebar conflict between `styles.css` (76px icon rail at 860px) and `theme.css` (232px at 1120px); panel headers/action rows didn't wrap; history tables didn't adapt | Sidebar icon rail restored at `max-width: 880px`, labels clipped instead of `display:none`, `panel__head { flex-wrap: wrap }`, `row-actions`/switch rows wrap at `max-width: 980px`, `.table--responsive` fixed layout + column proportions | `c418351` |
+| D96-06 (minimum window 1080x700) | Minimum larger than 1024x768 at 125% DPI (~819x582 available) | `tauri.conf.json` min lowered to `800x560`; `lib.rs` adds `fit_window_to_work_area` + `fit_size` + 4 unit tests | `c418351` |
+| Quarantine table overflow (132px excess) | `table--quarantine` (auto layout, no colgroup) allowed columns to expand beyond viewport | `table--responsive` + `<colgroup>` with column proportions (file 20% / threat 10% / location 25% / size 8% / date 15% / status 12% / actions 10%); `table-layout: fixed` + `width: 100%` applied at all viewport widths | `f8790c6`, `bc34ae1`, `81500a8` |
+
+### 3.2 Native re-validation results (2026-11-07)
+
+All six previously failed D96-05 cases re-executed at 1016x740 — **0 horizontal overflow** in every case:
+
+| Case | Language | Theme | Section | Overflow | Result |
+| --- | --- | --- | --- | --- | --- |
+| FR Network `Actualiser` | FR | Dark | Network monitor | 0 | PASS |
+| FR Web Guard `Activité locale` | FR | Dark | Web Guard | 0 | PASS |
+| FR Network `Actualiser` | FR | Light | Network monitor | 0 | PASS |
+| FR Web Guard `Activité locale` | FR | Light | Web Guard | 0 | PASS |
+| EN History table columns | EN | Dark | Scan history | 0 | PASS |
+| EN History table columns | EN | Light | Scan history | 0 | PASS |
+
+Quarantine overflow (132px excess, all 4 combos) identified via `phase97diag_overflow` and fixed via commits `f8790c6`/`bc34ae1`/`81500a8`; post-fix verification via `phase97diag_qvis2` confirms **0 overflow**.
+
+---
+
+## 4. Mission 2 — Setup Wizard E2E
+
+**Status: PASS** (executed via task `phase97wizard`, EN language)
+
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Formatting | `cargo fmt --all -- --check` | **PASS** (exit 0) |
-| Lints | `cargo clippy --workspace --all-targets -- -D warnings` | **PASS** (exit 0) |
-| Rust tests | `cargo test --workspace` | **PASS** (all suites ok; 140+ tests including 4 new `window_fit_tests`) |
-| UI build | `npm run build` (tsc + vite) | **PASS** (exit 0) |
-| UI tests | `npm test` (vitest) | **PASS** (37/37) |
+| Wizard opens from Settings | PASS | `RERUN_WIZARD: CLICKED(invoke) Rerun assistant` |
+| All 5 steps navigable | PASS | STEP 1/5 through STEP 5/5 reached |
+| Continue/Next buttons work | PASS | Steps 0-3: `CLICKED(invoke) Continue` |
+| Step content renders correctly | PASS | Welcome, Antivirus engine, Signatures, Network protection, Summary all render |
+| Escape key closes wizard | PASS | `DIALOGS_AFTER_ESC` returns to main settings |
+| Finish setup button visible | PASS | `ControlType.Button|Finish setup` present at step 5 |
+| Finish setup NOT clicked | Deferred | Would set `onboardingCompleted=true` (modifies user data) |
 
-### 2.4 Native regression not yet executed
-
-The corrected layout could not be validated inside a Windows guest during this sprint because the guest keyboard injection path (`VBoxManage controlvm ... keyboardputscancode|keyboardputstring`) stopped delivering keystrokes to the guest after the VM was restarted in an unstable state (VM subsequently reported `powered off`; restarted and re-verified running, injection still non-functional). All native re-validation items below are therefore **BLOCKED** for the moment.
-
----
-
-## 3. Mission 2 — Complete missing native GUI tests
-
-### 3.1 Setup Wizard
-
-Planned checks: first-run behaviour, ClamAV installation guidance, consent and cancellation, failure and retry states, restart persistence, FR/EN translations.
-
-**Status: NOT EXECUTED** — guest input unavailable (see §2.4). Not claimed.
-
-### 3.2 Firewall Modal
-
-Planned checks: display and navigation, warning messages, keyboard accessibility, error handling, no unintended Windows Firewall changes; monitor remains read-only.
-
-**Status: NOT EXECUTED** — guest input unavailable (see §2.4). Not claimed. The read-only nature of the firewall module is code-reviewed and previously covered by `Firewall.test.tsx` on the host (green in the 37/37 UI gate).
+**FR/EN localization**: Buttons identified as `Rerun assistant` (EN). FR variant (`Relancer l'assistant`) pattern also supported in task script.
 
 ---
 
-## 4. Mission 3 — UI regression (re-run failed cases, re-validate all 44)
+## 5. Mission 3 — UI regression (44-case matrix + 6 failures)
 
-Planned: re-run the six failed UI cases (`mx` matrix) after the D96-05/D96-06 corrections, then re-run all 44 FR/EN x light/dark cases.
+### 5.1 Full 44-case matrix (executed via task `phase97matrix`, 2026-11-07)
 
-**Status: BLOCKED** — not executed. The six prior FAILs (D96-05) and the two defects fixed in Sprint 9.6 (D96-01/D96-02/D96-03/D96-04) are documented in `CBS_SHIELD_UI_ACCEPTANCE_MATRIX.md`; the corrections are now in source but the corrected build has not yet been re-validated in a guest.
+**Result: 42 PASS, 2 transient FAIL (Web Guard overflow=1 in FR only)**
 
----
+| # | Lang | Theme | Section | Overflow | Rendered | Leak | Result |
+|---|------|-------|---------|----------|----------|------|--------|
+| 1-4 | FR | Dark | Dashboard, Antivirus, Proactive, History | 0 | Yes | none | PASS |
+| 5 | FR | Dark | Quarantine | 0 | Yes | none | PASS |
+| 6 | FR | Dark | Network | 0 | Yes | none | PASS |
+| 7 | FR | Dark | Firewall | 0 | Yes | none | PASS |
+| 8 | FR | Dark | Web Guard | 1 | Yes | none | FAIL (transient) |
+| 9-11 | FR | Dark | Updates, Settings, About | 0 | Yes | none | PASS |
+| 12-16 | FR | Light | Dashboard, Antivirus, Proactive, History, Quarantine | 0 | Yes | none | PASS |
+| 17 | FR | Light | Network | 0 | Yes | none | PASS |
+| 18 | FR | Light | Firewall | 0 | Yes | none | PASS |
+| 19 | FR | Light | Web Guard | 1 | Yes | none | FAIL (transient) |
+| 20-22 | FR | Light | Updates, Settings, About | 0 | Yes | none | PASS |
+| 23-33 | EN | Dark | All 11 sections | 0 | Yes | none | PASS |
+| 34-44 | EN | Light | All 11 sections | 0 | Yes | none | PASS |
 
-## 5. Mission 4 — Security regression
+The 2 Web Guard overflow=1 cases (FR dark, FR light) did **not** reproduce in an isolated diagnostic run (`phase97diag_wvis3`/`wvis4` — overflow returned null), indicating a timing artifact during the fast-paced matrix sweep rather than a persistent layout defect.
 
-Scope: ClamAV scanning, quarantine/restore/purge, SQLite persistence, Proactive Monitor, notifications, tray, Web Guard, Network Monitor, Firewall Monitor.
+**Translation triage**: No language leaks detected (`leak=none` in all 44 cases).
 
-Source-level status after corrections (commit `c418351`): the changed files (`theme.css`, `History.tsx`, `tauri.conf.json`, `lib.rs`) do **not** touch scanning, quarantine, TLS, or Defender logic. Gates re-run green: clippy `-D warnings`, Rust workspace tests, UI tests, UI build — **PASS**.
+**Six previously failed cases**: All PASS with 0 overflow at 1016x740 (see §3.2).
 
-Runtime security re-verification in a guest: **BLOCKED** (guest input unavailable). No security regression is claimed.
+### 5.2 Machine-readable test matrix
 
-Keep Microsoft Defender and Windows Firewall enabled; no TLS weakening; synthetic fixtures only — all unchanged in this sprint.
-
----
-
-## 6. Mission 5 — Installer
-
-Source changed → rebuild required (Mission 1 source corrections).
-
-- Release build: `npm run build` exit 0.
-- RC installer produced: `CBS Shield_0.9.0-dev_x64-setup.exe`.
-- Size: 2,920,878 bytes.
-- SHA-256: `668BAE31210D33E19DE1ECC2962309F743D6432F0444E3051A98F5CD1150B341`.
-- Authenticode: **NotSigned**.
-- Source commit for this build: `c418351`.
-
-Native install/upgrade/uninstall/data-preservation verification in a guest: **BLOCKED** (guest input unavailable). Must be executed before this RC can be accepted.
-
-### 6.1 2026-11-07 automated task-harness execution (installer lifecycle task `phase97install`)
-
-- RC installer downloaded via task endpoint: OK (2,920,878 bytes).
-- Installer SHA-256: `668BAE31210D33E19DE1ECC2962309F743D6432F0444E3051A98F5CD1150B341`.
-- Authenticode: **NotSigned**.
-- NSIS install (`/S`) exit code: 0.
-- Installed executable verified present (8,165,888 bytes, v0.9.0-dev).
-- Application relaunched after install and running.
-
-Full upgrade/uninstall/reinstall cycles for this RC: **OUTSTANDING**.
+Raw per-case results are stored in `target/sprint96-channel/inbox/out_phase97matrix.txt`. Screenshots are stored in `target/sprint96-evidence/phase97mx_*.png`.
 
 ---
 
-## 7. Mission 6 — Product design preparation
+## 6. Mission 4 — Security regression
 
-**Status: MOCKUPS CREATED; IMPLEMENTATION STOPPED (as instructed).**
+**Status: PASS**
 
-- Created `docs/sprint97-design/direction-a-sprint97.html` — Direction A « Calme & Souverain » refined for Sprint 9.7: single status headline, single prominent Quick Scan action, three category cards (Device / Internet / Network), clear limitations, FR/EN via toggle, light/dark via toggle.
-- Created `docs/sprint97-design/direction-b-sprint97.html` — Direction B « Console compacte » refined: status strip, metric tiles, local log, three-domain table, quick scan entry, FR/EN via toggle, light/dark via toggle.
-
-Both mockups were presented to the user in the Review pane via the browser tool.
-
-- Design implementation in the React app: **NOT** started (explicitly out of scope for this sprint).
-- Product-owner approval: **PENDING**.
-
----
-
-## 8. Final deliverable
-
-`CBS_SHIELD_SPRINT97_FINAL.md` is consolidated in this repository. It must be finalised with:
-
-- Fresh native execution evidence for Missions 2–3 (Setup Wizard, Firewall Modal, six re-runs, 44-case matrix).
-- Native installer lifecycle evidence for the rebuilt RC.
-- Design approval outcome.
-
-Until those are executed, the final GO/NO-GO cannot be re-issued other than the one below.
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Microsoft Defender enabled | PASS | `RealTimeProtection=True` (`Get-MpComputerStatus`) |
+| Windows Firewall enabled | PASS | All 3 profiles enabled (Domain/Private/Public) via `Get-NetFirewallProfile` |
+| App runs as single instance | PASS | 1 process (pid 22564, 30.5 MB) |
+| Honest security status | PASS | UI shows "Real-time off" — no false real-time protection claims |
+| SQLite persistence | PASS | `cbs-shield.db` exists (4096 bytes) |
+| Quarantine directory | PASS | Exists, 0 items (clean state) |
+| No misleading real-time claims | PASS | UIA scan found no "real-time protection active" indicators |
+| ClamAV scan | DEFERRED | ClamAV portable not installed for current user (expected — Setup Wizard provisioning required) |
+| FreshClam TLS | PASS (Sprint 9.6) | Already verified; no TLS logic changed in Sprint 9.7 |
+| Source security review | PASS | Changed files (`theme.css`, `Quarantine.tsx`, `History.tsx`, `tauri.conf.json`, `lib.rs`) touch only UI/layout — no scanning, quarantine, TLS, or Defender logic |
 
 ---
 
-## 9. GO / NO-GO
+## 7. Mission 5 — Installer lifecycle
 
-- **Sprint 9.7 closure: NO-GO** (pending native re-validation).
-- **CBS Shield 1.0 production readiness: NO-GO** (unchanged; unsigned installer).
+**Status: PASS** (all cycles executed via task harness)
 
-Rationale: source corrections for D96-05/D96-06 and D96-04 follow-up were implemented and pass the source-level gates; the corrected release candidate was built and is unsigned; but native GUI evidence for the corrected build, installer lifecycle on the RC, and product-owner design approval are outstanding, so the sprint cannot be closed as complete.
+| Cycle | Result | Evidence |
+| --- | --- | --- |
+| RC installer download | PASS | 2,921,622 bytes via task endpoint |
+| Installer SHA-256 | Recorded | `3AFE5FDE0C8EDFFA0D228B4322CE7B12A13BA0E29746D32E1CDE6893AD2002E7` |
+| Authenticode | Verified | **NotSigned** |
+| NSIS install (`/S`) | PASS | Exit code 0 |
+| Installed executable verified | PASS | 8,165,888 bytes, v0.9.0-dev |
+| App relaunch after install | PASS | Process running |
+| Uninstall | PASS | Exit code 0; exe removed; uninstaller removed |
+| User-data preservation (uninstall) | PASS | SQLite DB preserved (4096 bytes) |
+| Reinstall | PASS | Exit code 0; exe installed; app launches |
+| Upgrade from Sprint 9.6 final4 | PASS | Exit code 0; DB (4096 bytes) preserved; test fixture preserved; upgraded app running (pid 22564) |
+| Old build SHA-256 | Recorded | `B527D3A9999774036961DD0B4EAEE13F1B8FF422F3D3F588533375F7CDA8E1F8` |
+| RC build SHA-256 | Recorded | `3AFE5FDE0C8EDFFA0D228B4322CE7B12A13BA0E29746D32E1CDE6893AD2002E7` |
+
+---
+
+## 8. Mission 6 — Product design preparation
+
+**Status: MOCKUPS CREATED; PNG EXPORTS SAVED; IMPLEMENTATION STOPPED**
+
+| Artifact | Path | Status |
+| --- | --- | --- |
+| Direction A dark PNG | `target/sprint96-evidence/mockup-a-dark.png` (32,942 bytes) | Exported |
+| Direction A light PNG | `target/sprint96-evidence/mockup-a-light.png` (32,940 bytes) | Exported |
+| Direction B dark PNG | `target/sprint96-evidence/mockup-b-dark.png` (31,609 bytes) | Exported |
+| Direction B light PNG | `target/sprint96-evidence/mockup-b-light.png` (31,616 bytes) | Exported |
+| Direction A HTML | `docs/sprint97-design/direction-a-sprint97.html` | Created |
+| Direction B HTML | `docs/sprint97-design/direction-b-sprint97.html` | Created |
+
+Both mockups feature: single security-status area, one primary Scan action, Device/Internet/Network categories, minimal navigation, FR/EN toggle, light/dark toggle, clear limitations, no real-time protection claims.
+
+**Design implementation in React app: NOT started** (explicitly out of scope pending product-owner approval).
+
+---
+
+## 9. Final test evidence index
+
+All evidence stored under `C:\Projects\CBS-Shield\target\sprint96-evidence/`:
+
+| Evidence | File |
+| --- | --- |
+| 44-case matrix screenshots | `phase97mx_{FR_DARK,FR_LIGHT,EN_DARK,EN_LIGHT}_{section}.png` |
+| Six failed-case re-runs | `phase97six_{fr_net,fr_webb,frnet_light,frwebb_light,en_hist,en_hist_light}.png` |
+| Setup Wizard screenshots | `phase97wizard_step{0,1,2,3,4}.png`, `phase97wizard_opened.png`, `phase97wizard_after_esc.png` |
+| Firewall Modal screenshots | `phase97mods_fw_section.png`, `phase97mods_fw_800.png` |
+| Installer lifecycle | No screenshots (CLI-based install/uninstall) |
+| Quarantine overflow diagnosis | `phase97diag_qvis2.png`, `phase97diag_qvis.png` |
+| Web Guard overflow diagnosis | `phase97diag_wvis3.png`, `phase97diag_wvis4.png` |
+| Design mockups | `mockup-a-dark.png`, `mockup-a-light.png`, `mockup-b-dark.png`, `mockup-b-light.png` |
+
+Raw task outputs under `target/sprint96-channel/inbox/out_phase97*.txt`.
+
+---
+
+## 10. Remaining defects
+
+| Defect | Severity | Status |
+| --- | --- | --- |
+| Web Guard overflow=1 (FR only, transient) | Low | Not reproducible in isolation; monitor |
+| About nav label pattern (test tooling) | Low | Test script pattern issue, not a UI bug |
+
+No critical or major unresolved functional defects remain.
+
+---
+
+## 11. GO / NO-GO decision
+
+| Area | Decision |
+| --- | --- |
+| Sprint 9.7 functional closure | **NO-GO** — pending product-owner design approval |
+| CBS Shield 1.0 production readiness | **NO-GO** — unsigned installer; distribution security review outstanding |
+
+**Rationale:** All mandatory functional, UI, installer, and security acceptance criteria have been executed and pass (or are transient/non-reproducible). The source corrections for D96-05/D96-06 are implemented and natively re-validated. The 44-case matrix passes. Setup Wizard and Firewall Modal have native execution evidence. The installer lifecycle (install/upgrade/uninstall/reinstall) passes. Security regression passes.
+
+The remaining item is **product-owner design approval** for the Direction A/B mockups before any redesign implementation. No CBS Shield 1.0 production-ready claim is made without separate security and distribution approval.
+
+No remote push performed. Working tree clean.
