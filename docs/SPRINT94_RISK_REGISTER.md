@@ -56,3 +56,52 @@ No UI redesign or Intrusion Guard implementation was undertaken. Previous genera
 - Final release go / no-go: NO-GO; CBS Shield 1.0 production readiness not claimable.
 
 
+
+### Sprint 9.6 execution addendum (2026-11-06 -> 2026-11-07)
+
+Executed on real VirtualBox guests with native Windows UI Automation and real
+screenshots. Evidence: `target/sprint96-channel/inbox/out_phase*` and
+`target/sprint96-evidence/`. Detailed reports: `CBS_SHIELD_FRESHCLAM_TLS_FIX.md`,
+`CBS_SHIELD_UI_ACCEPTANCE_MATRIX.md`, `CBS_SHIELD_SPRINT96_FINAL.md`.
+
+- **R94-3 (High) - RESOLVED.** Root cause was an incomplete Windows trust store:
+  `GlobalSign ECC Root CA - R4` (thumbprint `6BA0B098E171EF5AADFE4815807710F4BD6F0B28`)
+  was absent, and `database.clamav.net` chains to it through Google Trust
+  Services `WE1`. The supported Windows automatic root update provisioned R4;
+  `freshclam` then downloaded `daily` 28175 / `main` 63 / `bytecode` 339
+  with `OpenSSL verify result: 0`, `sigtool --info` reported `Verification OK`
+  for all three, and `clamscan` loaded `ClamAV 1.5.4/28175` (exit 0). No TLS
+  option was disabled, no certificate exception was added, the product
+  `freshclam.conf` was not weakened, and Defender was untouched. A temporary
+  `CACertificate` diagnostic config was rejected by FreshClam and played no
+  part in the success. Exit condition met on guest `CBS-Shield-Sprint94-Fresh`.
+- **R94-4 (High) - RESOLVED with documented limits.** Native GUI acceptance
+  executed: tray (open app, open quarantine, open network monitor, quit, single
+  process), notifications (real toast plus Windows notification centre entry
+  from a real quick scan), Proactive Monitor end-to-end (consent, baseline,
+  new-file detection, real ClamAV analysis, history persistence, pause/resume/
+  stop/start, restart persistence, max 1 concurrent `clamscan`, ~31-41 MB RAM,
+  no duplicate workers), 44/44 UI cases (11 sections x FR/EN x dark/light) with
+  real screenshots, and Phase D dialogs/keyboard/resize. Four functional defects
+  were fixed and re-verified: proactive consent never enabled the worker,
+  auto-watch reported stopped after restart while cycles ran, the EN Settings
+  disclaimer leaked French, and modals were positioned relative to scrolled
+  content instead of the viewport. Residual limits: open horizontal clipping at
+  1016x740 (D96-05), app minimum width 1080 px / default 1380x900 greater than a
+  1024x768 guest (D96-06), firewall rule-detail modal and setup wizard NOT
+  EXECUTED. No visual redesign and no Intrusion Guard work was performed.
+- **R94-5 (Medium) - superseded hash, unpackaged status unchanged.** The final
+  Sprint 9.6 installer is `CBS Shield_0.9.0-dev_x64-setup-final4.exe`,
+  SHA-256 `B527D3A9999774036961DD0B4EAEE13F1B8FF422F3D3F588533375F7CDA8E1F8`
+  (2,919,719 bytes), Authenticode `NotSigned`. Install/upgrade/uninstall were
+  exercised in the guest with exit code 0; the app database, WAL/SHM and the 15
+  recorded scans were byte-identical after upgrade and survived uninstall plus
+  reinstall. The package remains unsigned and no signed claim is made.
+- **Phase E gates on final source: PASS.** `cargo fmt` clean,
+  `cargo clippy --workspace --all-targets -- -D warnings` clean, Rust
+  workspace tests pass (1 ignored ClamAV integration test), UI production build
+  succeeds, UI tests 37/37.
+- **Sprint 9.6 go / no-go: GO with documented open layout defect and the two
+  NOT EXECUTED dialogs.** CBS Shield 1.0 production readiness is still not
+  claimed: the installer is unsigned, R94-8 and R94-9 remain open, and Defender
+  remains the continuous antivirus.
