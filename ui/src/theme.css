@@ -154,7 +154,9 @@ body {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    /* Keep the finished section out of the containing-block chain so
+       position:fixed modals stay anchored to the viewport. */
+    transform: none;
   }
 }
 

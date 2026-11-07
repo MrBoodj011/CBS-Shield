@@ -774,7 +774,9 @@ code,
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    /* `none` (not translateY(0)) keeps the finished container from becoming the
+       containing block for position:fixed modals rendered inside a section. */
+    transform: none;
   }
 }
 

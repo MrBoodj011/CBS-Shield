@@ -26,7 +26,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
 use crate::commands::engine::{probe_with_settings, signatures_blocked};
-use crate::state::{AppState, BatchSummary};
+use crate::state::{AppState, AutoScanState, BatchSummary};
 
 /// How often the worker checks for new queued files when idle.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(4);
@@ -85,6 +85,30 @@ pub fn spawn_if_enabled(app: AppHandle) {
     }
 }
 
+/// Begin a new worker generation: enable consent, reset cancellation and
+/// issue a fresh identity. Returns the new generation.
+///
+/// `enabled` MUST become `true` here: `run()` treats `enabled == false` as an
+/// immediate exit, so leaving it unset makes the worker stop on its first poll
+/// even though the caller persisted consent.
+fn begin_worker(inner: &mut AutoScanState) -> u64 {
+    inner.generation += 1;
+    inner.enabled = true;
+    inner.running = true;
+    inner.cancel_requested = false;
+    inner.cancel = Arc::new(Notify::new());
+    inner.busy = None;
+    inner.last_error = None;
+    inner.generation
+}
+
+/// Mark the persisted consent off and request cooperative cancellation.
+fn end_worker(inner: &mut AutoScanState) {
+    inner.enabled = false;
+    inner.cancel_requested = true;
+    inner.busy = None;
+}
+
 /// Start (or restart) the worker. The caller must have persisted the consent.
 pub fn start(app: AppHandle) {
     // Cancel any previous worker and issue a fresh identity.
@@ -94,14 +118,7 @@ pub fn start(app: AppHandle) {
             .auto_scan
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        inner.generation += 1;
-        let generation = inner.generation;
-        inner.cancel = Arc::new(Notify::new());
-        inner.cancel_requested = false;
-        inner.busy = None;
-        inner.running = true;
-        inner.last_error = None;
-        generation
+        begin_worker(&mut inner)
     };
     tauri::async_runtime::spawn(async move {
         run(app, generation).await;
@@ -116,9 +133,7 @@ pub fn stop(app: &AppHandle) {
             .auto_scan
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        inner.enabled = false;
-        inner.cancel_requested = true;
-        inner.busy = None;
+        end_worker(&mut inner);
     }
     // The worker picks up either `enabled == false` or the (same-generation)
     // cancel notification within one poll interval and exits by itself.
@@ -457,4 +472,52 @@ fn exit_because_replaced(app: &AppHandle, generation: u64) {
         inner.generation != generation || !inner.enabled,
         "exit_because_replaced called on a current worker"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: `start()` used to leave `enabled = false`, so `run()` exited
+    /// on its first poll and automatic proactive analysis never scanned a file
+    /// even though the user had consented.
+    #[test]
+    fn starting_worker_enables_consent_and_bumps_generation() {
+        let mut inner = AutoScanState::default();
+        assert!(!inner.enabled);
+
+        let first = begin_worker(&mut inner);
+        assert_eq!(first, 1);
+        assert!(inner.enabled, "start must enable the worker");
+        assert!(inner.running);
+        assert!(!inner.cancel_requested);
+        assert!(inner.busy.is_none());
+        assert!(inner.last_error.is_none());
+
+        // Restarting issues a fresh identity and keeps consent enabled.
+        let second = begin_worker(&mut inner);
+        assert_eq!(second, 2);
+        assert!(inner.enabled);
+        assert!(inner.running);
+    }
+
+    #[test]
+    fn stopping_worker_revokes_consent_and_requests_cancel() {
+        let mut inner = AutoScanState::default();
+        begin_worker(&mut inner);
+        end_worker(&mut inner);
+        assert!(!inner.enabled);
+        assert!(inner.cancel_requested);
+        assert!(inner.busy.is_none());
+    }
+
+    #[test]
+    fn worker_requires_enabled_after_start() {
+        // `run()` treats `enabled == false` as an immediate exit. This is the
+        // exact invariant that regressed in Sprint 9.6.
+        let mut inner = AutoScanState::default();
+        assert!(!inner.enabled, "default state must not auto-start");
+        begin_worker(&mut inner);
+        assert!(inner.enabled, "worker would exit immediately otherwise");
+    }
 }

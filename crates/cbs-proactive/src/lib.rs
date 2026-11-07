@@ -380,6 +380,16 @@ impl ProactiveMonitor {
                 runtime.persisted.clone()
             };
             if persisted.auto_watch && !persisted.directories.is_empty() {
+                // The worker below really is a running monitor. Reflect that in
+                // the status immediately, otherwise the UI reports "stopped"
+                // while cycles keep executing after a restart (Sprint 9.6).
+                {
+                    let mut state = runtime
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state.running = true;
+                    state.paused = false;
+                }
                 let runtime = Arc::clone(&runtime);
                 let stop_flag = Arc::clone(&stop_flag);
                 let handle = thread::spawn(move || {
@@ -723,6 +733,34 @@ mod tests {
         assert_eq!(runtime.tracking.len(), 3);
         assert_eq!(runtime.events.len(), 0); // baseline, limited
         assert!(runtime.last_error.is_some());
+    }
+
+    #[test]
+    fn auto_watch_reload_reports_running_monitor() {
+        // Regression: `load()` spawned the auto-watch worker but left
+        // `running = false`, so the UI claimed surveillance was stopped while
+        // cycles kept running in the background.
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = config_in(temp.path());
+        let watch_dir = tempfile::tempdir().unwrap();
+        let persisted = PersistedState {
+            config: MonitorConfig::default(),
+            directories: vec![watch_dir.path().display().to_string()],
+            auto_watch: true,
+        };
+        fs::write(&config_path, serde_json::to_vec(&persisted).unwrap()).unwrap();
+
+        let monitor = ProactiveMonitor::load(&config_path);
+        let status = monitor.snapshot().unwrap();
+        assert!(
+            status.running,
+            "auto-watch must report the auto-started worker as running"
+        );
+        assert!(!status.paused);
+        assert!(status.auto_watch);
+
+        monitor.stop().unwrap();
+        assert!(!monitor.snapshot().unwrap().running);
     }
 
     #[test]

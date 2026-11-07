@@ -649,11 +649,10 @@ export function Settings({
               </li>
             </ul>
             <p className="about__disclaimer">
-              {info?.disclaimer ??
-                L(
-                  "CBS Shield ne fournit pas de protection en temps réel et ne remplace pas Microsoft Defender.",
-                  "CBS Shield does not provide real-time protection and does not replace Microsoft Defender.",
-                )}
+              {L(
+                "CBS Shield assure une analyse antivirus manuelle expérimentale. Il ne fournit pas de protection en temps réel et ne remplace pas Microsoft Defender. Aucun pilote noyau, aucune règle de pare-feu et aucune modification de Defender ne sont effectués.",
+                "CBS Shield provides experimental manual antivirus scanning. It does not provide real-time protection and does not replace Microsoft Defender. No kernel driver, firewall rule or Defender modification is performed.",
+              )}
             </p>
             <p className="muted">
               {L(
