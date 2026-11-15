@@ -2,9 +2,9 @@ import { ShieldAlert } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AppHeader } from "./components/AppHeader";
 import { Sidebar } from "./components/Sidebar";
 import { SetupWizard } from "./components/SetupWizard";
-import { TopBar } from "./components/TopBar";
 import { useToast } from "./components/Toasts";
 import { api, errorMessage } from "./lib/api";
 import { I18nProvider, translate, type Language, type TranslationKey } from "./lib/i18n";
@@ -24,7 +24,6 @@ import type {
   DashboardStats,
   EngineStatus,
   QuarantineRecord,
-  ScanRecord,
   SectionId,
   SettingsView,
   SignatureInventory,
@@ -86,7 +85,6 @@ export default function App() {
   const [inventory, setInventory] = useState<SignatureInventory | null>(null);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [scans, setScans] = useState<ScanRecord[]>([]);
   const [quarantine, setQuarantine] = useState<QuarantineRecord[]>([]);
   const [quarantineLoading, setQuarantineLoading] = useState(true);
   const [offline, setOffline] = useState<string | null>(null);
@@ -95,6 +93,7 @@ export default function App() {
   const autoSetupHandled = useRef(false);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const language: Language = settings?.language === "en" ? "en" : "fr";
+  const theme: "dark" | "light" | "system" = (settings?.theme as "dark" | "light" | "system") ?? "system";
 
   const refreshEngine = useCallback(
     async (notify = false) => {
@@ -138,19 +137,15 @@ export default function App() {
   );
 
   const refreshHistory = useCallback(async () => {
-    const [statsResult, scansResult] = await Promise.allSettled([
+    const [statsResult] = await Promise.allSettled([
       api.dashboardStats(),
-      api.listScans(20),
     ]);
     if (statsResult.status === "fulfilled") setStats(statsResult.value);
-    if (scansResult.status === "fulfilled") setScans(scansResult.value);
 
     const failure =
       statsResult.status === "rejected"
         ? statsResult.reason
-        : scansResult.status === "rejected"
-          ? scansResult.reason
-          : null;
+        : null;
     if (failure) {
       setOffline((current) => current ?? errorMessage(failure));
     }
@@ -171,13 +166,12 @@ export default function App() {
     let cancelled = false;
 
     const boot = async () => {
-      const [infoResult, engineResult, settingsResult, statsResult, scansResult, quarantineResult, inventoryResult] =
+      const [infoResult, engineResult, settingsResult, statsResult, quarantineResult, inventoryResult] =
         await Promise.allSettled([
           api.appInfo(),
           api.engineStatus(),
           api.getSettings(),
           api.dashboardStats(),
-          api.listScans(20),
           api.listQuarantine(),
           api.signatureInventory(),
         ]);
@@ -187,11 +181,10 @@ export default function App() {
       if (engineResult.status === "fulfilled") setEngine(engineResult.value);
       if (settingsResult.status === "fulfilled") setSettings(settingsResult.value);
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
-      if (scansResult.status === "fulfilled") setScans(scansResult.value);
       if (quarantineResult.status === "fulfilled") setQuarantine(quarantineResult.value);
       if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
 
-      const failure = [engineResult, settingsResult, statsResult, scansResult, quarantineResult].find(
+      const failure = [engineResult, settingsResult, statsResult, quarantineResult].find(
         (result) => result.status === "rejected",
       );
       if (failure && failure.status === "rejected") {
@@ -216,7 +209,8 @@ export default function App() {
   useEffect(() => {
     if (!settings) return;
     const preferred = settings.theme;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");    const apply = () => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
       const resolved =
         preferred === "system" ? (media.matches ? "dark" : "light") : preferred;
       document.documentElement.dataset.theme = resolved === "light" ? "light" : "dark";
@@ -245,18 +239,48 @@ export default function App() {
   const handleSettingsSaved = useCallback(
     (saved: SettingsView) => {
       const languageChanged = saved.language !== settings?.language;
+      const themeChanged = saved.theme !== settings?.theme;
       setSettings(saved);
       void refreshEngine();
       if (languageChanged) {
         // Keep the native tray menu in sync with the interface language.
         void api.setTrayLanguage(saved.language).catch(() => undefined);
       }
+      if (themeChanged) {
+        // Theme is applied via the settings effect above; nothing extra needed here.
+      }
     },
-    [refreshEngine, settings?.language],
+    [refreshEngine, settings?.language, settings?.theme],
   );
 
   const t = (key: TranslationKey) => translate(language, key);
   const L = (fr: string, en: string) => (language === "en" ? en : fr);
+
+  const handleLanguageChange = useCallback(
+    async (next: Language) => {
+      try {
+        const saved = await api.updateSettings({ language: next });
+        setSettings(saved);
+        void api.setTrayLanguage(saved.language).catch(() => undefined);
+        void refreshEngine();
+      } catch (error) {
+        toast({ tone: "error", title: translate(language, "shell.diagnosticFailed"), message: errorMessage(error) });
+      }
+    },
+    [language, toast, refreshEngine],
+  );
+
+  const handleThemeChange = useCallback(
+    async (next: "dark" | "light" | "system") => {
+      try {
+        const saved = await api.updateSettings({ theme: next });
+        setSettings(saved);
+      } catch (error) {
+        toast({ tone: "error", title: translate(language, "shell.diagnosticFailed"), message: errorMessage(error) });
+      }
+    },
+    [language, toast],
+  );
 
   // Tray destinations ("Open Quarantine" / "Open Network Monitor") navigate
   // through the normal section state; the tray never mutates anything else.
@@ -270,6 +294,7 @@ export default function App() {
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
+
   const meta = {
     title: t(SECTION_META[section].title),
     subtitle: t(SECTION_META[section].subtitle),
@@ -281,15 +306,13 @@ export default function App() {
         <Sidebar section={section} onSelect={setSection} engine={engine} info={info} />
 
         <div className="app-main" ref={mainRef}>
-          <TopBar
-            title={meta.title}
-            subtitle={meta.subtitle}
-            engine={engine}
-            engineLoading={engineLoading}
-            signatureMaxAgeDays={settings?.signatureMaxAgeDays ?? 7}
-            onRefresh={() => {
-              void refreshAll();
-            }}
+          <AppHeader
+            sectionTitle={meta.title}
+            sectionSubtitle={meta.subtitle}
+            language={language}
+            theme={theme}
+            onLanguageChange={handleLanguageChange}
+            onThemeChange={handleThemeChange}
           />
 
           <main className="content" aria-live="polite">
@@ -339,11 +362,6 @@ export default function App() {
               {section === "dashboard" && (
                 <Dashboard
                   engine={engine}
-                  inventory={inventory}
-                  stats={stats}
-                  scans={scans}
-                  quarantine={quarantine}
-                  info={info}
                   onNavigate={setSection}
                   refreshToken={refreshTick}
                 />
@@ -417,33 +435,33 @@ export default function App() {
 
             <footer className="app-footer">
               <span>
-                CBS Shield v{info?.version ?? "0.8.0-dev"} - {info?.vendor ?? "Cybrense"}
+                CBS Shield v{info?.version ?? "0.9.0-dev"} - {info?.vendor ?? "Cybrense"}
               </span>
               <span>{t("shell.disclaimer")}</span>
             </footer>
           </main>
         </div>
+        <SetupWizard
+          open={setupOpen}
+          engine={engine}
+          settings={settings}
+          onClose={() => setSetupOpen(false)}
+          onCompleted={(saved) => {
+            setSettings(saved);
+            setSetupOpen(false);
+            void refreshAll();
+          }}
+          onEngineChanged={(status) => {
+            setEngine(status);
+            void api.signatureInventory().then(setInventory).catch(() => undefined);
+          }}
+          onSettingsChanged={handleSettingsSaved}
+          onNavigate={(next) => {
+            setSection(next);
+            setSetupOpen(false);
+          }}
+        />
       </div>
-      <SetupWizard
-        open={setupOpen}
-        engine={engine}
-        settings={settings}
-        onClose={() => setSetupOpen(false)}
-        onCompleted={(saved) => {
-          setSettings(saved);
-          setSetupOpen(false);
-          void refreshAll();
-        }}
-        onEngineChanged={(status) => {
-          setEngine(status);
-          void api.signatureInventory().then(setInventory).catch(() => undefined);
-        }}
-        onSettingsChanged={handleSettingsSaved}
-        onNavigate={(next) => {
-          setSection(next);
-          setSetupOpen(false);
-        }}
-      />
     </I18nProvider>
   );
 }

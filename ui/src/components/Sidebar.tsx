@@ -14,7 +14,6 @@ import {
 
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import type { AppInfo, EngineStatus, SectionId } from "../types";
-import { Logo } from "./Logo";
 
 interface NavItem {
   id: SectionId;
@@ -67,45 +66,39 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
   const { t } = useI18n();
 
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <Logo size={38} />
-        <div className="brand__text">
-          <span className="brand__name">CBS SHIELD</span>
-          <span className="brand__vendor">by Cybrense</span>
+    <nav className="nav-rail" aria-label={t("nav.main")}>
+      {NAV_GROUPS.map((group) => (
+        <div className="nav-rail__group" key={group.labelKey}>
+          <span className="nav-rail__group-label">{t(group.labelKey)}</span>
+          {group.items.map((item) => {
+            const Icon = item.icon;
+            const active = section === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`nav-rail__item ${active ? "is-active" : ""}`}
+                onClick={() => onSelect(item.id)}
+                aria-current={active ? "page" : undefined}
+                title={t(item.labelKey)}
+              >
+                <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                <span className="nav-rail__item-text">{t(item.labelKey)}</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
-
-      <nav className="nav" aria-label={t("nav.main")}>
-        {NAV_GROUPS.map((group) => (
-          <div className="nav-group" key={group.labelKey}>
-            <span className="nav-group__label">{t(group.labelKey)}</span>
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              const active = section === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`nav__item ${active ? "is-active" : ""}`}
-                  onClick={() => onSelect(item.id)}
-                  aria-current={active ? "page" : undefined}
-                  title={t(item.labelKey)}
-                >
-                  <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
-                  <span className="nav__text">{t(item.labelKey)}</span>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-
-      <div className="sidebar__footer">
-        <div className={`engine-mini ${engine?.installed ? "is-online" : "is-offline"}`}>
-          <span className="engine-mini__dot" aria-hidden="true" />
+      ))}
+      <div className="nav-rail__footer">
+        <div className="nav-rail__engine">
+          <span
+            className={`nav-rail__engine-dot ${engine?.installed ? "is-online" : "is-offline"}`}
+            aria-hidden="true"
+          />
           <div>
-            <strong>{engine?.installed ? t("engine.ready") : t("engine.missing")}</strong>
+            <strong>
+              {engine?.installed ? t("engine.ready") : t("engine.missing")}
+            </strong>
             <span>
               {engine?.installed
                 ? `ClamAV · ${engine.signatureVersion ?? t("signature.missing")}`
@@ -113,11 +106,27 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
             </span>
           </div>
         </div>
-        <div className="sidebar__meta">
-          <span>v{info?.version ?? "0.7.0-dev"}</span>
-          <span className="sidebar__experimental">{t("common.experimental")}</span>
+        <div className="nav-rail__meta">
+          <span>v{info?.version ?? "0.9.0-dev"}</span>
+          <span className="nav-rail__experimental">{t("common.experimental")}</span>
         </div>
       </div>
-    </aside>
+    </nav>
   );
 }
+
+/* Slim experimental chip on the rail footer. */
+const railStyle = document.createElement("style");
+railStyle.textContent = `
+  .nav-rail__experimental {
+    padding: 1px 7px;
+    border-radius: 99px;
+    border: 1px solid rgba(255, 180, 84, 0.4);
+    color: var(--warning);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+`;
+document.head.appendChild(railStyle);

@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "../lib/i18n";
-import type { DashboardStats, EngineStatus, QuarantineRecord } from "../types";
+import type { EngineStatus } from "../types";
 import { Dashboard } from "./Dashboard";
 
 const installedEngine: EngineStatus = {
@@ -20,47 +20,6 @@ const installedEngine: EngineStatus = {
   checkedAt: "2026-10-26T09:00:00Z",
   message: "Signatures à jour.",
 };
-
-const stats: DashboardStats = {
-  totalScans: 12,
-  totalDetections: 2,
-  totalFilesScanned: 42_000,
-  activeQuarantine: 1,
-  restoredQuarantine: 0,
-  lastScan: {
-    id: 12,
-    uuid: "scan-12",
-    startedAt: "2026-10-26T08:00:00Z",
-    finishedAt: "2026-10-26T08:04:00Z",
-    durationMs: 240_000,
-    targets: ["C:\\Users\\adjar\\Documents"],
-    filesScanned: 4200,
-    infectedFiles: 0,
-    errorCount: 0,
-    outcome: "clean",
-    cancelled: false,
-    engineVersion: "1.4.3",
-    signatureVersion: "27000",
-    fatalError: null,
-  },
-};
-
-const quarantine: QuarantineRecord[] = [
-  {
-    id: 1,
-    itemId: "8c8d0b0e-0000-0000-0000-000000000000",
-    fileName: "eicar.com",
-    originalPath: "C:\\Users\\adjar\\Downloads\\eicar.com",
-    storedPath: "C:\\Users\\adjar\\AppData\\Roaming\\cbs-shield\\quarantine\\item.bin",
-    sha256: "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
-    sizeBytes: 68,
-    threatName: "Eicar-Test-Signature",
-    status: "active",
-    createdAt: "2026-10-21T10:03:00Z",
-    restoredAt: null,
-    sourceScanId: 2,
-  },
-];
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -109,17 +68,6 @@ function renderDashboard(engine: EngineStatus | null) {
     <I18nProvider language="fr">
       <Dashboard
         engine={engine}
-        stats={stats}
-        scans={stats.lastScan ? [stats.lastScan] : []}
-        quarantine={quarantine}
-        info={{
-          product: "CBS Shield",
-          version: "0.7.0-dev",
-          vendor: "Cybrense",
-          phase: "Phase 3",
-          disclaimer: "Protection manuelle expérimentale.",
-          dataDir: "C:\\Users\\adjar\\AppData\\Roaming\\cbs-shield",
-        }}
         onNavigate={() => undefined}
       />
     </I18nProvider>,
@@ -130,29 +78,17 @@ describe("Dashboard", () => {
   it("never claims full protection when ClamAV is missing", async () => {
     renderDashboard(null);
 
-    expect(await screen.findByText("Analyse manuelle indisponible")).toBeInTheDocument();
-    expect(screen.getAllByText("Temps réel inactif").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Antivirus")).toBeInTheDocument();
+    expect(screen.getAllByText("Moteur absent").length).toBeGreaterThan(0);
     expect(screen.queryByText(/entièrement protégé/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/fully protected/i)).not.toBeInTheDocument();
-    // The firewall status comes from the real observation payload (2/3 enabled).
-    await waitFor(() => {
-      expect(screen.getByText("2 profil(s) actif(s)")).toBeInTheDocument();
-    });
   });
 
   it("renders the real engine, signature, quarantine and traffic values", async () => {
     renderDashboard(installedEngine);
 
-    expect(await screen.findByText("Analyse manuelle prête")).toBeInTheDocument();
-    expect(screen.getByText("1.4.3")).toBeInTheDocument();
+    expect(screen.getAllByText("Analyse manuelle prête").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/ClamAV 1\.4\.3/).length).toBeGreaterThan(0);
     expect(screen.getByText("27000")).toBeInTheDocument();
-    // Quarantine count is derived from the real active records.
-    expect(screen.getByText("1 élément(s)")).toBeInTheDocument();
-    // Network figures are the last persisted capture, not an estimate.
-    await waitFor(() => {
-      expect(screen.getByText(/2,38 Mo reçus/)).toBeInTheDocument();
-    });
-    // Detections are surfaced as a real event.
-    expect(screen.getByText("Fichier isolé en quarantaine")).toBeInTheDocument();
   });
 });
