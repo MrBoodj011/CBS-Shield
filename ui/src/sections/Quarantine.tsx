@@ -1,7 +1,5 @@
 import {
   Archive,
-  CircleAlert,
-  CircleCheck,
   KeyRound,
   LoaderCircle,
   RotateCcw,
@@ -17,6 +15,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDateTime, shortHash, truncateMiddle } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 import type { QuarantineRecord, SettingsView } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface QuarantineProps {
   items: QuarantineRecord[];
@@ -109,17 +108,17 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
 
   return (
     <div className="section-stack">
-      <div className="banner banner--info">
+      <div className="banner banner--info banner--compact">
         <KeyRound size={19} aria-hidden="true" />
         <div>
           <strong>{L("Coffre chiffré, aucune suppression automatique", "Encrypted vault, no automatic deletion")}</strong>
-          <span>
-            {L(
+        </div>
+        <InfoTip>
+          {L(
               "Les fichiers sont chiffrés en AES-256-GCM. La clé est protégée par Windows DPAPI pour votre compte utilisateur. Une restauration ou une suppression définitive exige toujours une confirmation explicite.",
               "Files are encrypted with AES-256-GCM. The key is protected by Windows DPAPI for your user account. Restoring or permanently deleting an item always requires explicit confirmation.",
             )}
-          </span>
-        </div>
+        </InfoTip>
       </div>
 
       <section className="panel">
@@ -346,26 +345,6 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
         onClose={() => setPendingDelete(null)}
       />
 
-      <div className="status-notes">
-        <div className="status-note">
-          <CircleCheck size={17} aria-hidden="true" />
-          <span>
-            {L(
-              "Les fichiers isolés restent lisibles uniquement par votre compte Windows.",
-              "Quarantined files remain readable only by your Windows account.",
-            )}
-          </span>
-        </div>
-        <div className="status-note">
-          <CircleAlert size={17} aria-hidden="true" />
-          <span>
-            {L(
-              "Aucune analyse automatique du coffre, aucun envoi vers un service externe.",
-              "No automatic vault scanning, nothing sent to an external service.",
-            )}
-          </span>
-        </div>
-      </div>
     </div>
   );
 }

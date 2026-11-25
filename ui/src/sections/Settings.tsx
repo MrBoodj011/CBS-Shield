@@ -27,6 +27,7 @@ import {
 } from "../lib/format";
 import { translate, useI18n } from "../lib/i18n";
 import type { AppInfo, EngineStatus, SettingsView } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface SettingsProps {
   settings: SettingsView | null;
@@ -176,17 +177,17 @@ export function Settings({
 
   return (
     <div className="section-stack">
-      <div className="banner banner--neutral">
+      <div className="banner banner--neutral banner--compact">
         <Info size={19} aria-hidden="true" />
         <div>
           <strong>{L("Réglages locaux", "Local settings")}</strong>
-          <span>
-            {L(
+        </div>
+        <InfoTip>
+          {L(
               "Tous les paramètres sont enregistrés dans SQLite sur ce poste. Aucun compte, aucun serveur, aucune télémétrie.",
               "All settings are stored in SQLite on this machine. No account, no server, no telemetry.",
             )}
-          </span>
-        </div>
+        </InfoTip>
       </div>
 
       <div className="settings-grid">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppHeader } from "./components/AppHeader";
 import { Sidebar } from "./components/Sidebar";
+import { InfoTip } from "./components/InfoTip";
 import { SetupWizard } from "./components/SetupWizard";
 import { useToast } from "./components/Toasts";
 import { api, errorMessage } from "./lib/api";
@@ -336,16 +337,16 @@ export default function App() {
             )}
 
             {settings && !settings.onboardingCompleted && !setupOpen && (
-              <div className="banner banner--warning">
+              <div className="banner banner--warning banner--with-action">
                 <ShieldAlert size={19} aria-hidden="true" />
                 <div>
                   <strong>{L("Préparation non terminée", "Setup not finished")}</strong>
-                  <span>
+                  <InfoTip>
                     {L(
                       "Le moteur, les signatures et l'état du pare-feu n'ont pas encore été vérifiés. CBS Shield ne prétend pas à une protection complète.",
                       "The engine, signatures and firewall state have not been checked yet. CBS Shield does not claim complete protection.",
                     )}
-                  </span>
+                  </InfoTip>
                   <div className="banner__actions">
                     <button
                       type="button"
@@ -435,12 +436,6 @@ export default function App() {
               )}
             </div>
 
-            <footer className="app-footer">
-              <span>
-                CBS Shield v{info?.version ?? "0.9.0-dev"} · {info?.vendor ?? "Cybrense"}
-              </span>
-              <span>{t("shell.disclaimer")}</span>
-            </footer>
           </main>
         </div>
         <SetupWizard

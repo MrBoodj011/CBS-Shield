@@ -26,6 +26,7 @@ import type {
   ProactiveEvent,
   ProactiveStatus,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 type Localize = (fr: string, en: string) => string;
 type Busy =
@@ -353,12 +354,12 @@ export function ProactiveMonitor() {
           <div>
             <span className="panel__eyebrow">{L("Périmètre", "Scope")}</span>
             <h2>{L("Dossiers surveillés", "Watched folders")}</h2>
-            <p className="panel__note">
-              {L(
+            <div className="note-tip">
+              <InfoTip text>{L(
                 "Tout dossier ajouté arrête la surveillance en cours : redémarrez-la ensuite explicitement.",
                 "Any folder change stops the current monitoring: restart it explicitly afterwards.",
-              )}
-            </p>
+              )}</InfoTip>
+            </div>
           </div>
           <div className="row-actions">
             <button
@@ -421,12 +422,12 @@ export function ProactiveMonitor() {
           <div>
             <span className="panel__eyebrow">{L("Ressources", "Resources")}</span>
             <h2>{L("Limites de surveillance", "Monitoring limits")}</h2>
-            <p className="panel__note">
-              {L(
+            <div className="note-tip">
+              <InfoTip text>{L(
                 "Ces limites contrôlent le coût d'observation ; elles ne garantissent pas la détection de tout événement en temps réel.",
                 "These limits control observation cost; they do not guarantee real-time detection of every event.",
-              )}
-            </p>
+              )}</InfoTip>
+            </div>
           </div>
           <div className="row-actions">
             <button
@@ -579,12 +580,12 @@ export function ProactiveMonitor() {
             )}
           />
         )}
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "Vider la file ne lance pas d'analyse : passez les fichiers à l'onglet Antivirus, la détection reste manuelle.",
             "Draining the queue starts no analysis: send the files to the Antivirus tab; detection stays manual.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
       </section>
 
       <section className="panel" aria-label={L("Analyse automatique", "Automatic analysis")}>

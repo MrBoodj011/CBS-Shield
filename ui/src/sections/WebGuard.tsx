@@ -43,6 +43,7 @@ import type {
   WebGuardImportResult,
   WebGuardView,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 type Localize = (fr: string, en: string) => string;
 type TabId =
@@ -534,17 +535,19 @@ export function WebGuard() {
         </div>
         <div className="webguard-hero__body">
           <span className="panel__eyebrow">{L("Prototype DNS local", "Local DNS prototype")}</span>
-          <h2 id="webguard-status-title">
-            {proxy.running
-              ? L("Prototype actif sur loopback", "Prototype active on loopback")
-              : L("Prototype arrêté — aucun filtrage DNS actif", "Prototype stopped — no active DNS filtering")}
-          </h2>
-          <p>
-            {L(
-              "CBS Shield ne modifie pas le DNS de Windows et ne filtre pas encore le trafic de tout le système. Ce module démontre un moteur de listes et un résolveur local que vous pouvez tester explicitement.",
-              "CBS Shield does not change Windows DNS and does not yet filter system-wide traffic. This module demonstrates a list engine and a local resolver that you can test explicitly.",
-            )}
-          </p>
+          <div className="title-with-tip">
+            <h2 id="webguard-status-title">
+              {proxy.running
+                ? L("Prototype actif sur loopback", "Prototype active on loopback")
+                : L("Prototype arrêté — aucun filtrage DNS actif", "Prototype stopped — no active DNS filtering")}
+            </h2>
+            <InfoTip>
+              {L(
+                "CBS Shield ne modifie pas le DNS de Windows et ne filtre pas encore le trafic de tout le système. Ce module démontre un moteur de listes et un résolveur local que vous pouvez tester explicitement.",
+                "CBS Shield does not change Windows DNS and does not yet filter system-wide traffic. This module demonstrates a list engine and a local resolver that you can test explicitly.",
+              )}
+            </InfoTip>
+          </div>
           <div className="webguard-pills">
             <span className="webguard-pill">
               <Network size={13} /> {proxy.endpoint}
@@ -689,12 +692,12 @@ export function WebGuard() {
                   <strong>{health.probableVpn ? L("Oui, à vérifier", "Yes, check") : L("Aucun indice", "No hint")}</strong>
                 </div>
               </div>
-              <p className="panel__note">
-                {L(
+              <div className="note-tip">
+                <InfoTip text>{L(
                   "Lecture seule via GetAdaptersAddresses et le registre. Aucun adaptateur, service ou résolveur n'est modifié.",
                   "Read-only via GetAdaptersAddresses and the registry. No adapter, service or resolver is changed.",
-                )}
-              </p>
+                )}</InfoTip>
+              </div>
               <button type="button" className="button button--ghost button--small" onClick={() => setTab("diagnostics")}>
                 <Stethoscope size={14} /> {L("Ouvrir le diagnostic", "Open diagnostics")}
               </button>
@@ -898,12 +901,12 @@ export function WebGuard() {
               <div>
                 <span className="panel__eyebrow">{L("Règles de blocage", "Blocking rules")}</span>
                 <h2>{L("Domaines bloqués", "Blocked domains")}</h2>
-                <p className="panel__note">
-                  {L(
+                <div className="note-tip">
+                  <InfoTip text>{L(
                     "Une règle couvre aussi ses sous-domaines. Les autorisations restent prioritaires. Aucun domaine n'est ajouté automatiquement.",
                     "A rule also covers its subdomains. Allow entries remain higher priority. No domain is added automatically.",
-                  )}
-                </p>
+                  )}</InfoTip>
+                </div>
               </div>
               <div className="row-actions">
                 <Badge tone="danger">{formatNumber(counts.blocklist)}</Badge>
@@ -989,17 +992,17 @@ export function WebGuard() {
 
       {tab === "allowlist" && (
         <div className="section-stack" role="tabpanel">
-          <div className="banner banner--info">
+          <div className="banner banner--info banner--compact">
             <CheckCircle2 size={19} aria-hidden="true" />
             <div>
               <strong>{L("Les autorisations gagnent toujours", "Allow entries always win")}</strong>
-              <span>
-                {L(
+            </div>
+            <InfoTip>
+              {L(
                   "Utilisez cette liste pour corriger un faux positif documenté. Elle ne désactive pas une règle de blocage globale et ne modifie pas le DNS système.",
                   "Use this list to correct a documented false positive. It does not disable a global blocking rule and does not change system DNS.",
                 )}
-              </span>
-            </div>
+            </InfoTip>
           </div>
 
           <section className="panel">
@@ -1100,12 +1103,12 @@ export function WebGuard() {
               <div>
                 <span className="panel__eyebrow">{L("Historique local", "Local history")}</span>
                 <h2>{L("Activité DNS observée", "Observed DNS activity")}</h2>
-                <p className="panel__note">
-                  {L(
+                <div className="note-tip">
+                  <InfoTip text>{L(
                     "Maximum 300 événements, stockés localement. Aucun domaine n'est envoyé à un service distant.",
                     "At most 300 events, stored locally. No domain is sent to a remote service.",
-                  )}
-                </p>
+                  )}</InfoTip>
+                </div>
               </div>
               <button
                 type="button"
@@ -1412,17 +1415,17 @@ export function WebGuard() {
 
       {tab === "safety" && (
         <div className="section-stack" role="tabpanel">
-          <div className="banner banner--warning">
+          <div className="banner banner--warning banner--compact">
             <TriangleAlert size={19} aria-hidden="true" />
             <div>
               <strong>{L("Prototype — pas une protection complète", "Prototype — not complete protection")}</strong>
-              <span>
-                {L(
+            </div>
+            <InfoTip>
+              {L(
                   "Web Guard démontre un filtrage DNS local. Il ne remplace ni Microsoft Defender, ni un pare-feu, ni une passerelle DNS d'entreprise.",
                   "Web Guard demonstrates local DNS filtering. It replaces neither Microsoft Defender, nor a firewall, nor an enterprise DNS gateway.",
                 )}
-              </span>
-            </div>
+            </InfoTip>
           </div>
 
           <section className="panel">

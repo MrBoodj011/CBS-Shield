@@ -1384,3 +1384,195 @@ textarea.input {
     justify-content: flex-start;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Info tooltip — secondary explanations stay one hover/click away
+   -------------------------------------------------------------------------- */
+
+.infotip {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.infotip__trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: help;
+  transition: color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
+}
+
+.infotip__trigger:hover,
+.infotip__trigger[aria-expanded="true"] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.infotip__trigger--text {
+  display: inline-flex;
+  gap: 5px;
+  width: auto;
+  padding: 0 8px 0 4px;
+  border-radius: 99px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.infotip__bubble {
+  position: fixed;
+  z-index: 300;
+  display: none;
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
+
+.infotip__bubble.is-open {
+  display: block;
+  animation: cbs-fade-in var(--motion-fast) var(--ease) both;
+}
+
+.infotip__bubble code {
+  font-size: 11px;
+}
+
+/* Compact one-line notice: title only, details in an InfoTip. */
+.banner--compact {
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.banner--compact > div {
+  flex: 1;
+}
+
+.banner--compact strong {
+  font-size: var(--text-sm);
+}
+
+/* Head of a panel with a trailing InfoTip next to its title. */
+.title-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-tip {
+  display: flex;
+  margin: 6px 0;
+}
+
+/* Panel titles carry the meaning; uppercase eyebrows above them were noise. */
+.panel__head .panel__eyebrow {
+  display: none;
+}
+
+.scope-row {
+  padding: 12px 16px;
+}
+
+.scope-row h2 {
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+}
+
+.infotip__bubble .rule-list li {
+  font-size: var(--text-xs);
+}
+
+/* Collapsed secondary content ("Show details"). */
+.disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--motion-fast) var(--ease);
+}
+
+.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.disclosure[open] > summary {
+  margin-bottom: 10px;
+}
+
+/* A detail tip right after a panel title sits inline, icon only. */
+.panel__head > div:has(> h2 + .note-tip) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.panel__head > div > h2 + .note-tip {
+  margin: 0;
+}
+
+.panel__head > div > h2 + .note-tip .infotip__trigger--text {
+  width: 22px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.panel__head > div > h2 + .note-tip .infotip__trigger--text > span {
+  display: none;
+}
+
+/* Notice with a title, a tip and an action, laid out on a single row. */
+.banner--with-action {
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.banner--with-action > div {
+  flex: 1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.banner--with-action strong {
+  font-size: var(--text-sm);
+}
+
+.banner--with-action .banner__actions {
+  margin: 0 0 0 auto;
+}

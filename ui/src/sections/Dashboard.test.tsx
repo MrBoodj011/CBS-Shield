@@ -76,12 +76,25 @@ function renderDashboard(engine: EngineStatus | null) {
 
 describe("Dashboard", () => {
   it("never claims full protection when ClamAV is missing", async () => {
-    renderDashboard(null);
+    renderDashboard({
+      ...installedEngine,
+      installed: false,
+      engineVersion: null,
+      signatureVersion: null,
+      signatureState: "missing",
+    });
 
     expect(await screen.findByText("Antivirus")).toBeInTheDocument();
     expect(screen.getAllByText("Moteur absent").length).toBeGreaterThan(0);
     expect(screen.queryByText(/entièrement protégé/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/fully protected/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a neutral checking state while the engine status loads", async () => {
+    renderDashboard(null);
+
+    expect(await screen.findByText("Antivirus")).toBeInTheDocument();
+    expect(screen.queryByText("Moteur absent")).not.toBeInTheDocument();
   });
 
   it("renders the real engine, signature, quarantine and traffic values", async () => {

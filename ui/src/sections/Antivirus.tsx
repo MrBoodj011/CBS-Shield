@@ -61,6 +61,7 @@ import type {
   SettingsView,
   SignatureInventory,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface AntivirusProps {
   engine: EngineStatus | null;
@@ -506,12 +507,14 @@ export function Antivirus({
 
   return (
     <div className="section-stack">
-      <div className="banner banner--warning">
+      <div className="banner banner--warning banner--compact">
         <TriangleAlert size={19} aria-hidden="true" />
         <div>
           <strong>{t("av.banner.title")}</strong>
-          <span>{t("av.banner.body")}</span>
         </div>
+        <InfoTip>
+          {t("av.banner.body")}
+        </InfoTip>
       </div>
 
       {!engineLoading && !engine?.installed && (
@@ -942,7 +945,9 @@ export function Antivirus({
                       <span className="field__hint">{t("av.limits.durationHint")}</span>
                     </label>
                   </div>
-                  <p className="panel__note">{t("av.limits.rangeHint")}</p>
+                  <div className="note-tip">
+                    <InfoTip text>{t("av.limits.rangeHint")}</InfoTip>
+                  </div>
                 </details>
 
                 <div className="scan-controls">
@@ -1357,15 +1362,15 @@ export function Antivirus({
               </div>
             </dl>
 
-            <p className="panel__note">
-              {engine?.installed
+            <div className="note-tip">
+              <InfoTip text>{engine?.installed
                 ? freshnessText(
                     engine.signatureState,
                     engine.signatureAgeDays,
                     settings?.signatureMaxAgeDays,
                   )
-                : t("av.engineMissing.body")}
-            </p>
+                : t("av.engineMissing.body")}</InfoTip>
+            </div>
 
             <div className="path-box" title={engine?.databasePath ?? undefined}>
               <KeyRound size={14} />
@@ -1410,20 +1415,19 @@ export function Antivirus({
             </div>
           </section>
 
-          <section className="panel panel--muted">
-            <div className="panel__head">
-              <div>
-                <span className="panel__eyebrow">{t("av.scope.eyebrow")}</span>
-                <h2>{t("av.scope.title")}</h2>
-              </div>
+          <section className="panel panel--muted scope-row">
+            <div className="title-with-tip">
+              <h2>{t("av.scope.title")}</h2>
+              <InfoTip>
+                <ul className="rule-list rule-list--compact">
+                  <li>{t("av.scope.item1")}</li>
+                  <li>{t("av.scope.item2")}</li>
+                  <li>{t("av.scope.item3")}</li>
+                  <li>{t("av.scope.item4")}</li>
+                  <li>{t("av.scope.item5")}</li>
+                </ul>
+              </InfoTip>
             </div>
-            <ul className="rule-list rule-list--compact">
-              <li>{t("av.scope.item1")}</li>
-              <li>{t("av.scope.item2")}</li>
-              <li>{t("av.scope.item3")}</li>
-              <li>{t("av.scope.item4")}</li>
-              <li>{t("av.scope.item5")}</li>
-            </ul>
           </section>
         </aside>
       </div>
@@ -1475,7 +1479,9 @@ export function Antivirus({
             <option value="txt">Texte</option>
           </select>
         </label>
-        <p className="panel__note">{t("av.export.hint")}</p>
+        <div className="note-tip">
+          <InfoTip text>{t("av.export.hint")}</InfoTip>
+        </div>
       </Modal>
 
       <ConfirmDialog

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "../components/Badge";
+import { InfoTip } from "../components/InfoTip";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, outcomeTone, type Tone } from "../lib/format";
 import { useI18n, type TranslationKey } from "../lib/i18n";
@@ -35,15 +36,17 @@ interface DashboardProps {
   refreshToken?: number;
 }
 
-type Posture = "manual" | "degraded" | "unavailable";
+type Posture = "checking" | "manual" | "degraded" | "unavailable";
 
 const POSTURE_TONE: Record<Posture, Tone> = {
+  checking: "neutral",
   manual: "ok",
   degraded: "warning",
   unavailable: "danger",
 };
 
 const POSTURE_ICON: Record<Posture, LucideIcon> = {
+  checking: ShieldCheck,
   manual: ShieldCheck,
   degraded: ShieldAlert,
   unavailable: ShieldX,
@@ -100,7 +103,10 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
 
   const installed = Boolean(engine?.installed);
   const signatureState = engine?.signatureState ?? "unknown";
-  const posture: Posture = !installed
+  const loading = engine === null;
+  const posture: Posture = loading
+    ? "checking"
+    : !installed
     ? "unavailable"
     : signatureState === "upToDate"
       ? "manual"
@@ -203,10 +209,14 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
       id: "antivirus",
       name: "Antivirus",
       icon: ShieldCheck,
-      status: installed ? `ClamAV ${engine?.engineVersion ?? ""}`.trim() : t("engine.missing"),
-      tone: installed ? "ok" : "danger",
+      status: loading
+        ? t("engine.checking")
+        : installed
+          ? `ClamAV ${engine?.engineVersion ?? ""}`.trim()
+          : t("engine.missing"),
+      tone: loading ? "neutral" : installed ? "ok" : "danger",
       hint: installed ? t("dashboard.avHint") : t("posture.unavailableHint"),
-      meta: t(`signature.${signatureState}` as TranslationKey),
+      meta: loading ? "—" : t(`signature.${signatureState}` as TranslationKey),
     },
     {
       id: "webguard",
@@ -302,11 +312,16 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
             <PostureIcon size={28} strokeWidth={1.7} />
           </div>
           <div className="dash-hero__body">
-            <Badge tone={postureTone} dot>
-              {t(`posture.${posture}` as TranslationKey)}
-            </Badge>
+            <span className="title-with-tip">
+              <Badge tone={postureTone} dot>
+                {loading ? t("engine.checking") : t(`posture.${posture}` as TranslationKey)}
+              </Badge>
+              <InfoTip>
+                {loading ? t("dashboard.loading") : t(`posture.${posture}Hint` as TranslationKey)}{" "}
+                {t("posture.defender")}
+              </InfoTip>
+            </span>
             <h2 id="dash-hero-title">{t("dashboard.heroTitle")}</h2>
-            <p>{t(`posture.${posture}Hint` as TranslationKey)}</p>
           </div>
           <div className="dash-hero__actions">
             <button
@@ -333,11 +348,17 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
             <dt>{t("dashboard.engine")}</dt>
             <dd>
               <strong>
-                {installed ? `ClamAV ${engine?.engineVersion ?? ""}`.trim() : t("engine.missing")}
+                {loading
+                  ? "—"
+                  : installed
+                    ? `ClamAV ${engine?.engineVersion ?? ""}`.trim()
+                    : t("engine.missing")}
               </strong>
-              <Badge tone={installed ? "ok" : "danger"} subtle>
-                {installed ? t("engine.ready") : t("posture.unavailable")}
-              </Badge>
+              {!loading && (
+                <Badge tone={installed ? "ok" : "danger"} subtle>
+                  {installed ? t("engine.ready") : t("posture.unavailable")}
+                </Badge>
+              )}
             </dd>
           </div>
           <div>
@@ -393,7 +414,6 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
       <section className="dash-section" aria-labelledby="dash-overview">
         <header className="dash-section__head">
           <h2 id="dash-overview">{t("dashboard.overview")}</h2>
-          <span>{t("common.localOnly")}</span>
         </header>
         <div className="metric-grid">
           {metrics.map(({ label, value, icon: Icon, tone, target }) => (
@@ -421,7 +441,6 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
       <section className="dash-section" aria-labelledby="dash-modules">
         <header className="dash-section__head">
           <h2 id="dash-modules">{t("dashboard.modules")}</h2>
-          <span>{t("dashboard.modulesHint")}</span>
         </header>
         <div className="dash-modules">
           {modules.map(({ id, name, icon: Icon, status, tone, hint, meta }) => (
@@ -431,6 +450,7 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
               className="dash-module"
               onClick={() => onNavigate(id)}
               aria-label={`${name} · ${status}`}
+              title={hint}
             >
               <div className="dash-module__head">
                 <span className="dash-module__icon" aria-hidden="true">
@@ -441,7 +461,6 @@ export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }
               <Badge tone={tone} dot>
                 {status}
               </Badge>
-              <p>{hint}</p>
               <footer>
                 <span>{meta}</span>
                 <span className="dash-module__open">
