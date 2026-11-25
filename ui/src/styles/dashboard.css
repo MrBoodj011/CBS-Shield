@@ -1,0 +1,328 @@
+/* ==========================================================================
+   Dashboard
+   ========================================================================== */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* --- Status hero ------------------------------------------------------- */
+
+.dash-hero {
+  --hero-tone: var(--ok);
+  --hero-soft: var(--ok-soft);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.dash-hero.is-warning {
+  --hero-tone: var(--warning);
+  --hero-soft: var(--warning-soft);
+}
+
+.dash-hero.is-danger {
+  --hero-tone: var(--danger);
+  --hero-soft: var(--danger-soft);
+}
+
+.dash-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--hero-tone);
+}
+
+.dash-hero__main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 28px 28px 24px;
+}
+
+.dash-hero__icon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-lg);
+  background: var(--hero-soft);
+  color: var(--hero-tone);
+}
+
+.dash-hero__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dash-hero__body h2 {
+  font-size: var(--text-3xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.dash-hero__body p {
+  max-width: 640px;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+
+.dash-hero__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 230px;
+}
+
+.dash-hero__checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.dash-hero__checks > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 28px;
+}
+
+.dash-hero__checks > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.dash-hero__checks dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.dash-hero__checks dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.dash-hero__checks strong {
+  overflow: hidden;
+  font-size: var(--text-md);
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-hero__checks strong.mono {
+  font-size: var(--text-md);
+}
+
+/* --- Alerts ------------------------------------------------------------ */
+
+.banner > .dash-alert {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dash-alert > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+/* --- Sections ---------------------------------------------------------- */
+
+.dash-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dash-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.dash-section__head h2 {
+  font-size: var(--text-lg);
+}
+
+.dash-section__head span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.dash-metric {
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease);
+}
+
+.dash-metric:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* --- Module cards ------------------------------------------------------ */
+
+.dash-modules {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dash-module {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease);
+}
+
+.dash-module:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.dash-module__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-module__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text-soft);
+}
+
+.dash-module h3 {
+  font-size: var(--text-md);
+}
+
+.dash-module .badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-module p {
+  flex: 1;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.dash-module footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.dash-module footer > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-module__open {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Responsive -------------------------------------------------------- */
+
+@media (max-width: 1240px) {
+  .dash-modules {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .dash-hero__main {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dash-hero__actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .dash-hero__main {
+    padding: 22px 20px 18px;
+  }
+
+  .dash-hero__checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash-hero__checks > div {
+    padding: 12px 20px;
+  }
+
+  .dash-hero__checks > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .dash-modules {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

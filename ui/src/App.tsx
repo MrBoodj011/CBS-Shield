@@ -1,4 +1,4 @@
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, WifiOff } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -318,6 +318,7 @@ export default function App() {
           <main className="content" aria-live="polite">
             {offline && (
               <div className="banner banner--danger">
+                <WifiOff size={18} aria-hidden="true" />
                 <div>
                   <strong>{t("shell.offlineTitle")}</strong>
                   <span>{offline}</span>
@@ -362,6 +363,7 @@ export default function App() {
               {section === "dashboard" && (
                 <Dashboard
                   engine={engine}
+                  stats={stats}
                   onNavigate={setSection}
                   refreshToken={refreshTick}
                 />
@@ -435,7 +437,7 @@ export default function App() {
 
             <footer className="app-footer">
               <span>
-                CBS Shield v{info?.version ?? "0.9.0-dev"} - {info?.vendor ?? "Cybrense"}
+                CBS Shield v{info?.version ?? "0.9.0-dev"} · {info?.vendor ?? "Cybrense"}
               </span>
               <span>{t("shell.disclaimer")}</span>
             </footer>

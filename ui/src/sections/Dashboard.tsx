@@ -1,77 +1,115 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CircleAlert, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  Archive,
+  ArrowRight,
+  CircleAlert,
+  Files,
+  Flame,
+  Globe2,
+  RefreshCw,
+  ScanLine,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
+  type LucideIcon,
+} from "lucide-react";
 
+import { Badge } from "../components/Badge";
 import { api } from "../lib/api";
+import { formatDateTime, formatNumber, outcomeTone, type Tone } from "../lib/format";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import type {
+  DashboardStats,
   EngineStatus,
   FirewallObservation,
   NetmonSnapshotRecord,
   SectionId,
+  WebGuardView,
 } from "../types";
 
 interface DashboardProps {
   engine: EngineStatus | null;
   onNavigate: (section: SectionId) => void;
+  stats?: DashboardStats | null;
   refreshToken?: number;
 }
 
-function toneClass(tone: "ok" | "warning" | "danger" | "info" | "neutral"): string {
-  return `tone-${tone}`;
+type Posture = "manual" | "degraded" | "unavailable";
+
+const POSTURE_TONE: Record<Posture, Tone> = {
+  manual: "ok",
+  degraded: "warning",
+  unavailable: "danger",
+};
+
+const POSTURE_ICON: Record<Posture, LucideIcon> = {
+  manual: ShieldCheck,
+  degraded: ShieldAlert,
+  unavailable: ShieldX,
+};
+
+const SIGNATURE_TONE: Record<string, Tone> = {
+  upToDate: "ok",
+  outdated: "warning",
+  missing: "danger",
+  unknown: "neutral",
+};
+
+interface ModuleCard {
+  id: SectionId;
+  name: string;
+  icon: LucideIcon;
+  status: string;
+  tone: Tone;
+  hint: string;
+  meta: string;
 }
 
-export function Dashboard({
-  engine,
-  onNavigate,
-  refreshToken = 0,
-}: DashboardProps) {
+/** Calls an API method lazily so a missing command never throws synchronously. */
+function settle<T>(call: () => Promise<T>): Promise<T> {
+  return Promise.resolve().then(call);
+}
+
+export function Dashboard({ engine, onNavigate, stats = null, refreshToken = 0 }: DashboardProps) {
   const { t, language } = useI18n();
   const [firewall, setFirewall] = useState<FirewallObservation | null>(null);
   const [netmon, setNetmon] = useState<NetmonSnapshotRecord | null>(null);
+  const [webguard, setWebguard] = useState<WebGuardView | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void Promise.allSettled([api.firewallStatus(), api.netmonHistory(1)]).then(
-      ([firewallResult, netmonResult]) => {
-        if (cancelled) return;
-        if (firewallResult.status === "fulfilled") {
-          setFirewall(firewallResult.value);
-        }
-        if (netmonResult.status === "fulfilled") {
-          setNetmon(netmonResult.value[0] ?? null);
-        }
-      },
-    );
+    void Promise.allSettled([
+      settle(() => api.firewallStatus()),
+      settle(() => api.netmonHistory(1)),
+      settle(() => api.webguardSnapshot()),
+    ]).then(([firewallResult, netmonResult, webguardResult]) => {
+      if (cancelled) return;
+      if (firewallResult.status === "fulfilled") setFirewall(firewallResult.value);
+      if (netmonResult.status === "fulfilled") setNetmon(netmonResult.value[0] ?? null);
+      if (webguardResult.status === "fulfilled") setWebguard(webguardResult.value);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [refreshToken]);
 
-  const installed = Boolean(engine?.installed);
-  const signaturesFresh = engine?.signatureState === "upToDate";
-  const enabledProfiles = firewall?.status.profiles.filter((profile) => profile.enabled).length ?? 0;
-  const firewallKnown = firewall !== null;
-  const firewallOn = firewallKnown && enabledProfiles > 0;
-
-  const posture = !installed ? "unavailable" : signaturesFresh ? "manual" : "degraded";
-  const postureLabel = t(
-    posture === "manual"
-      ? "posture.manual"
-      : posture === "degraded"
-        ? "posture.degraded"
-        : "posture.unavailable",
-  );
-  const postureHint = t(
-    posture === "manual"
-      ? "posture.manualHint"
-      : posture === "degraded"
-        ? "posture.degradedHint"
-        : "posture.unavailableHint",
-  );
-
   const L = (fr: string, en: string) => (language === "en" ? en : fr);
+
+  const installed = Boolean(engine?.installed);
+  const signatureState = engine?.signatureState ?? "unknown";
+  const posture: Posture = !installed
+    ? "unavailable"
+    : signatureState === "upToDate"
+      ? "manual"
+      : "degraded";
+  const postureTone = POSTURE_TONE[posture];
+  const PostureIcon = POSTURE_ICON[posture];
+
+  const profiles = firewall?.status.profiles ?? [];
+  const enabledProfiles = profiles.filter((profile) => profile.enabled).length;
 
   const securityAlerts = useMemo(() => {
     const alerts: Array<{
@@ -141,8 +179,7 @@ export function Dashboard({
           });
         }
       }
-      const inboundAllow = firewall.alerts.some((alert) => alert.code === "inbound_default_allow");
-      if (inboundAllow) {
+      if (firewall.alerts.some((alert) => alert.code === "inbound_default_allow")) {
         alerts.push({
           key: "firewall-inbound",
           title: L("Entrant autorisé par défaut", "Inbound allowed by default"),
@@ -156,154 +193,264 @@ export function Dashboard({
       }
     }
     return alerts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, installed, firewall, language]);
 
-  const signatureStateText = t(`signature.${engine?.signatureState ?? "unknown"}` as TranslationKey);
+  const lastScan = stats?.lastScan ?? null;
 
-  const navigateWithKey = (e: React.KeyboardEvent, target: SectionId) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onNavigate(target);
-    }
-  };
+  const modules: ModuleCard[] = [
+    {
+      id: "antivirus",
+      name: "Antivirus",
+      icon: ShieldCheck,
+      status: installed ? `ClamAV ${engine?.engineVersion ?? ""}`.trim() : t("engine.missing"),
+      tone: installed ? "ok" : "danger",
+      hint: installed ? t("dashboard.avHint") : t("posture.unavailableHint"),
+      meta: t(`signature.${signatureState}` as TranslationKey),
+    },
+    {
+      id: "webguard",
+      name: "Web Guard",
+      icon: Globe2,
+      status: webguard
+        ? webguard.proxy.running
+          ? t("dashboard.webguardOn")
+          : t("dashboard.webguardOff")
+        : t("dashboard.firewallUnknown"),
+      tone: webguard?.proxy.running ? "ok" : "neutral",
+      hint: t("dashboard.webguardHint"),
+      meta: webguard
+        ? t("dashboard.webguardRules", { count: formatNumber(webguard.counts.blocklist) })
+        : "—",
+    },
+    {
+      id: "firewall",
+      name: t("nav.firewall"),
+      icon: Flame,
+      status: !firewall
+        ? t("dashboard.firewallUnknown")
+        : enabledProfiles === 0
+          ? t("dashboard.firewallOff")
+          : `${enabledProfiles}/${profiles.length} ${L("profils actifs", "profiles on")}`,
+      tone: !firewall
+        ? "neutral"
+        : enabledProfiles === 0
+          ? "danger"
+          : enabledProfiles < profiles.length
+            ? "warning"
+            : "ok",
+      hint: t("dashboard.firewallModuleHint"),
+      meta: firewall
+        ? t("dashboard.firewallRules", { count: formatNumber(firewall.status.rulesTotalCount) })
+        : t("common.readOnly"),
+    },
+    {
+      id: "network",
+      name: t("nav.network"),
+      icon: Activity,
+      status: netmon
+        ? t("dashboard.networkConnections", { count: formatNumber(netmon.tcpTotal) })
+        : t("dashboard.networkNone"),
+      tone: netmon ? "info" : "neutral",
+      hint: t("dashboard.networkModuleHint"),
+      meta: netmon ? formatDateTime(netmon.capturedAt) : t("common.readOnly"),
+    },
+  ];
+
+  const metrics: Array<{
+    label: string;
+    value: string;
+    icon: LucideIcon;
+    tone: "" | "ok" | "warn" | "danger";
+    target: SectionId;
+  }> = [
+    {
+      label: t("dashboard.stat.scans"),
+      value: stats ? formatNumber(stats.totalScans) : "—",
+      icon: ScanLine,
+      tone: "",
+      target: "history",
+    },
+    {
+      label: t("dashboard.stat.files"),
+      value: stats ? formatNumber(stats.totalFilesScanned) : "—",
+      icon: Files,
+      tone: "",
+      target: "history",
+    },
+    {
+      label: t("dashboard.stat.detections"),
+      value: stats ? formatNumber(stats.totalDetections) : "—",
+      icon: ShieldAlert,
+      tone: stats && stats.totalDetections > 0 ? "warn" : "ok",
+      target: "history",
+    },
+    {
+      label: t("dashboard.stat.quarantine"),
+      value: stats ? formatNumber(stats.activeQuarantine) : "—",
+      icon: Archive,
+      tone: stats && stats.activeQuarantine > 0 ? "danger" : "ok",
+      target: "quarantine",
+    },
+  ];
 
   return (
     <div className="dashboard">
-      {/* Direction A hero */}
-      <section className="direction-hero">
-        <div className="direction-hero__content">
-          <div className="direction-hero__status">
-            <span className="direction-hero__dot" aria-hidden="true" />
-            <span className="direction-hero__tag">{postureLabel}</span>
+      <section className={`dash-hero is-${postureTone}`} aria-labelledby="dash-hero-title">
+        <div className="dash-hero__main">
+          <div className="dash-hero__icon" aria-hidden="true">
+            <PostureIcon size={28} strokeWidth={1.7} />
           </div>
-          <h2 className="direction-hero-headline">{t("dashboard.heroTitle")}</h2>
-          <p className="direction-hero__why">{t("dashboard.heroBody")}</p>
-          <p className="direction-hero__limits">{postureHint}</p>
-
-          <div className="direction-hero__actions">
+          <div className="dash-hero__body">
+            <Badge tone={postureTone} dot>
+              {t(`posture.${posture}` as TranslationKey)}
+            </Badge>
+            <h2 id="dash-hero-title">{t("dashboard.heroTitle")}</h2>
+            <p>{t(`posture.${posture}Hint` as TranslationKey)}</p>
+          </div>
+          <div className="dash-hero__actions">
             <button
               type="button"
-              className="direction-hero__scan"
+              className="button button--primary button--lg"
               onClick={() => onNavigate("antivirus")}
             >
+              <ScanLine size={17} aria-hidden="true" />
               {t("dashboard.heroAction")}
-              <small>{t("dashboard.heroSecondary")}</small>
+            </button>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => onNavigate("updates")}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              {t("dashboard.heroSecondary")}
             </button>
           </div>
         </div>
 
-        <div className="direction-hero__visual">
-          <div className={`shield-orb ${posture === "manual" ? "is-ready" : posture === "degraded" ? "is-warn" : "is-off"}`}>
-            <ShieldCheck size={56} strokeWidth={1.25} />
-            <div className="shield-orb__ring" aria-hidden="true" />
+        <dl className="dash-hero__checks">
+          <div>
+            <dt>{t("dashboard.engine")}</dt>
+            <dd>
+              <strong>
+                {installed ? `ClamAV ${engine?.engineVersion ?? ""}`.trim() : t("engine.missing")}
+              </strong>
+              <Badge tone={installed ? "ok" : "danger"} subtle>
+                {installed ? t("engine.ready") : t("posture.unavailable")}
+              </Badge>
+            </dd>
           </div>
-          <div className="shield-orb-caption">
-            <strong>{installed ? `ClamAV ${engine?.engineVersion ?? ""}`.trim() : t("engine.missing")}</strong>
-            <span>{signatureStateText}</span>
+          <div>
+            <dt>{t("dashboard.signatures")}</dt>
+            <dd>
+              <strong className="mono">{engine?.signatureVersion ?? "—"}</strong>
+              <Badge tone={SIGNATURE_TONE[signatureState] ?? "neutral"} subtle>
+                {t(`signature.${signatureState}` as TranslationKey)}
+              </Badge>
+            </dd>
           </div>
-        </div>
+          <div>
+            <dt>{t("dashboard.lastScan")}</dt>
+            <dd>
+              <strong>{lastScan ? formatDateTime(lastScan.finishedAt) : t("dashboard.neverScanned")}</strong>
+              {lastScan && (
+                <Badge tone={outcomeTone(lastScan.outcome)} subtle>
+                  {t("dashboard.scanFiles", { count: formatNumber(lastScan.filesScanned) })}
+                </Badge>
+              )}
+            </dd>
+          </div>
+        </dl>
       </section>
 
       {securityAlerts.length > 0 && (
-        <section className="security-alert-stack" aria-label={L("Alertes de sécurité", "Security alerts")}>
+        <section className="security-alert-stack" aria-label={t("dashboard.alerts")}>
           {securityAlerts.map((alert) => (
-            <div key={alert.key} className={`banner ${alert.tone === "danger" ? "banner--danger" : "banner--warning"}`}>
-              <CircleAlert size={19} aria-hidden="true" />
-              <div>
-                <strong>{alert.title}</strong>
-                <span>{alert.detail}</span>
-                <div className="banner__actions">
-                  <button type="button" className="button button--ghost" onClick={() => onNavigate(alert.target)}>
-                    {t("topbar.diagnostics")}
-                    <ArrowRight size={14} />
-                  </button>
+            <div
+              key={alert.key}
+              className={`banner ${alert.tone === "danger" ? "banner--danger" : "banner--warning"}`}
+            >
+              <CircleAlert size={18} aria-hidden="true" />
+              <div className="dash-alert">
+                <div>
+                  <strong>{alert.title}</strong>
+                  <span>{alert.detail}</span>
                 </div>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => onNavigate(alert.target)}
+                >
+                  {t("dashboard.review")}
+                  <ArrowRight size={13} aria-hidden="true" />
+                </button>
               </div>
             </div>
           ))}
         </section>
       )}
 
-      {/* Three category cards */}
-      <div className="categories">
-        <article
-          className="category-card"
-          role="button"
-          tabIndex={0}
-          aria-label={language === "fr" ? "Antivirus · moteur ClamAV" : "Antivirus · ClamAV engine"}
-          onClick={() => onNavigate("antivirus")}
-          onKeyDown={(e) => navigateWithKey(e, "antivirus")}
-        >
-          <h3>Antivirus</h3>
-          <div className="category-state">{installed ? `ClamAV ${engine?.engineVersion ?? ""}` : t("engine.missing")}</div>
-          <span className={`chip ${toneClass(installed ? "ok" : "danger")} dot`}>
-            {installed ? engine?.signatureVersion ?? t("signature.missing") : t("posture.unavailable")}
-          </span>
-          <p>{installed ? t("dashboard.engineHint") : t("av.engineMissing.body")}</p>
-          <footer>
-            <span className={`chip ${toneClass(installed ? "ok" : "danger")}`}>
-              {installed ? t("posture.manual") : t("posture.unavailable")}
-            </span>
-            <span className="mono">{t("common.localOnly")}</span>
-          </footer>
-        </article>
-        <article
-          className="category-card"
-          role="button"
-          tabIndex={0}
-          aria-label={language === "fr" ? "Web Guard · filtrage DNS local" : "Web Guard · local DNS filtering"}
-          onClick={() => onNavigate("webguard")}
-          onKeyDown={(e) => navigateWithKey(e, "webguard")}
-        >
-          <h3>Web Guard</h3>
-          <div className="category-state">Filtrage DNS local</div>
-          <span className={`chip ${toneClass("info")}`}>{netmon ? "Actif" : "Inactif"}</span>
-          <p>Filtrage DNS local uniquement, si vous le démarrez. Ne couvre pas le trafic système.</p>
-          <footer>
-            <span className={`chip ${toneClass("info")}`}>Proxy 127.0.0.1</span>
-          </footer>
-        </article>
-        <article
-          className="category-card"
-          role="button"
-          tabIndex={0}
-          aria-label={language === "fr" ? "Pare-feu · observation seule" : "Firewall · read-only observation"}
-          onClick={() => onNavigate("firewall")}
-          onKeyDown={(e) => navigateWithKey(e, "firewall")}
-        >
-          <h3>Pare-feu</h3>
-          <div className="category-state">Observation seule</div>
-          <span className={`chip ${toneClass("info")}`}>{firewallKnown ? (firewallOn ? `${enabledProfiles}/3` : "3/3") : "—"}</span>
-          <p>{firewallKnown ? "3 profils lus, règles lues. Aucune règle n'est créée ni modifiée par CBS Shield." : "Observation des profils et règles en cours…"}</p>
-          <footer>
-            <span className={`chip ${toneClass("neutral")}`}>Aucune action</span>
-          </footer>
-        </article>
-      </div>
-
-      {/* Next actions */}
-      <section className="next-actions">
-        <div className="next-actions__head">
-          <h2>A faire ensuite</h2>
-          <span className="next-actions__hint">Une seule action recommandée à la fois</span>
-        </div>
-        <div className="panel">
-          <div className="row">
-            <div>
-              <div className="row__key">{t("dashboard.quickScan")}</div>
-              <div className="row__val">Une analyse rapide vérifie Téléchargements, Bureau, Documents, Temp et le démarrage.</div>
-            </div>
-            <button className="button button--primary button--lg" onClick={() => onNavigate("antivirus")}>
-              {t("dashboard.heroAction")}
+      <section className="dash-section" aria-labelledby="dash-overview">
+        <header className="dash-section__head">
+          <h2 id="dash-overview">{t("dashboard.overview")}</h2>
+          <span>{t("common.localOnly")}</span>
+        </header>
+        <div className="metric-grid">
+          {metrics.map(({ label, value, icon: Icon, tone, target }) => (
+            <button
+              key={label}
+              type="button"
+              className="metric-card dash-metric"
+              onClick={() => onNavigate(target)}
+            >
+              <div className="metric-card__top">
+                <span className="metric-card__label">{label}</span>
+                <span
+                  className={`metric-card__icon${tone ? ` metric-card__icon--${tone}` : ""}`}
+                  aria-hidden="true"
+                >
+                  <Icon size={16} strokeWidth={1.9} />
+                </span>
+              </div>
+              <span className="metric-card__value">{value}</span>
             </button>
-          </div>
-          <div className="row">
-            <div>
-              <div className="row__key">{t("dashboard.quickUpdate")}</div>
-              <div className="row__val">Nécessite votre consentement explicite. Observation en lecture seule, sans blocage.</div>
-            </div>
-            <span className={`chip ${toneClass("info")}`}>Consentement requis</span>
-          </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="dash-section" aria-labelledby="dash-modules">
+        <header className="dash-section__head">
+          <h2 id="dash-modules">{t("dashboard.modules")}</h2>
+          <span>{t("dashboard.modulesHint")}</span>
+        </header>
+        <div className="dash-modules">
+          {modules.map(({ id, name, icon: Icon, status, tone, hint, meta }) => (
+            <button
+              key={id}
+              type="button"
+              className="dash-module"
+              onClick={() => onNavigate(id)}
+              aria-label={`${name} · ${status}`}
+            >
+              <div className="dash-module__head">
+                <span className="dash-module__icon" aria-hidden="true">
+                  <Icon size={18} strokeWidth={1.8} />
+                </span>
+                <h3>{name}</h3>
+              </div>
+              <Badge tone={tone} dot>
+                {status}
+              </Badge>
+              <p>{hint}</p>
+              <footer>
+                <span>{meta}</span>
+                <span className="dash-module__open">
+                  {t("dashboard.open")}
+                  <ArrowRight size={13} aria-hidden="true" />
+                </span>
+              </footer>
+            </button>
+          ))}
         </div>
       </section>
     </div>

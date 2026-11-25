@@ -1,0 +1,149 @@
+/* ==========================================================================
+   CBS Shield — design tokens
+   One neutral graphite palette, one accent, four semantic states.
+   Dark is the default; light applies through [data-theme="light"].
+   Every other stylesheet reads colours from these variables only.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Typography — native Windows faces first: no network font fetch. */
+  --font: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Inter", system-ui,
+    -apple-system, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular",
+    monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-md: 13.5px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  /* Surfaces */
+  --bg: #0c0e13;
+  --bg-soft: #0f1218;
+  --surface: #13161d;
+  --surface-2: #181c24;
+  --surface-3: #1e232d;
+  --surface-sunken: #0a0c10;
+  --border: #242a35;
+  --border-strong: #313846;
+  --hairline: #1d222b;
+
+  /* Text */
+  --text: #e8eaef;
+  --text-soft: #c0c6d1;
+  --muted: #8d95a5;
+  --faint: #646c7c;
+
+  /* Brand */
+  --accent: #5b8def;
+  --accent-hover: #74a0f5;
+  --accent-ink: #ffffff;
+  --accent-strong: #3f74e0;
+  --accent-soft: rgba(91, 141, 239, 0.14);
+  --accent-softer: rgba(91, 141, 239, 0.07);
+  --accent-2: #3fb8a0;
+
+  /* States */
+  --ok: #3ccf91;
+  --ok-soft: rgba(60, 207, 145, 0.12);
+  --warning: #f2b34b;
+  --warning-soft: rgba(242, 179, 75, 0.12);
+  --danger: #f26363;
+  --danger-soft: rgba(242, 99, 99, 0.12);
+  --info: #6ea8ff;
+  --info-soft: rgba(110, 168, 255, 0.12);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Layout */
+  --sidebar-width: 252px;
+  --header-height: 64px;
+  --content-max: 1320px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --motion-fast: 120ms;
+  --motion: 180ms;
+  --motion-slow: 320ms;
+
+  /* Focus */
+  --ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
+
+  /* Legacy aliases still read by module styles. */
+  --panel: var(--surface);
+  --panel-solid: var(--surface);
+  --panel-hover: var(--surface-2);
+  --bg-elevated: var(--surface-2);
+  --webguard-glow: transparent;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f4f5f7;
+  --bg-soft: #eef0f3;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --surface-3: #f1f3f6;
+  --surface-sunken: #eef0f4;
+  --border: #e2e5ea;
+  --border-strong: #cfd4dc;
+  --hairline: #eceef2;
+
+  --text: #111827;
+  --text-soft: #374151;
+  --muted: #6b7280;
+  --faint: #9aa1ad;
+
+  --accent: #2f6fe4;
+  --accent-hover: #255fcf;
+  --accent-ink: #ffffff;
+  --accent-strong: #1f56c2;
+  --accent-soft: rgba(47, 111, 228, 0.1);
+  --accent-softer: rgba(47, 111, 228, 0.05);
+  --accent-2: #0f8f78;
+
+  --ok: #12805c;
+  --ok-soft: rgba(18, 128, 92, 0.1);
+  --warning: #b2620a;
+  --warning-soft: rgba(178, 98, 10, 0.1);
+  --danger: #d2342f;
+  --danger-soft: rgba(210, 52, 47, 0.09);
+  --info: #2563d6;
+  --info-soft: rgba(37, 99, 214, 0.09);
+
+  --shadow-xs: 0 1px 0 rgba(17, 24, 39, 0.04);
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --shadow-md: 0 6px 20px -10px rgba(17, 24, 39, 0.18);
+  --shadow-lg: 0 24px 56px -20px rgba(17, 24, 39, 0.28);
+
+  --ring: 0 0 0 3px rgba(47, 111, 228, 0.25);
+}
