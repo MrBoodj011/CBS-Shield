@@ -24,6 +24,7 @@ import type {
   FirewallObservation,
   SettingsView,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface AboutProps {
   info: AppInfo | null;
@@ -106,12 +107,14 @@ export function About({ info, engine, settings, stats, refreshToken = 0 }: About
             </div>
           </div>
 
-          <div className="banner banner--warning" style={{ marginTop: 14 }}>
+          <div className="banner banner--warning banner--compact" style={{ marginTop: 14 }}>
             <TriangleAlert size={18} aria-hidden="true" />
             <div>
               <strong>{t("about.disclaimer")}</strong>
-              <span>{t("about.disclaimerBody")}</span>
             </div>
+            <InfoTip>
+              {t("about.disclaimerBody")}
+            </InfoTip>
           </div>
         </section>
 

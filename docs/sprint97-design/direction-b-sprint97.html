@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBS Shield — Sprint 9.7 Maquette Direction B « Console compacte »</title>
+<style>
+  :root{
+    --bg:#050b16; --surface:#0b1524; --surface-2:#111d30; --line:#1f2f47;
+    --text:#e8f0fb; --text-dim:#93a6c0; --text-mute:#6b7f9b;
+    --accent:#4ea7ff; --accent-ink:#04101f;
+    --ok:#3fe0a6; --warning:#ffb454; --danger:#ff6178; --info:#8ab4f8;
+    --radius:10px;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  html[data-theme="light"]{
+    --bg:#f4f7fb; --surface:#ffffff; --surface-2:#eef3fa; --line:#d8e2ee;
+    --text:#0d1726; --text-dim:#4a5c74; --text-mute:#71839a;
+    --accent:#0f6fdc; --accent-ink:#ffffff;
+    --ok:#0f8a62; --warning:#a35a00; --danger:#c22a44; --info:#2a5aa8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; line-height:1.45;
+       -webkit-font-smoothing:antialiased;}
+  .banner{
+    position:sticky; top:0; z-index:60; display:flex; gap:10px; align-items:center; justify-content:center;
+    padding:6px 12px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700;
+    background:repeating-linear-gradient(135deg,#3a2600,#3a2600 10px,#4a3100 10px,#4a3100 20px);
+    color:#ffd591; border-bottom:1px solid #6b4700;
+  }
+  .app{max-width:1240px; margin:0 auto; padding:14px 18px 40px;}
+
+  .topbar{display:flex; align-items:center; gap:14px; padding:8px 0 12px; border-bottom:1px solid var(--line)}
+  .brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:.02em}
+  .brand .mark{width:26px; height:26px; border-radius:7px; background:linear-gradient(160deg,var(--accent),#2b6fd0);
+    display:grid; place-items:center; color:var(--accent-ink); font-weight:800; font-size:12px}
+  .brand small{display:block; font-weight:500; font-size:10px; color:var(--text-mute); letter-spacing:.06em}
+  nav.tabs{display:flex; gap:2px; margin-left:10px; flex-wrap:wrap}
+  nav.tabs button{
+    background:transparent; border:0; color:var(--text-dim); font:inherit; font-size:12.5px; font-weight:600;
+    padding:7px 11px; border-radius:var(--radius-sm); cursor:pointer; border-bottom:2px solid transparent;
+  }
+  nav.tabs button:hover{background:var(--surface-2); color:var(--text)}
+  nav.tabs button[aria-selected="true"]{color:var(--text); background:var(--surface-2); border-bottom-color:var(--accent)}
+  .topbar .spacer{flex:1}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border:1px solid var(--line);
+    border-radius:999px; font-size:11px; color:var(--text-dim); background:var(--surface)}
+  .chip b{color:var(--text); font-weight:600}
+  .chip .dot{width:7px; height:7px; border-radius:50%; background:var(--warning)}
+  .iconbtn{background:var(--surface); border:1px solid var(--line); color:var(--text-dim); border-radius:var(--radius-sm);
+    padding:6px 9px; font:inherit; font-size:11.5px; cursor:pointer}
+  .iconbtn:hover{color:var(--text); border-color:var(--accent)}
+
+  .grid{display:grid; grid-template-columns:1.55fr 1fr; gap:12px; margin-top:12px}
+  .col{display:flex; flex-direction:column; gap:12px; min-width:0}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px}
+  .card h2{margin:0 0 2px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-mute); font-weight:700}
+  .card .sub{font-size:11px; color:var(--text-mute)}
+  .hd{display:flex; align-items:baseline; gap:8px; margin-bottom:8px }
+  .hd h2{margin:0}
+
+  .statusline{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:var(--radius-sm);
+    background:color-mix(in srgb, var(--warning) 12%, transparent); border:1px solid color-mix(in srgb, var(--warning) 40%, transparent)}
+  .statusline .bar{width:4px; align-self:stretch; border-radius:2px; background:var(--warning)}
+  .statusline strong{display:block; font-size:13px }
+  .statusline span{font-size:11px; color:var(--text-dim)}
+
+  .tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px}
+  .tile{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:9px 10px; min-width:0}
+  .tile .k{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-mute); font-weight:700}
+  .tile .v{font-size:19px; font-weight:700; margin-top:2px; word-break:break-word}
+  .tile .v small{font-size:11px; font-weight:600; color:var(--text-dim)}
+  .tile .note{font-size:10.5px; color:var(--text-mute); margin-top:2px; word-break:break-word}
+  .tile.ok .v{color:var(--ok)} .tile.warn .v{color:var(--warning)} .tile.dim .v{color:var(--text-dim)}
+
+  .btn{border:0; border-radius:var(--radius-sm); font:inherit; font-weight:700; cursor:pointer; padding:8px 14px; font-size:13px}
+  .btn.primary{background:var(--accent); color:var(--accent-ink)}
+  .btn.ghost{background:transparent; color:var(--text-dim); border:1px solid var(--line)}
+  .btn.ghost:hover{color:var(--text); border-color:var(--accent)}
+  .btn.sm{padding:5px 9px; font-size:11px; font-weight:600}
+
+  table{width:100%; border-collapse:collapse; font-size:11.5px}
+  th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-mute); font-weight:700; padding:6px 8px; border-bottom:1px solid var(--line)}
+  td{padding:7px 8px; border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent); vertical-align:top; color:var(--text-dim)}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:var(--mono); font-size:10.5px; color:var(--text-dim); word-break:break-all}
+
+  .log{font-family:var(--mono); font-size:10.8px; max-height:230px; overflow:auto}
+  .log .row{display:grid; grid-template-columns:70px 60px 1fr; gap:8px; padding:4px 2px; border-bottom:1px dashed color-mix(in srgb,var(--line) 55%,transparent)}
+  .log .row:last-child{border-bottom:0}
+  .log .t{color:var(--text-mute)}
+  .log .who{color:var(--info)}
+  .log .msg{color:var(--text-dim)}
+
+  .progress{height:5px; border-radius:3px; background:var(--surface-2); overflow:hidden; margin-top:8px}
+  .progress i{display:block; height:100%; width:38%; background:var(--accent)}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:2px 12px; font-size:11.5px}
+  .kv dt{color:var(--text-mute)}
+  .kv dd{margin:0; text-align:right; font-weight:600}
+
+  .field{display:flex; flex-direction:column; gap:4px; margin-bottom:10px }
+  .field label{font-size:11px; font-weight:700; color:var(--text-dim)}
+  .field .hint{font-size:10.5px; color:var(--text-mute)}
+  .field select,.field input[type=text]{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm);
+    color:var(--text); font:inherit; font-size:11.5px; padding:6px 8px;
+  }
+
+  .note{font-size:10.5px; color:var(--text-mute); border-left:2px solid var(--line); padding-left:8px; margin-top:10px; line-height:1.5}
+  .inline{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+  .screens{display:block}
+  .screens[hidden]{display:none}
+  .foot{margin-top:18px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    font-size:10.5px; color:var(--text-mute); border-top:1px solid var(--line); }
+
+  @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div class="banner"><span class="dot"></span> MAQUETTE Sprint 9.7 — Direction B · Console compacte · concept, aucune fonctionnalité de cette page n'est active en attente d'approbation</div>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">CS</span>
+      <span>CBS Shield<small>0.9.0-dev · console</small></span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Navigation principale">
+      <button role="tab" data-go="dash" aria-selected="true">Synthèse</button>
+      <button role="tab" data-go="av" aria-selected="false">Antivirus</button>
+      <button role="tab" data-go="prot" aria-selected="false">Protection</button>
+      <button role="tab" data-go="net" aria-selected="false">Réseau</button>
+      <button role="tab" data-go="settings" aria-selected="false">Réglages</button>
+    </nav>
+    <div class="spacer"></div>
+    <span class="chip"><span class="dot"></span> Temps réel <b>non disponible</b></span>
+    <button class="iconbtn" id="theme">Clair / Sombre</button>
+  </header>
+
+  <section class="screens" id="scr-dash">
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>État</h2><span class="sub">dernière vérification : il y a 2 min</span></div>
+          <div class="statusline">
+            <span class="bar"></span>
+            <div>
+              <strong>Analyse manuelle disponible · pas de protection en temps réel</strong>
+              <span>Le module temps réel n'est pas fourni dans cette version. Le statut ne peut pas être affiché comme actif sans preuve d'exécution.</span>
+            </div>
+          </div>
+
+          <div class="tiles">
+            <div class="tile ok"><div class="k">Moteur</div><div class="v">1.5.4</div><div class="note">ClamAV local, signatures à jour</div></div>
+            <div class="tile warn"><div class="k">Dernière analyse</div><div class="v">145 <small>fichiers</small></div><div class="note">Détection : 1</div></div>
+            <div class="tile dim"><div class="k">Quarantaine</div><div class="v">0</div><div class="note">stockage chiffré</div></div>
+          </div>
+
+          <div class="inline" style="margin-top:10px">
+            <button class="btn primary" data-go="av">Analyser maintenant</button>
+            <button class="btn ghost" data-go="net">Voir les alertes</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>Journal local</h2><span class="sub">conservé sur cette machine uniquement</span></div>
+          <div class="log">
+            <div class="row"><span class="t">08:43:12</span><span class="who">scan</span><span class="msg">Analyse rapide terminée · 145 fichiers, 0 erreur, 1 détection</span></div>
+            <div class="row"><span class="t">08:39:58</span><span class="who">clamav</span><span class="msg">Base chargée · 3 631 204 signatures</span></div>
+            <div class="row"><span class="t">08:39:02</span><span class="who">freshclam</span><span class="msg">Mise à jour des signatures (premier essai : erreur réseau au passage)</span></div>
+            <div class="row"><span class="t">08:38:44</span><span class="who">app</span><span class="msg">Démarrage · profil local, aucune action automatique</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>Les trois domaines</h2></div>
+          <table>
+            <thead><tr><th>Domaine</th><th>Vrai</th><th>Limite</th></tr></thead>
+            <tbody>
+              <tr><td><b>Appareil</b></td><td>Analyse à la demande, quarantaine chiffrée</td><td>Pas de temps réel</td></tr>
+              <tr><td><b>Internet</b></td><td>Filtrage DNS local</td><td>Proxy en boucle locale seulement</td></tr>
+              <tr><td><b>Réseau</b></td><td>Observation des connexions</td><td>Aucune action sur le pare-feu</td></tr>
+            </tbody>
+          </table>
+          <div class="note">Aucun domaine n'est affiché comme actif tant que la fonction correspondante n'est pas réellement active.</div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2>Raccourcis</h2></div>
+          <div class="inline">
+            <button class="btn ghost sm" data-go="av">Analyse complète</button>
+            <button class="btn ghost sm" data-go="settings">Mises à jour</button>
+            <button class="btn ghost sm" data-go="prot">Centre de protection</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>Direction B — « Console compacte » · Sprint 9.7</span>
+    <span>5 écrans · FR/EN · thème clair/sombre · 2026-11-07</span>
+  </div>
+</div>
+
+<script>
+  const COPY = {
+    fr: {
+      topTabs: [
+        ["dash", "Synthèse", true],
+        ["av", "Antivirus", false],
+        ["prot", "Protection", false],
+        ["net", "Réseau", false],
+        ["settings", "Réglages", false]
+      ],
+      state: "Analyse manuelle disponible · pas de protection en temps réel",
+      stateSub: "Le module temps réel n'est pas fourni dans cette version. Le statut ne peut pas être affiché comme actif sans preuve d'exécution.",
+      logTitle: "Journal local",
+      logSub: "conservé sur cette machine uniquement",
+      domainTitle: "Les trois domaines",
+      domains: [
+        ["Appareil", "Analyse à la demande, quarantaine chiffrée", "Pas de temps réel"],
+        ["Internet", "Filtrage DNS local", "Proxy en boucle locale seulement"],
+        ["Réseau", "Observation des connexions", "Aucune action sur le pare-feu"]
+      ],
+      domainsNote: "Aucun domaine n'est affiché comme actif tant que la fonction correspondante n'est pas réellement active.",
+      log: [
+        ["08:43:12", "scan", "Analyse rapide terminée · 145 fichiers, 0 erreur, 1 détection"],
+        ["08:39:58", "clamav", "Base chargée · 3 631 204 signatures"],
+        ["08:39:02", "freshclam", "Mise à jour des signatures (premier essai : erreur réseau au passage)"],
+        ["08:38:44", "app", "Démarrage · profil local, aucune action automatique"]
+      ],
+      foot: "Direction B — « Console compacte » · Sprint 9.7"
+    },
+    en: {
+      topTabs: [
+        ["dash", "Summary", true],
+        ["av", "Antivirus", false],
+        ["prot", "Protection", false],
+        ["net", "Network", false],
+        ["settings", "Settings", false]
+      ],
+      state: "Manual analysis available · no real-time protection",
+      stateSub: "The real-time module is not provided in this version. The status cannot be shown as active without execution proof.",
+      logTitle: "Local log",
+      logSub: "kept on this machine only",
+      domainTitle: "The three domains",
+      domains: [
+        ["Device", "On-demand scan, encrypted quarantine", "No real-time protection"],
+        ["Internet", "Local DNS filtering", "Proxy in local loopback only"],
+        ["Network", "Connection observation", "No firewall action"]
+      ],
+      domainsNote: "No domain is shown as active unless the corresponding function is really active.",
+      log: [
+        ["08:43:12", "scan", "Quick scan finished · 145 files, 0 errors, 1 detection"],
+        ["08:39:58", "clamav", "Database loaded · 3,631,204 signatures"],
+        ["08:39:02", "freshclam", "Signature update (first try: network error)"],
+        ["08:38:44", "app", "Startup · local profile, no automatic action"]
+      ],
+      foot: "Direction B — “Console compacte” · Sprint 9.7"
+    }
+  };
+
+  function apply(lang) {
+    const c = COPY[lang];
+    document.documentElement.lang = lang;
+    document.title = "CBS Shield — Sprint 9.7 Maquette Direction B (" + lang + ")";
+    const tabs = document.querySelectorAll("nav.tabs button");
+    tabs.forEach(function (b) {
+      const id = b.getAttribute("data-go");
+      const on = c.topTabs.some(function (t) { return t[0] === id; }) && c.topTabs.find(function (t) { return t[0] === id; })[2];
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    setText("state", c.state);
+    setText("stateSub", c.stateSub);
+    setText("logTitle", c.logTitle);
+    setText("logSub", c.logSub);
+    setText("domainTitle", c.domainTitle);
+    const tbody = document.querySelector("table tbody");
+    tbody.innerHTML = "";
+    c.domains.forEach(function (d) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.innerHTML = "<b>" + d[0] + "</b>";
+      const td2 = document.createElement("td");
+      td2.textContent = d[1];
+      const td3 = document.createElement("td");
+      td3.textContent = d[2];
+      tr.appendChild(td); tr.appendChild(td2); tr.appendChild(td3);
+      tbody.appendChild(tr);
+    });
+    const note = document.querySelector(".note");
+    if (note) note.textContent = c.domainsNote;
+    const log = document.querySelector(".log");
+    log.innerHTML = "";
+    c.log.forEach(function (r) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = r[0];
+      const w = document.createElement("span");
+      w.className = "who";
+      w.textContent = r[1];
+      const m = document.createElement("span");
+      m.className = "msg";
+      m.textContent = r[2];
+      row.appendChild(t); row.appendChild(w); row.appendChild(m);
+      log.appendChild(row);
+    });
+    const foot = document.querySelector(".foot");
+    if (foot) foot.textContent = c.foot;
+  }
+
+  function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    const dark = document.getElementById("theme-dark");
+    const light = document.getElementById("theme-light");
+    if (dark) dark.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+    if (light) light.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+  }
+
+  document.getElementById("lang-fr").addEventListener("click", function () { apply("fr"); document.getElementById("lang-fr").setAttribute("aria-pressed", "true"); document.getElementById("lang-en").setAttribute("aria-pressed", "false"); });
+  document.getElementById("lang-en").addEventListener("click", function () { apply("en"); document.getElementById("lang-en").setAttribute("aria-pressed", "true"); document.getElementById("lang-fr").setAttribute("aria-pressed", "false"); });
+  document.getElementById("theme-dark").addEventListener("click", function () { applyTheme("dark"); });
+  document.getElementById("theme-light").addEventListener("click", function () { applyTheme("light"); });
+
+  apply("fr");
+  applyTheme("dark");
+</script>
+</body>
+</html>

@@ -40,6 +40,7 @@ import type {
   FirewallStatus,
   RuleManagementStatus,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 type Localize = (fr: string, en: string) => string;
 
@@ -497,7 +498,7 @@ export function Firewall() {
 
   return (
     <div className="section-stack">
-      <div className="banner banner--info">
+      <div className="banner banner--info banner--compact">
         <ShieldCheck size={19} aria-hidden="true" />
         <div>
           <strong>
@@ -506,8 +507,9 @@ export function Firewall() {
               "Read-only observation — no rule modified",
             )}
           </strong>
-          <span>
-            {L(
+        </div>
+        <InfoTip>
+          {L(
               "Cette section lit l'état des profils et des règles du Pare-feu Windows via l'API documentée",
               "This section reads the state of Windows Firewall profiles and rules through the documented",
             )}{" "}
@@ -516,8 +518,7 @@ export function Firewall() {
               ". Aucune règle n'est ajoutée, supprimée, activée ou désactivée ; aucun pilote ni filtre réseau n'est installé ; Microsoft Defender n'est pas touché.",
               " API. No rule is added, removed, enabled or disabled; no driver or network filter is installed; Microsoft Defender is not touched.",
             )}
-          </span>
-        </div>
+        </InfoTip>
       </div>
 
       <section className="panel firewall-overview" id="firewall-overview">
@@ -594,12 +595,12 @@ export function Firewall() {
             </button>
           ))}
         </nav>
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             `Dernière lecture : ${status ? formatDateTime(status.checkedAt) : "non disponible"} · ${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""} · la décision effective du noyau n'est pas calculée.`,
             `Latest read: ${status ? formatDateTime(status.checkedAt) : "not available"} · ${alertCount} active alert${alertCount > 1 ? "s" : ""} · the kernel's effective decision is not calculated.`,
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
       </section>
 
       {error && (
@@ -623,7 +624,7 @@ export function Firewall() {
       )}
 
       {serviceWarning && (
-        <div className="banner banner--warning" role="alert">
+        <div className="banner banner--warning banner--compact" role="alert">
           <ShieldAlert size={19} aria-hidden="true" />
           <div>
             <strong>
@@ -632,28 +633,28 @@ export function Firewall() {
                 "The Windows Firewall services are not all running",
               )}
             </strong>
-            <span>
-              {L(
+          </div>
+          <InfoTip>
+            {L(
                 `MpsSvc : ${service?.mpsSvc ?? "inconnu"} · BFE : ${service?.bfe ?? "inconnu"}. Une lecture des profils peut être incomplète ou obsolète. CBS Shield ne démarre ni n'arrête aucun service : vérifiez Windows Security et les services Windows.`,
                 `MpsSvc: ${service?.mpsSvc ?? "unknown"} · BFE: ${service?.bfe ?? "unknown"}. A profile reading may be incomplete or stale. CBS Shield does not start or stop any service: review Windows Security and Windows services.`,
               )}
-            </span>
-          </div>
+          </InfoTip>
         </div>
       )}
 
       {serviceUnknown && (
-        <div className="banner banner--neutral">
+        <div className="banner banner--neutral banner--compact">
           <TriangleAlert size={19} aria-hidden="true" />
           <div>
             <strong>{L("État des services non vérifié", "Service state not verified")}</strong>
-            <span>
-              {L(
+          </div>
+          <InfoTip>
+            {L(
                 "CBS Shield n'a pas pu lire l'état de MpsSvc et BFE. L'observation des profils reste affichée, mais sa fraîcheur n'est pas garantie.",
                 "CBS Shield could not read the state of MpsSvc and BFE. Profile observations remain displayed, but their freshness is not guaranteed.",
               )}
-            </span>
-          </div>
+          </InfoTip>
         </div>
       )}
 
@@ -817,12 +818,12 @@ export function Firewall() {
                 </article>
               ))}
             </div>
-            <p className="panel__note">
-              {L(
+            <div className="note-tip">
+              <InfoTip text>{L(
                 `Observé à ${formatDateTime(status.checkedAt)} · ${formatNumber(status.rulesTotalCount)} règle${status.rulesTotalCount > 1 ? "s" : ""} dans la stratégie · hachages profils + règles calculés localement.`,
                 `Observed at ${formatDateTime(status.checkedAt)} · ${formatNumber(status.rulesTotalCount)} rule${status.rulesTotalCount > 1 ? "s" : ""} in the policy · profile + rule hashes computed locally.`,
-              )}
-            </p>
+              )}</InfoTip>
+            </div>
           </>
         ) : null}
       </section>
@@ -839,6 +840,8 @@ export function Firewall() {
             {L("Décision non calculée", "Decision not calculated")}
           </Badge>
         </div>
+        <details className="disclosure">
+          <summary>{L("Afficher le détail", "Show details")}</summary>
         <div className="compare-grid">
           <article className="compare-card">
             <span className="panel__eyebrow">{L("Référence", "Reference")}</span>
@@ -863,12 +866,13 @@ export function Firewall() {
             <Badge tone="warning" dot>{L("Non calculée", "Not calculated")}</Badge>
           </article>
         </div>
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "Une règle « Autoriser » visible ne prouve pas qu'un trafic est autorisé : une règle de blocage, un filtre WFP ou une stratégie plus spécifique peut s'appliquer. CBS Shield ne consulte pas les filtres effectifs du noyau et ne remplace pas Windows Security.",
             "A visible “Allow” rule does not prove that traffic is allowed: a block rule, a WFP filter or a more specific policy may apply. CBS Shield does not query the kernel's effective filters and does not replace Windows Security.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
+        </details>
       </section>
 
       <section className="panel" id="firewall-connections">
@@ -892,12 +896,12 @@ export function Firewall() {
           </button>
         </div>
 
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "Capture TCP en lecture seule. La jointure associe le chemin d'image du processus aux règles actives qui référencent le même exécutable. C'est une référence, pas un verdict effectif d'autorisation ou de blocage.",
             "Read-only TCP capture. The join associates the process image path with enabled rules that reference the same executable. This is a reference, not an effective allow/block verdict.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
 
         {connectionsError && (
           <div className="banner banner--warning">
@@ -929,8 +933,8 @@ export function Firewall() {
                 <strong>{formatNumber(connections.udpTotal)}</strong>
               </div>
             </div>
-            <p className="panel__note">
-              {L(
+            <div className="note-tip">
+              <InfoTip text>{L(
                 `Capturé à ${formatDateTime(connections.capturedAt)} · ${formatNumber(connections.rulesListed)} règles examinées sur ${formatNumber(connections.rulesTotalCount)}.`,
                 `Captured at ${formatDateTime(connections.capturedAt)} · ${formatNumber(connections.rulesListed)} rules examined out of ${formatNumber(connections.rulesTotalCount)}.`,
               )}{" "}
@@ -943,8 +947,8 @@ export function Firewall() {
                 L(
                   "La liste des règles est tronquée : certaines associations peuvent manquer.",
                   "The rule list is truncated: some mappings may be missing.",
-                )}
-            </p>
+                )}</InfoTip>
+            </div>
 
             {applications.length > 0 && (
               <div className="firewall-applications">
@@ -1161,12 +1165,12 @@ export function Firewall() {
         </div>
         {management ? (
           <>
-            <p className="panel__note">
-              {L(
+            <div className="note-tip">
+              <InfoTip text>{L(
                 `Aucune API de mutation n'est exposée. Les instantanés JSON en lecture seule sont écrits dans ${management.backupDirectory} (${formatNumber(management.snapshotCount)} présent${management.snapshotCount > 1 ? "s" : ""}, ${formatNumber(management.verifiedSnapshotCount)} avec empreinte vérifiée).`,
                 `No mutation API is exposed. Read-only JSON snapshots are written to ${management.backupDirectory} (${formatNumber(management.snapshotCount)} present, ${formatNumber(management.verifiedSnapshotCount)} with a matched digest).`,
-              )}
-            </p>
+              )}</InfoTip>
+            </div>
             {management.lastSnapshotAt && (
               <p className="panel__note">
                 {L(
@@ -1251,12 +1255,12 @@ export function Firewall() {
                   </button>
                 </div>
               </div>
-              <p className="panel__note">
-                {L(
+              <div className="note-tip">
+                <InfoTip text>{L(
                   "Les fichiers JSON et leur empreinte .sha256 sont uniquement lus. Aucun import, aucune application et aucune suppression ne sont exposés. La vérification détecte une altération accidentelle, pas une signature authentifiée.",
                   "The JSON files and their .sha256 sidecars are read only. No import, apply or delete path is exposed. Verification detects accidental alteration, not an authenticated signature.",
-                )}
-              </p>
+                )}</InfoTip>
+              </div>
               {snapshotsError && (
                 <div className="banner banner--warning">
                   <TriangleAlert size={18} aria-hidden="true" />
@@ -1361,6 +1365,8 @@ export function Firewall() {
                   {L("Non actif", "Not active")}
                 </Badge>
               </div>
+              <details className="disclosure">
+                <summary>{L("Afficher le détail", "Show details")}</summary>
               <ol className="recovery-steps">
                 <li className="is-ok">
                   <span>1</span>
@@ -1419,12 +1425,13 @@ export function Firewall() {
                   <Badge tone="danger" dot>{L("Requise", "Required")}</Badge>
                 </li>
               </ol>
-              <p className="panel__note">
-                {L(
+              </details>
+              <div className="note-tip">
+                <InfoTip text>{L(
                   "Architecture future : schéma versionné, refus des fichiers non reconnus, journal d'audit, sauvegarde préalable obligatoire, test isolé et retour arrière explicite. Aucun de ces mécanismes de mutation n'est exposé dans cette version.",
                   "Future architecture: versioned schema, rejection of unknown files, audit log, mandatory prior backup, isolated test and explicit rollback. None of these mutation mechanisms is exposed in this version.",
-                )}
-              </p>
+                )}</InfoTip>
+              </div>
             </div>
           </>
         ) : managementError ? (
@@ -1435,12 +1442,12 @@ export function Firewall() {
             {L("Lecture du verrouillage…", "Reading lock status…")}
           </div>
         )}
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "La restauration et toute modification du pare-feu restent indisponibles jusqu'à autorisation explicite, test isolé et validation d'un cycle de récupération.",
             "Restore and any firewall mutation remain unavailable until explicit authorization, isolated testing and a validated recovery cycle.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
       </section>
 
       <section className="panel" id="firewall-rules">
@@ -1827,12 +1834,12 @@ export function Firewall() {
             <Badge tone="danger" dot>{L("Indisponible", "Unavailable")}</Badge>
           </article>
         </div>
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "La lecture utilise INetFwPolicy2 via le wrapper audité. CBS Shield ne consulte pas les filtres WFP effectifs, ne remplace pas Windows Security et ne demande aucun privilège administratif pour cette page.",
             "Reading uses INetFwPolicy2 through the audited wrapper. CBS Shield does not query effective WFP filters, does not replace Windows Security, and requests no administrative privilege for this page.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
       </section>
 
       <section className="panel">
@@ -1842,6 +1849,8 @@ export function Firewall() {
             <h2>{L("Ce que CBS Shield ne fait pas", "What CBS Shield does not do")}</h2>
           </div>
         </div>
+        <details className="disclosure">
+          <summary>{L("Afficher le détail", "Show details")}</summary>
         <ul className="rule-list">
           <li>
             {L(
@@ -1874,12 +1883,13 @@ export function Firewall() {
             )}
           </li>
         </ul>
-        <p className="panel__note">
-          {L(
+        <div className="note-tip">
+          <InfoTip text>{L(
             "Sprint 7 : ajout des filtres de règles, du détail en lecture seule, du regroupement par application, de l'historique d'instantanés avec empreinte .sha256 et du diagnostic des capacités. La modification du pare-feu reste hors périmètre tant que le cycle de récupération n'est pas validé.",
             "Sprint 7: adds rule filters, read-only rule details, application grouping, snapshot history with .sha256 digests, and capability diagnostics. Firewall mutation remains out of scope until the recovery cycle is validated.",
-          )}
-        </p>
+          )}</InfoTip>
+        </div>
+        </details>
       </section>
 
       <Modal

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBS Shield — Sprint 9.7 Maquette Direction A « Calme &amp; Souverain »</title>
+<style>
+  :root{
+    --bg:#050b16; --bg-soft:#070f1d; --bg-elevated:#0b1626;
+    --panel:rgba(11,22,39,.82); --panel-solid:#0b1728; --panel-hover:rgba(21,38,61,.92);
+    --border:rgba(122,158,209,.14); --border-strong:rgba(122,158,209,.26);
+    --text:#eaf1fb; --text-soft:#c4d3e7; --muted:#8ba0bb; --faint:#617592;
+    --accent:#4ea7ff; --accent-2:#3ee0c0; --accent-ink:#03121f;
+    --ok:#3fe0a6; --warning:#ffb454; --danger:#ff6178; --info:#74a9ff;
+    --ok-soft:rgba(63,224,166,.12); --warning-soft:rgba(255,180,84,.12);
+    --danger-soft:rgba(255,97,120,.12); --accent-soft:rgba(78,167,255,.14);
+    --r:20px;
+  }
+  html[data-theme="light"]{
+    --bg:#f4f7fb; --bg-soft:#eef3f9; --bg-elevated:#ffffff;
+    --panel:rgba(255,255,255,.92); --panel-solid:#ffffff; --panel-hover:#eef4fc;
+    --border:rgba(13,26,43,.12); --border-strong:rgba(13,26,43,.22);
+    --text:#0d1a2b; --text-soft:#2b3e56; --muted:#5a6d85; --faint:#8394a9;
+    --accent:#1f6fd0; --accent-ink:#ffffff;
+    --ok:#0f8a62; --warning:#a35a00; --danger:#c22a44; --info:#2a5aa8;
+    --ok-soft:rgba(15,138,98,.10); --warning-soft:rgba(163,90,0,.10);
+    --danger-soft:rgba(194,42,68,.10); --accent-soft:rgba(31,111,208,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:
+      radial-gradient(700px 420px at 88% -6%, rgba(78,167,255,.16), transparent 70%),
+      radial-gradient(620px 380px at -6% 104%, rgba(62,224,192,.10), transparent 70%),
+      linear-gradient(180deg,var(--bg),var(--bg-soft));
+  }
+  .bar{
+    position:sticky; top:0; z-index:60; display:flex; gap:14px; align-items:center;
+    padding:9px 22px; font-size:12px; font-weight:600; letter-spacing:.04em;
+    color:var(--text-soft); background:color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+    border-bottom:1px solid var(--border); backdrop-filter:blur(8px);
+  }
+  .bar .sep{width:1px; height:16px; background:var(--border); margin:0 2px}
+  .bar button{
+    border:1px solid var(--border-strong); background:transparent; color:var(--text-soft);
+    border-radius:999px; padding:5px 13px; font:inherit; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .bar button[aria-pressed="true"]{ background:var(--accent-soft); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+
+  .app{max-width:1180px; margin:0 auto; padding:34px 40px 60px; }
+  .topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:10px; min-height:150px }
+  .eyebrow{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  h1{font-size:36px; line-height:1.12; margin:8px 0 0; font-weight:650; letter-spacing:-.02em}
+  .sub{color:var(--muted); font-size:14.5px; margin:8px 0 0; max-width:64ch; line-height:1.55}
+
+  .hero{
+    margin-top:10px; padding:34px 36px 32px; border-radius:26px; border:1px solid var(--border);
+    background:var(--panel); display:grid; grid-template-columns:1fr auto; gap:28px; align-items:center;
+    box-shadow:0 24px 60px -40px rgba(0,0,0,.9); backdrop-filter:blur(10px);
+  }
+  html[data-theme="light"] .hero{ background:linear-gradient(180deg, rgba(255,255,255,.95), rgba(240,246,252,.92)); box-shadow:0 24px 60px -44px rgba(13,26,43,.45); }
+  .status-line{display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap }
+  .dot{width:11px; height:11px; border-radius:50%; background:var(--warning); box-shadow:0 0 0 4px var(--warning-soft)}
+  .status-line .tag{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--warning)}
+  .hero .headline{font-size:29px; line-height:1.2; font-weight:650; letter-spacing:-.015em; margin:0 0 12px}
+  .hero .why{color:var(--muted); font-size:14.5px; line-height:1.6; margin:0; max-width:58ch}
+  .hero .limits{margin-top:14px; font-size:13px; color:var(--muted); line-height:1.55; max-width:56ch}
+  .scan-btn{
+    border:none; cursor:pointer; border-radius:18px; padding:22px 32px; min-width:250px;
+    background:linear-gradient(150deg, var(--accent), #2f8ff0); color:var(--accent-ink);
+    font:inherit; font-size:17px; font-weight:700; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    box-shadow:0 18px 40px -22px rgba(78,167,255,.9);
+  }
+  .scan-btn small{display:block; font-size:11.5px; font-weight:500; opacity:.8}
+
+  .cats{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:22px }
+  .cat{
+    border:1px solid var(--border); border-radius:var(--r); background:var(--panel);
+    padding:22px 22px 20px; display:flex; flex-direction:column; gap:10px; min-height:196px;
+  }
+  .cat h3{margin:0; font-size:15px; font-weight:640; display:flex; align-items:center; gap:9px }
+  .cat .state{font-size:21px; font-weight:650; letter-spacing:-.01em }
+  .cat p{margin:0; color:var(--muted); font-size:13px; line-height:1.55 }
+  .chip{display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px;
+    font-size:11.5px; font-weight:600; border:1px solid var(--border-strong); color:var(--text-soft); width:fit-content}
+  .chip.ok{background:var(--ok-soft); border-color:rgba(63,224,166,.3); color:var(--ok)}
+  .chip.warn{background:var(--warning-soft); border-color:rgba(255,180,84,.32); color:var(--warning)}
+  .chip.off{background:rgba(122,158,209,.08); color:var(--muted)}
+  .chip.info{background:var(--accent-soft); border-color:rgba(78,167,255,.3); color:var(--info)}
+  .cat footer{margin-top:auto; display:flex; justify-content:space-between; align-items:center; gap:10px }
+
+  .section{margin-top:36px }
+  .section-head{display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:14px; flex-wrap:wrap }
+  .section-head h2{font-size:19px }
+  .section-head .hint{color:var(--faint); font-size:12.5px }
+
+  .panel{border:1px solid var(--border); border-radius:var(--r); background:var(--panel); padding:22px }
+  .panel + .panel { margin-top:16px; padding:20px 22px }
+  .panel h2{margin:0 0 8px; font-size:14px; font-weight:650; color:var(--text) }
+  .row{display:flex; align-items:center; justify-content:space-between; gap:18px; padding:13px 0; border-bottom:1px solid var(--border) }
+  .row:last-child{border-bottom:none}
+  .row .k{font-size:14px; font-weight:600}
+  .row .v{color:var(--muted); font-size:13px; margin-top:3px; max-width:60ch; line-height:1.5 }
+  .mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:12px; color:var(--muted); word-break:break-all }
+  .notice{border:1px solid rgba(255,180,84,.3); background:var(--warning-soft); border-radius:14px; padding:15px 18px; font-size:13.5px; line-height:1.6; color:var(--text-soft) }
+  html[data-theme="light"] .notice{ background:rgba(163,90,0,.08); border-color:rgba(163,90,0,.25) }
+  .empty{border:1px dashed var(--border-strong); border-radius:16px; padding:30px; text-align:center; color:var(--muted); font-size:14px; line-height:1.6 }
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px }
+  .kv{display:grid; grid-template-columns:180px 1fr; gap:8px 16px; font-size:13.5px }
+  .kv dt{color:var(--faint)}
+  .kv dd{margin:0; color:var(--text-soft); text-align:right }
+  .foot{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    font-size:12px; color:var(--muted); line-height:1.6; max-width:72ch; border-top:1px solid var(--border); }
+  @media (max-width: 980px){ .hero{ grid-template-columns:1fr; } .cats{ grid-template-columns:1fr; } .grid2{ grid-template-columns:1fr } .app{ padding:22px 18px 50px } }
+</style>
+</head>
+<body>
+
+<div class="bar" role="toolbar" aria-label="Maquette Sprint 9.7">
+  <span>Maquette Sprint 9.7</span>
+  <span class="sep"></span>
+  <button type="button" id="lang-fr" aria-pressed="true">FR</button>
+  <button type="button" id="lang-en" aria-pressed="false">EN</button>
+  <span class="sep"></span>
+  <button type="button" id="theme-dark" aria-pressed="true">Sombre</button>
+  <button type="button" id="theme-light" aria-pressed="false">Clair</button>
+  <span style="margin-left:auto; color:var(--faint); font-size:11.5px">Concept visuel · non implémenté · en attente d'approbation</span>
+</div>
+
+<div class="app">
+
+  <header class="topbar">
+    <div>
+      <div class="eyebrow" id="eyebrow">CBS Shield · Cybrense</div>
+      <h1 id="headline">Votre poste, en un regard</h1>
+      <p class="sub" id="sub">Ce que CBS Shield observe réellement, et ce qu'il ne fait pas. Aucune protection n'est affichée si elle n'est pas active.</p>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div>
+      <div class="status-line">
+        <span class="dot"></span>
+        <span class="tag" id="status-tag">Analyse manuelle disponible</span>
+      </div>
+      <h2 class="headline" id="headline2">Pas de protection en temps réel</h2>
+      <p class="why" id="why">Le moteur ClamAV et ses signatures sont prêts. Chaque analyse est déclenchée par vous. Microsoft Defender reste votre protection continue : CBS Shield ne le désactive pas.</p>
+      <p class="limits" id="limits">Limites affichées : pas de temps réel ; filtrage DNS local uniquement ; pare-feu observé en lecture seule. Aucune action automatique n'est effectuée.</p>
+    </div>
+    <button class="scan-btn" id="scan">
+      Analyser maintenant
+      <small>Analyse rapide · 5 dossiers</small>
+    </button>
+  </div>
+
+  <div class="cats">
+    <article class="cat" data-cat="0">
+      <h3>Appareil</h3>
+      <div class="state">Antivirus</div>
+      <span class="chip ok">ClamAV 1.5.4 · base à jour</span>
+      <p>Dernière analyse : jamais sur ce profil. Détections : 0.</p>
+      <footer><span class="chip off">Temps réel indisponible</span><span class="mono">C:\Users\cbs\Desktop</span></footer>
+    </article>
+    <article class="cat" data-cat="1">
+      <h3>Internet</h3>
+      <div class="state">Web Guard</div>
+      <span class="chip off">Inactif</span>
+      <p>Filtrage DNS local uniquement, si vous le démarrez. Ne couvre pas le trafic système.</p>
+      <footer><span class="chip info">Proxy 127.0.0.1</span></footer>
+    </article>
+    <article class="cat" data-cat="2">
+      <h3>Réseau</h3>
+      <div class="state">Pare-feu</div>
+      <span class="chip info">Observation seule</span>
+      <p>3 profils lus, règles lues. Aucune règle n'est créée ni modifiée par CBS Shield.</p>
+      <footer><span class="chip off">Aucune action</span></footer>
+    </article>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>A faire ensuite</h2>
+      <span class="hint">Une seule action recommandée à la fois</span>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div>
+          <div class="k" id="next-k">Vérifier votre poste</div>
+          <div class="v" id="next-v">Une analyse rapide vérifie Téléchargements, Bureau, Documents, Temp et le démarrage.</div>
+        </div>
+        <button class="scan-btn" id="scan2" style="margin:0; min-width:200px; padding:15px 24px; font-size:15px">Lancer</button>
+      </div>
+      <div class="row">
+        <div>
+          <div class="k">Activer la surveillance réseau</div>
+          <div class="v">Nécessite votre consentement explicite. Observation en lecture seule, sans blocage.</div>
+        </div>
+        <span class="chip info">Consentement requis</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot" id="foot">Aucune donnée ne quitte le poste. Historique, quarantaine et signatures restent dans le profil utilisateur local.</p>
+</div>
+
+<script>
+  const COPY = {
+    fr: {
+      eyebrow: "CBS Shield · Cybrense",
+      headline: "Votre poste, en un regard",
+      sub: "Ce que CBS Shield observe réellement, et ce qu'il ne fait pas. Aucune protection n'est affichée si elle n'est pas active.",
+      statusTag: "Analyse manuelle disponible",
+      headline2: "Pas de protection en temps réel",
+      why: "Le moteur ClamAV et ses signatures sont prêts. Chaque analyse est déclenchée par vous. Microsoft Defender reste votre protection continue : CBS Shield ne le désactive pas.",
+      limits: "Limites affichées : pas de temps réel ; filtrage DNS local uniquement ; pare-feu observé en lecture seule. Aucune action automatique n'est effectuée.",
+      scan1: "Analyser maintenant",
+      scan1s: "Analyse rapide · 5 dossiers",
+      scan2: "Lancer",
+      nextK: "Vérifier votre poste",
+      nextV: "Une analyse rapide vérifie Téléchargements, Bureau, Documents, Temp et le démarrage.",
+      ctaNet: "Activer la surveillance réseau",
+      foot: "Aucune donnée ne quitte le poste. Historique, quarantaine et signatures restent dans le profil utilisateur local."
+    },
+    en: {
+      eyebrow: "CBS Shield · Cybrense",
+      headline: "Your machine, at a glance",
+      sub: "What CBS Shield actually observes, and what it does not. No protection is shown as active unless it is.",
+      statusTag: "Manual analysis available",
+      headline2: "No real-time protection",
+      why: "The ClamAV engine and its signatures are ready. Every scan is user-triggered. Microsoft Defender remains your continuous protection: CBS Shield does not disable it.",
+      limits: "Displayed limits: no real-time protection; local DNS filtering only; firewall observed read-only. No automatic action is performed.",
+      scan1: "Scan now",
+      scan1s: "Quick scan · 5 folders",
+      scan2: "Run",
+      nextK: "Check your machine",
+      nextV: "A quick scan checks Downloads, Desktop, Documents, Temp and startup.",
+      ctaNet: "Enable network monitoring",
+      foot: "No data leaves the machine. History, quarantine and signatures stay in the local user profile."
+    }
+  };
+
+  function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
+
+  function apply(lang) {
+    const c = COPY[lang];
+    document.documentElement.lang = lang;
+    setText("eyebrow", c.eyebrow);
+    setText("headline", c.headline);
+    setText("sub", c.sub);
+    setText("status-tag", c.statusTag);
+    setText("headline2", c.headline2);
+    setText("why", c.why);
+    setText("limits", c.limits);
+    setText("scan", c.scan1);
+    const small = document.getElementById("scan").querySelector("small");
+    if (small) small.textContent = c.scan1s;
+    setText("scan2", c.scan2);
+    setText("next-k", c.nextK);
+    setText("next-v", c.nextV);
+    setText("foot", c.foot);
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.getElementById("theme-dark").setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+    document.getElementById("theme-light").setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+  }
+
+  document.getElementById("lang-fr").addEventListener("click", function () { apply("fr"); document.getElementById("lang-fr").setAttribute("aria-pressed", "true"); document.getElementById("lang-en").setAttribute("aria-pressed", "false"); });
+  document.getElementById("lang-en").addEventListener("click", function () { apply("en"); document.getElementById("lang-en").setAttribute("aria-pressed", "true"); document.getElementById("lang-fr").setAttribute("aria-pressed", "false"); });
+  document.getElementById("theme-dark").addEventListener("click", function () { applyTheme("dark"); });
+  document.getElementById("theme-light").addEventListener("click", function () { applyTheme("light"); });
+
+  apply("fr");
+  applyTheme("dark");
+</script>
+</body>
+</html>

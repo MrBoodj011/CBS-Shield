@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use cbs_quarantine::QuarantineError;
 use cbs_store::{NewQuarantine, QuarantineRecord, QuarantineStatus};
 use tauri::State;
 
@@ -139,9 +140,22 @@ pub async fn quarantine_file(
         }
     };
 
+    let source_key = source.display().to_string();
+    if let Some(existing) = state.store.quarantine_by_original_path(&source_key)? {
+        return Err(CommandError::new(
+            "alreadyQuarantined",
+            format!(
+                "Ce fichier est déjà suivi par la quarantaine (statut {}). Traitez cette entrée avant de recommencer.",
+                existing.status.as_str()
+            ),
+        ));
+    }
+
+    // Phase 1: encrypt into the vault without touching the source. The blob is
+    // verified byte-for-byte (decrypt + SHA-256) before anything is deleted.
     let quarantine = state.quarantine.clone();
-    let source_for_store = source.clone();
-    let item = tokio::task::spawn_blocking(move || quarantine.store(&source_for_store))
+    let source_for_stage = source.clone();
+    let item = tokio::task::spawn_blocking(move || quarantine.stage(&source_for_stage))
         .await
         .map_err(|err| {
             CommandError::internal(format!("tâche de quarantaine interrompue : {err}"))
@@ -149,63 +163,96 @@ pub async fn quarantine_file(
 
     if let Some(expected) = sha256.as_deref() {
         if !expected.eq_ignore_ascii_case(&item.sha256) {
-            // The file changed between detection and quarantine. Put it back
-            // instead of storing an unexpected payload.
+            // The file changed between detection and quarantine. The source was
+            // never touched, so we only drop the staged copy.
             let quarantine = state.quarantine.clone();
             let item_id = item.item_id.clone();
-            let destination = source.clone();
-            let restore = tokio::task::spawn_blocking(move || {
-                quarantine.restore(&item_id, &destination, None)
-            })
-            .await;
-            let rollback_note = match restore {
-                Ok(Ok(_)) => "Le fichier a été remis à son emplacement d'origine.".to_string(),
-                _ => format!(
-                    "La copie chiffrée reste disponible sous l'identifiant {}.",
-                    item.item_id
-                ),
-            };
+            let _ = tokio::task::spawn_blocking(move || quarantine.purge(&item_id)).await;
             return Err(CommandError::new(
                 "fileChanged",
-                format!("Le fichier a changé depuis le scan ; mise en quarantaine refusée. {rollback_note}"),
+                "Le fichier a changé depuis le scan ; mise en quarantaine refusée. Le fichier d'origine est intact.",
             ));
         }
     }
 
-    let record = state.store.insert_quarantine(&NewQuarantine {
+    // Phase 2: durable metadata first, as `pending`. If the database write
+    // fails, the source is still in place and the blob is removed.
+    let record = match state.store.insert_quarantine_pending(&NewQuarantine {
         item_id: item.item_id.clone(),
         file_name: item.file_name.clone(),
-        original_path: source.display().to_string(),
+        original_path: source_key,
         stored_path: item.stored_path.display().to_string(),
         sha256: item.sha256.clone(),
         size_bytes: item.size_bytes,
         threat_name: threat,
         source_scan_id: None,
-    });
-
-    match record {
-        Ok(record) => Ok(record),
+    }) {
+        Ok(record) => record,
         Err(store_error) => {
-            // Metadata failed to persist: restore the file so the user is not
-            // left with an untracked vault item.
             let quarantine = state.quarantine.clone();
             let item_id = item.item_id.clone();
-            let destination = source.clone();
-            let sha = item.sha256.clone();
-            let rollback = tokio::task::spawn_blocking(move || {
-                quarantine.restore(&item_id, &destination, Some(&sha))
-            })
-            .await;
-            let rollback_ok = matches!(rollback, Ok(Ok(_)));
-            Err(CommandError::new(
+            let purged = tokio::task::spawn_blocking(move || quarantine.purge(&item_id))
+                .await
+                .map(|result| result.is_ok())
+                .unwrap_or(false);
+            return Err(CommandError::new(
                 "storageError",
-                if rollback_ok {
-                    format!("Enregistrement SQLite impossible : {store_error}. Le fichier a été restauré.")
-                } else {
-                    format!("Enregistrement SQLite impossible : {store_error}. Le fichier chiffré est conservé dans le coffre.")
-                },
+                format!(
+                    "Enregistrement SQLite impossible : {store_error}. {}",
+                    if purged {
+                        "Le fichier d'origine est intact."
+                    } else {
+                        "Une copie chiffrée inutilisée subsiste dans le coffre."
+                    }
+                ),
+            ));
+        }
+    };
+
+    // Phase 3: remove the source only now that the blob and its metadata exist.
+    let quarantine = state.quarantine.clone();
+    let item_for_commit = item.clone();
+    let source_for_commit = source.clone();
+    let commit_result = tokio::task::spawn_blocking(move || {
+        quarantine.commit(&item_for_commit, &source_for_commit)
+    })
+    .await;
+
+    match commit_result {
+        Ok(Ok(())) => {
+            state.store.mark_quarantine_active(record.id)?;
+            state
+                .store
+                .quarantine_by_id(record.id)?
+                .ok_or_else(|| CommandError::new("notFound", "Entrée de quarantaine introuvable."))
+        }
+        Ok(Err(QuarantineError::SourceRetained { reason, .. })) => {
+            // The blob and the pending row are kept: nothing is lost. The user
+            // can retry, restore or purge after closing the locking program.
+            Err(CommandError::new(
+                "sourceLocked",
+                format!(
+                    "Le fichier est chiffré et conservé dans le coffre, mais il n'a pas pu être retiré de son emplacement d'origine ({reason}). Fermez le programme qui le verrouille puis utilisez l'entrée « récupérable » de la quarantaine."
+                ),
             ))
         }
+        Ok(Err(err)) => {
+            // The blob could not be re-verified (vault tampering). Drop the
+            // unusable copy and close the audit row; the source is untouched.
+            let quarantine = state.quarantine.clone();
+            let item_id = item.item_id.clone();
+            let _ = tokio::task::spawn_blocking(move || quarantine.purge(&item_id)).await;
+            let _ = state.store.mark_quarantine_deleted(record.id);
+            Err(CommandError::new(
+                "vaultVerifyFailed",
+                format!(
+                    "La copie chiffrée n'a pas pu être vérifiée ({err}). Le fichier d'origine est intact."
+                ),
+            ))
+        }
+        Err(join_error) => Err(CommandError::internal(format!(
+            "tâche de quarantaine interrompue : {join_error}"
+        ))),
     }
 }
 
@@ -229,7 +276,10 @@ pub async fn restore_quarantine(
         .store
         .quarantine_by_id(id)?
         .ok_or_else(|| CommandError::new("notFound", "Entrée de quarantaine introuvable."))?;
-    if record.status != QuarantineStatus::Active {
+    if !matches!(
+        record.status,
+        QuarantineStatus::Active | QuarantineStatus::Pending
+    ) {
         return Err(CommandError::new(
             "notActive",
             "Cette entrée n'est plus active.",
@@ -283,10 +333,13 @@ pub async fn delete_quarantine(
         .store
         .quarantine_by_id(id)?
         .ok_or_else(|| CommandError::new("notFound", "Entrée de quarantaine introuvable."))?;
-    if record.status != QuarantineStatus::Active {
+    if !matches!(
+        record.status,
+        QuarantineStatus::Active | QuarantineStatus::Pending
+    ) {
         return Err(CommandError::new(
             "notActive",
-            "Seul un élément actif peut être supprimé.",
+            "Seul un élément actif ou récupérable peut être supprimé.",
         ));
     }
 

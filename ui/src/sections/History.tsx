@@ -181,7 +181,16 @@ export function History({ onNavigate }: { onNavigate: (section: SectionId) => vo
           <p className="panel__note">{t("common.none")}</p>
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table--responsive">
+              <colgroup>
+                <col className="col-date" />
+                <col className="col-target" />
+                <col className="col-files" />
+                <col className="col-threats" />
+                <col className="col-duration" />
+                <col className="col-outcome" />
+                <col className="col-details" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>{t("history.table.date")}</th>

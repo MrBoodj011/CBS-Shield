@@ -1,8 +1,9 @@
 # Plan de validation Windows 11 isolé — CBS Shield 0.7.0-dev
 
-**Date :** 27 octobre 2026 — Sprint 7
-**Statut global :** **en cours / non complet**. Aucun résultat n'est revendiqué
-comme validé tant que la ligne correspondante du journal n'a pas de preuve.
+**Date :** 28 octobre 2026 — Sprint 7
+**Statut global :** **partiel**. Le socle installation/mise à niveau/redémarrage/
+désinstallation/instantané est validé avec preuves ; les scénarios ClamAV, scan,
+quarantaine, pare-feu désactivé et altération d'instantané restent non exécutés.
 
 Ce plan remplace le plan 0.2.0-dev. Il couvre l'installation NSIS, l'absence de
 ClamAV, l'assistant de préparation, les signatures, un scan de fixture inoffensive,
@@ -54,22 +55,22 @@ par un moyen explicite, puis vérifier leur SHA-256 dans la VM.
 
 | ID | Scénario | Attendu | Statut |
 | --- | --- | --- | --- |
-| VM-01 | Installation propre 0.7 sans ClamAV | application démarre, moteur `non détecté`, aucune boucle infinie | à exécuter |
-| VM-02 | Assistant de préparation | étapes lisibles, autorisation explicite avant `winget`, aucun terminal brut | à exécuter |
-| VM-03 | Installation officielle ClamAV | paquet officiel, UAC/fenêtre visible, résultat honnête | à exécuter |
-| VM-04 | Mise à jour des signatures | `freshclam` réel, base et état affichés, reprise après interruption | à exécuter |
-| VM-05 | Scan fixture inoffensive | scan `clean`, progression et rapport corrects | à exécuter |
-| VM-06 | Détection EICAR | détection, quarantaine, restauration, purge avec confirmations | à exécuter |
-| VM-07 | Redémarrage | historique SQLite, quarantaine, réglages et langue persistent | à exécuter |
-| VM-08 | Mise à niveau 0.6 → 0.7 | données conservées, version affichée 0.7.0-dev, pas de doublon | à exécuter |
-| VM-09 | Désinstallation | désinstalleur réel, choix explicite sur les données | à exécuter |
-| VM-10 | Dépendances absentes | absence de ClamAV/Node/Rust gérée avec messages, pas de spinner infini | à exécuter |
-| VM-11 | Pare-feu Windows activé | profils et règles observés, aucune mutation | à exécuter |
-| VM-12 | Pare-feu Windows désactivé | alerte réelle, aucune tentative de réparation | à exécuter |
-| VM-13 | Instantané pare-feu + sidecar | JSON + `.sha256`, vérification `matched` | à exécuter |
-| VM-14 | Altération d'instantané | vérification `mismatch`, aucune restauration | à exécuter |
-| VM-15 | Gate de mutation | gestion désactivée, gates incomplètes, aucun bouton actif | à exécuter |
-| VM-16 | Accessibilité clavier | Tab/Shift+Tab, Échap, focus visible sur les nouveaux contrôles | à exécuter |
+| VM-01 | Installation propre 0.7 sans ClamAV | application démarre, moteur `non détecté`, aucune boucle infinie | ✅ 28/10 : code 0, version `0.7.0-dev`, message explicite |
+| VM-02 | Assistant de préparation | étapes lisibles, autorisation explicite avant `winget`, aucun terminal brut | ⚠️ partiel : assistant affiché et fermé ; `winget` absent |
+| VM-03 | Installation officielle ClamAV | paquet officiel, UAC/fenêtre visible, résultat honnête | ⏳ non exécuté : `winget` absent |
+| VM-04 | Mise à jour des signatures | `freshclam` réel, base et état affichés, reprise après interruption | ⏳ non exécuté : moteur absent |
+| VM-05 | Scan fixture inoffensive | scan `clean`, progression et rapport corrects | ⏳ non exécuté : moteur absent |
+| VM-06 | Détection EICAR | détection, quarantaine, restauration, purge avec confirmations | ⏳ non exécuté : moteur absent |
+| VM-07 | Redémarrage | historique SQLite, quarantaine, réglages et langue persistent | ⚠️ partiel : base, instantané et sidecar conservés, app relancée ; quarantaine/langue non vérifiées |
+| VM-08 | Mise à niveau 0.6 → 0.7 | données conservées, version affichée 0.7.0-dev, pas de doublon | ⚠️ partiel : 0.6 puis 0.7 code 0, données conservées ; doublons non audités |
+| VM-09 | Désinstallation | désinstalleur réel, choix explicite sur les données | ⚠️ partiel : code 0, binaires/registre supprimés, données conservées ; choix interactif non exercé |
+| VM-10 | Dépendances absentes | absence de ClamAV/Node/Rust gérée avec messages, pas de spinner infini | ⚠️ partiel : ClamAV et `winget` absents gérés ; Node/Rust absents non testés |
+| VM-11 | Pare-feu Windows activé | profils et règles observés, aucune mutation | ✅ 28/10 : 3/3, 450 puis 476 règles, aucune mutation |
+| VM-12 | Pare-feu Windows désactivé | alerte réelle, aucune tentative de réparation | ⏳ non exécuté en VM : non-admin/UAC ; 0/3 observé sur l'hôte |
+| VM-13 | Instantané pare-feu + sidecar | JSON + `.sha256`, vérification `matched` | ✅ 28/10 : sidecar concordant, persistance après redémarrage |
+| VM-14 | Altération d'instantané | vérification `mismatch`, aucune restauration | ⏳ non exécuté en VM : couvert par test Rust |
+| VM-15 | Gate de mutation | gestion désactivée, gates incomplètes, aucun bouton actif | ✅ 28/10 : `backup_snapshot` seule disponible, aucun bouton de mutation |
+| VM-16 | Accessibilité clavier | Tab/Shift+Tab, Échap, focus visible sur les nouveaux contrôles | ⚠️ partiel : Tab/Échap/Entrée et UI Automation ; lecteur d'écran non testé |
 
 ### 2.1 Scénarios de récupération (obligatoires avant toute mutation)
 
@@ -118,13 +119,15 @@ CBS Shield ne doit exécuter aucun `Set-NetFirewallRule`, `New-NetFirewallRule`,
 | Date | Version | Scénario | Résultat | Preuve |
 | --- | --- | --- | --- | --- |
 | 27/10/2026 | 0.7.0-dev | Création VM isolée et démarrage | partiel | `target/sprint7-vm/boot-*.png`, `Logs/VBox.log` |
-| 27/10/2026 | 0.7.0-dev | Installation Windows unattended | en cours | captures de setup |
-| — | 0.7.0-dev | VM-01 à VM-16 | non exécuté | — |
+| 27/10/2026 | 0.7.0-dev | Installation Windows unattended | terminée | bureau Windows 11 build 26300 |
+| 28/10/2026 | 0.7.0-dev | VM-01, VM-11, VM-13, VM-15 | réussis | `target/sprint7-vm/vm-result*.txt` |
+| 28/10/2026 | 0.7.0-dev | VM-02, VM-07, VM-08, VM-09, VM-10, VM-16 | partiels | base/upgrade/uninstall sans contrôles exhaustifs, clavier sans lecteur d'écran |
+| 28/10/2026 | 0.7.0-dev | VM-03 à VM-06, VM-12, VM-14 | non exécutés | `winget`/moteur absents, non-admin/UAC |
 
-> **Ne pas publier « validé sur VM »** avant que les scénarios critiques
-> (installation, absence de ClamAV, scan, redémarrage, mise à niveau,
-> désinstallation, pare-feu activé/désactivé) soient terminés et que leurs preuves
-> soient archivées.
+> **Ne pas publier « validé sur VM »** pour les scénarios non exécutés. Le socle
+> installation/mise à niveau/redémarrage/désinstallation/instantané est validé ;
+> le provisionnement ClamAV, le scan, le pare-feu désactivé et l'altération
+> d'instantané restent à couvrir.
 
 ---
 

@@ -1,7 +1,5 @@
 import {
   Archive,
-  CircleAlert,
-  CircleCheck,
   KeyRound,
   LoaderCircle,
   RotateCcw,
@@ -17,6 +15,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDateTime, shortHash, truncateMiddle } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 import type { QuarantineRecord, SettingsView } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface QuarantineProps {
   items: QuarantineRecord[];
@@ -29,6 +28,10 @@ type Localize = (fr: string, en: string) => string;
 
 function statusBadge(item: QuarantineRecord, L: Localize) {
   switch (item.status) {
+    case "pending":
+      // The encrypted copy is verified but the original could not be removed
+      // (file locked). The user must be able to recover or purge it.
+      return <Badge tone="warning" dot>{L("Récupérable", "Recoverable")}</Badge>;
     case "restored":
       return <Badge tone="info" dot>{L("Restauré", "Restored")}</Badge>;
     case "deleted":
@@ -46,7 +49,9 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
   const [pendingDelete, setPendingDelete] = useState<QuarantineRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const activeCount = items.filter((item) => item.status === "active").length;
+  const activeCount = items.filter(
+    (item) => item.status === "active" || item.status === "pending",
+  ).length;
 
   const restore = async () => {
     if (!pendingRestore) return;
@@ -103,17 +108,17 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
 
   return (
     <div className="section-stack">
-      <div className="banner banner--info">
+      <div className="banner banner--info banner--compact">
         <KeyRound size={19} aria-hidden="true" />
         <div>
           <strong>{L("Coffre chiffré, aucune suppression automatique", "Encrypted vault, no automatic deletion")}</strong>
-          <span>
-            {L(
+        </div>
+        <InfoTip>
+          {L(
               "Les fichiers sont chiffrés en AES-256-GCM. La clé est protégée par Windows DPAPI pour votre compte utilisateur. Une restauration ou une suppression définitive exige toujours une confirmation explicite.",
               "Files are encrypted with AES-256-GCM. The key is protected by Windows DPAPI for your user account. Restoring or permanently deleting an item always requires explicit confirmation.",
             )}
-          </span>
-        </div>
+        </InfoTip>
       </div>
 
       <section className="panel">
@@ -146,7 +151,16 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
           />
         ) : (
           <div className="table-wrap">
-            <table className="table table--quarantine">
+            <table className="table table--responsive">
+              <colgroup>
+                <col className="col-file" />
+                <col className="col-threat" />
+                <col className="col-location" />
+                <col className="col-size" />
+                <col className="col-date" />
+                <col className="col-status" />
+                <col className="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>{L("Fichier", "File")}</th>
@@ -160,7 +174,12 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className={item.status !== "active" ? "is-muted" : ""}>
+                  <tr
+                    key={item.id}
+                    className={
+                      item.status === "active" || item.status === "pending" ? "" : "is-muted"
+                    }
+                  >
                     <td>
                       <div className="cell-main">
                         <strong>{item.fileName}</strong>
@@ -179,7 +198,7 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
                     <td>{formatDateTime(item.createdAt)}</td>
                     <td>{statusBadge(item, L)}</td>
                     <td>
-                      {item.status === "active" ? (
+                      {item.status === "active" || item.status === "pending" ? (
                         <div className="row-actions">
                           <button
                             type="button"
@@ -289,10 +308,15 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
                 )}
               </strong>
               <span>
-                {L(
-                  "Cette action supprime la copie de quarantaine. Elle n'affecte pas le fichier d'origine (déjà déplacé) et ne peut pas être annulée. L'entrée d'audit restera visible avec le statut « supprimé ».",
-                  "This action deletes the quarantine copy. It does not affect the original file (already moved) and cannot be undone. The audit entry will remain visible with the “deleted” status.",
-                )}
+                {pendingDelete?.status === "pending"
+                  ? L(
+                      "Cette action supprime la seule copie chiffrée vérifiée de ce fichier. Le fichier d'origine est peut-être encore en place (il n'a pas pu être déplacé). L'action est irréversible ; l'entrée d'audit restera visible avec le statut « supprimé ».",
+                      "This action deletes the only verified encrypted copy of this file. The original may still be in place (it could not be moved). The action cannot be undone; the audit entry will remain visible with the “deleted” status.",
+                    )
+                  : L(
+                      "Cette action supprime la copie de quarantaine. Elle n'affecte pas le fichier d'origine (déjà déplacé) et ne peut pas être annulée. L'entrée d'audit restera visible avec le statut « supprimé ».",
+                      "This action deletes the quarantine copy. It does not affect the original file (already moved) and cannot be undone. The audit entry will remain visible with the “deleted” status.",
+                    )}
               </span>
             </div>
             {pendingDelete && (
@@ -321,26 +345,6 @@ export function Quarantine({ items, settings, loading, onRefresh }: QuarantinePr
         onClose={() => setPendingDelete(null)}
       />
 
-      <div className="status-notes">
-        <div className="status-note">
-          <CircleCheck size={17} aria-hidden="true" />
-          <span>
-            {L(
-              "Les fichiers isolés restent lisibles uniquement par votre compte Windows.",
-              "Quarantined files remain readable only by your Windows account.",
-            )}
-          </span>
-        </div>
-        <div className="status-note">
-          <CircleAlert size={17} aria-hidden="true" />
-          <span>
-            {L(
-              "Aucune analyse automatique du coffre, aucun envoi vers un service externe.",
-              "No automatic vault scanning, nothing sent to an external service.",
-            )}
-          </span>
-        </div>
-      </div>
     </div>
   );
 }

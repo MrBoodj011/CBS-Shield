@@ -4,7 +4,7 @@ import { translate } from "./i18n";
 
 describe("i18n", () => {
   it("translates shell and dashboard keys in both languages", () => {
-    expect(translate("fr", "nav.dashboard")).toBe("Dashboard");
+    expect(translate("fr", "nav.dashboard")).toBe("Tableau de bord");
     expect(translate("en", "nav.history")).toBe("Scan history");
     expect(translate("fr", "dashboard.stat.scans")).toBe("Scans réalisés");
     expect(translate("en", "dashboard.stat.scans")).toBe("Scans run");

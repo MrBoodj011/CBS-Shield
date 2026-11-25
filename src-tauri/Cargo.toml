@@ -22,11 +22,15 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
 cbs-core = { path = "../crates/cbs-core" }
 cbs-store = { path = "../crates/cbs-store" }
 cbs-quarantine = { path = "../crates/cbs-quarantine" }
 cbs-netmon = { path = "../crates/cbs-netmon" }
 cbs-firewall = { path = "../crates/cbs-firewall" }
+cbs-webguard = { path = "../crates/cbs-webguard" }
+cbs-proactive = { path = "../crates/cbs-proactive" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

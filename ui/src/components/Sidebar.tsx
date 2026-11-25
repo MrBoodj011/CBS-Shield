@@ -2,9 +2,11 @@ import {
   Activity,
   Archive,
   Flame,
+  Globe2,
   History,
   Info,
   LayoutDashboard,
+  Radar,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -31,6 +33,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
       { id: "antivirus", labelKey: "nav.antivirus", icon: ShieldCheck },
+      { id: "proactive", labelKey: "nav.proactive", icon: Radar },
       { id: "history", labelKey: "nav.history", icon: History },
       { id: "quarantine", labelKey: "nav.quarantine", icon: Archive },
     ],
@@ -40,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "network", labelKey: "nav.network", icon: Activity },
       { id: "firewall", labelKey: "nav.firewall", icon: Flame },
+      { id: "webguard", labelKey: "nav.webguard", icon: Globe2 },
     ],
   },
   {
@@ -62,20 +66,36 @@ interface SidebarProps {
 export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
   const { t } = useI18n();
 
+  const statusTone = !engine
+    ? "neutral"
+    : !engine.installed
+      ? "danger"
+      : engine.signatureState === "upToDate"
+        ? "ok"
+        : "warning";
+  const statusTitle = !engine
+    ? t("engine.checking")
+    : engine.installed
+      ? t("engine.ready")
+      : t("engine.missing");
+  const statusDetail = engine?.installed
+    ? `ClamAV ${engine.engineVersion ?? ""} · ${t(`signature.${engine.signatureState}` as TranslationKey)}`
+    : t("posture.unavailable");
+
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <Logo size={38} />
-        <div className="brand__text">
-          <span className="brand__name">CBS SHIELD</span>
-          <span className="brand__vendor">by Cybrense</span>
+      <div className="sidebar__brand">
+        <Logo size={32} />
+        <div className="sidebar__brand-text">
+          <strong>CBS Shield</strong>
+          <span>by Cybrense</span>
         </div>
       </div>
 
-      <nav className="nav" aria-label={t("nav.main")}>
+      <nav className="sidebar__nav" aria-label={t("nav.main")}>
         {NAV_GROUPS.map((group) => (
-          <div className="nav-group" key={group.labelKey}>
-            <span className="nav-group__label">{t(group.labelKey)}</span>
+          <div className="sidebar__group" key={group.labelKey}>
+            <span className="sidebar__group-label">{t(group.labelKey)}</span>
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = section === item.id;
@@ -83,13 +103,13 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
                 <button
                   key={item.id}
                   type="button"
-                  className={`nav__item ${active ? "is-active" : ""}`}
+                  className={`sidebar__item${active ? " is-active" : ""}`}
                   onClick={() => onSelect(item.id)}
                   aria-current={active ? "page" : undefined}
                   title={t(item.labelKey)}
                 >
-                  <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
-                  <span className="nav__text">{t(item.labelKey)}</span>
+                  <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
+                  <span className="sidebar__item-text">{t(item.labelKey)}</span>
                 </button>
               );
             })}
@@ -98,20 +118,21 @@ export function Sidebar({ section, onSelect, engine, info }: SidebarProps) {
       </nav>
 
       <div className="sidebar__footer">
-        <div className={`engine-mini ${engine?.installed ? "is-online" : "is-offline"}`}>
-          <span className="engine-mini__dot" aria-hidden="true" />
-          <div>
-            <strong>{engine?.installed ? t("engine.ready") : t("engine.missing")}</strong>
-            <span>
-              {engine?.installed
-                ? `ClamAV · ${engine.signatureVersion ?? t("signature.missing")}`
-                : t("posture.unavailableHint")}
-            </span>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="sidebar__status"
+          onClick={() => onSelect("updates")}
+          title={`${statusTitle} — ${statusDetail}`}
+        >
+          <span className={`sidebar__status-dot is-${statusTone}`} aria-hidden="true" />
+          <span className="sidebar__status-text">
+            <strong>{statusTitle}</strong>
+            <span>{statusDetail}</span>
+          </span>
+        </button>
         <div className="sidebar__meta">
-          <span>v{info?.version ?? "0.7.0-dev"}</span>
-          <span className="sidebar__experimental">{t("common.experimental")}</span>
+          <span>v{info?.version ?? "0.9.0-dev"}</span>
+          <span className="badge badge--warning">{t("common.experimental")}</span>
         </div>
       </div>
     </aside>

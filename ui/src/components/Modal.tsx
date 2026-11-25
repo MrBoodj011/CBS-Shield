@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { useI18n } from "../lib/i18n";
 import type { Tone } from "../lib/format";
@@ -42,7 +43,7 @@ export function Modal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
@@ -75,6 +76,7 @@ export function Modal({
         {children && <div className="modal__body">{children}</div>}
         {footer && <div className="modal__footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

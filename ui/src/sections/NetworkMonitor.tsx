@@ -25,6 +25,7 @@ import type {
   NetmonSnapshotPayload,
   NetmonSnapshotRecord,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 const REFRESH_INTERVAL_MS = 5_000;
 const HISTORY_ROWS_FETCHED = 30;
@@ -154,7 +155,7 @@ export function NetworkMonitor() {
 
   return (
     <div className="section-stack">
-      <div className="banner banner--info">
+      <div className="banner banner--info banner--compact">
         <Eye size={19} aria-hidden="true" />
         <div>
           <strong>
@@ -163,13 +164,13 @@ export function NetworkMonitor() {
               "Read-only observation — no content capture",
             )}
           </strong>
-          <span>
-            {L(
+        </div>
+        <InfoTip>
+          {L(
               "Ce module lit les connexions et ports via les API Windows documentées (tables IP Helper) et compte les octets cumulés par interface. Rien n'est bloqué, filtré ni intercepté ; aucun contenu de communication n'est lu. Les résumés restent dans la base locale de votre profil utilisateur (2 000 lignes maximum, purge automatique) et ne quittent jamais votre poste.",
               "This module reads connections and ports through documented Windows APIs (IP Helper tables) and counts cumulative bytes per interface. Nothing is blocked, filtered or intercepted; no communication content is read. Summaries stay in the local database of your user profile (2,000 rows maximum, automatic purge) and never leave your machine.",
             )}
-          </span>
-        </div>
+        </InfoTip>
       </div>
 
       {error && (

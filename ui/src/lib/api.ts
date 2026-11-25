@@ -27,6 +27,12 @@ import type {
   SignatureInventory,
   SignatureUpdateResult,
   UpdateLogs,
+  WebGuardDomainTest,
+  WebGuardImportResult,
+  WebGuardView,
+  ProactiveStatus,
+  ProactiveConfig,
+  ProactiveAutoScanStatus,
 } from "../types";
 
 export const api = {
@@ -37,6 +43,8 @@ export const api = {
     invoke<SignatureUpdateResult>("update_signatures", { confirm }),
   installClamav: (confirm: boolean) =>
     invoke<ClamavInstallResult>("install_clamav", { confirm }),
+  installClamavPortable: (confirm: boolean) =>
+    invoke<ClamavInstallResult>("install_clamav_portable", { confirm }),
 
   startScan: (input: {
     paths: string[];
@@ -101,6 +109,44 @@ export const api = {
     invoke<FirewallSnapshotVerification>("firewall_verify_snapshot", { path }),
   firewallManagementStatus: () =>
     invoke<RuleManagementStatus>("firewall_management_status"),
+
+  webguardSnapshot: () => invoke<WebGuardView>("webguard_snapshot"),
+  webguardStartMonitor: () => invoke<WebGuardView>("webguard_start_monitor"),
+  webguardStopMonitor: () => invoke<WebGuardView>("webguard_stop_monitor"),
+  webguardTestDomain: (domain: string) =>
+    invoke<WebGuardDomainTest>("webguard_test_domain", { domain }),
+  webguardImportFilter: (path: string, category: string, confirm: boolean) =>
+    invoke<WebGuardImportResult>("webguard_import_filter", {
+      path,
+      category,
+      confirm,
+    }),
+  webguardAddAllowlist: (domain: string, note: string) =>
+    invoke<WebGuardView>("webguard_add_allowlist", { domain, note }),
+  webguardRemoveAllowlist: (domain: string) =>
+    invoke<WebGuardView>("webguard_remove_allowlist", { domain }),
+  webguardClearHistory: (confirm: boolean) =>
+    invoke<WebGuardView>("webguard_clear_history", { confirm }),
+  webguardClearBlocklist: (confirm: boolean) =>
+    invoke<WebGuardView>("webguard_clear_blocklist", { confirm }),
+
+  proactiveSnapshot: () =>
+    invoke<ProactiveStatus>("proactive_snapshot"),
+  proactiveSetDirectories: (directories: string[]) =>
+    invoke<ProactiveStatus>("proactive_set_directories", { directories }),
+  proactiveSetConfig: (config: ProactiveConfig) =>
+    invoke<ProactiveStatus>("proactive_set_config", { config }),
+  proactiveSetAutoWatch: (enabled: boolean) =>
+    invoke<ProactiveStatus>("proactive_set_auto_watch", { enabled }),
+  proactiveStart: () => invoke<ProactiveStatus>("proactive_start"),
+  proactivePause: () => invoke<ProactiveStatus>("proactive_pause"),
+  proactiveResume: () => invoke<ProactiveStatus>("proactive_resume"),
+  proactiveStop: () => invoke<ProactiveStatus>("proactive_stop"),
+  proactiveDrain: () => invoke<string[]>("proactive_drain"),
+  proactiveClear: () => invoke<ProactiveStatus>("proactive_clear"),
+  proactiveSetAutoScan: (enabled: boolean) =>
+    invoke<ProactiveAutoScanStatus>("proactive_set_auto_scan", { enabled }),
+  proactiveScanStatus: () => invoke<ProactiveAutoScanStatus>("proactive_scan_status"),
 };
 
 export function errorMessage(error: unknown): string {

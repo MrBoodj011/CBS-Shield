@@ -31,6 +31,7 @@ import type {
   SignatureUpdateResult,
   UpdateLogs,
 } from "../types";
+import { InfoTip } from "../components/InfoTip";
 
 interface UpdatesProps {
   engine: EngineStatus | null;
@@ -156,7 +157,7 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
 
   return (
     <div className="section-stack">
-      <div className="banner banner--neutral">
+      <div className="banner banner--neutral banner--with-action">
         <ListChecks size={19} aria-hidden="true" />
         <div>
           <strong>
@@ -164,7 +165,7 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
               ? L("Vérifier ou réparer l'installation", "Verify or repair the installation")
               : L("Moteur et signatures non configurés ?", "Engine or signatures not configured?")}
           </strong>
-          <span>
+          <InfoTip>
             {installed
               ? L(
                   "L'assistant revalide le moteur, l'intégrité des bases officielles et les mises à jour automatiques. Il ne lance rien sans votre accord.",
@@ -174,7 +175,7 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
                   "L'assistant de préparation vérifie la présence de ClamAV, l'intégrité des bases officielles et les mises à jour automatiques. Aucune installation silencieuse.",
                   "The setup assistant checks ClamAV availability, official database integrity and automatic updates. No silent installation.",
                 )}
-          </span>
+          </InfoTip>
           <div className="banner__actions">
             <button type="button" className="button button--ghost" onClick={onOpenSetup}>
               <ListChecks size={15} />
@@ -266,7 +267,18 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
 
           <dl className="detail-list">
             <div>
-              <dt>Version</dt>
+              <dt className="title-with-tip">
+                Version
+                <InfoTip>
+                  <strong>{t("updates.count.title")}</strong>{" "}
+              {inventory
+                ? t("updates.count.body", {
+                    count: formatNumber(inventory.officialSignatures),
+                    version: engine?.signatureVersion ?? "—",
+                  })
+                : t("common.loading")}
+                </InfoTip>
+              </dt>
               <dd>{engine?.signatureVersion ?? t("signature.missing")}</dd>
             </div>
             <div>
@@ -287,17 +299,6 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
             </div>
           </dl>
 
-          <div className="callout callout--info" style={{ marginTop: 12 }}>
-            <strong>{t("updates.count.title")}</strong>
-            <span>
-              {inventory
-                ? t("updates.count.body", {
-                    count: formatNumber(inventory.officialSignatures),
-                    version: engine?.signatureVersion ?? "—",
-                  })
-                : t("common.loading")}
-            </span>
-          </div>
 
           {inventory && inventory.officialComponents.length > 0 && (
             <details className="details" open>
@@ -443,7 +444,9 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
             </button>
           </div>
         </div>
-        <p className="panel__note">{t("updates.auto.note")}</p>
+        <div className="note-tip">
+          <InfoTip text>{t("updates.auto.note")}</InfoTip>
+        </div>
       </section>
 
       <section className="panel">
@@ -494,7 +497,9 @@ export function Updates({ engine, settings, onEngineChanged, onOpenSetup }: Upda
             {t("updates.provision.docs")}
           </button>
         </div>
-        <p className="panel__note">{t("updates.provision.license")}</p>
+        <div className="note-tip">
+          <InfoTip text>{t("updates.provision.license")}</InfoTip>
+        </div>
       </section>
 
       <section className="panel">

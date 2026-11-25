@@ -470,6 +470,13 @@ pub fn summarize_update_run(
         || lower.contains("ip address not resolvable")
         || lower.contains("connection timed out")
         || lower.contains("can't resolve");
+    // Sprint 9.3 (A7): a host clock far from real UTC makes libcurl reject the
+    // server certificate. Name the cause explicitly; TLS verification is never
+    // weakened to work around it.
+    let tls_hint = lower.contains("certificate")
+        || lower.contains("ssl")
+        || lower.contains("tls")
+        || lower.contains("unknown ca");
 
     if timed_out {
         return (
@@ -491,6 +498,13 @@ pub fn summarize_update_run(
         (
             false,
             format!("{detail} — le dossier de signatures n'est pas accessible en écriture."),
+        )
+    } else if tls_hint {
+        (
+            false,
+            format!(
+                "{detail} — certificat TLS refusé : vérifiez que l'heure et le fuseau de Windows sont corrects, puis réessayez. La vérification TLS n'est jamais désactivée."
+            ),
         )
     } else if network_hint {
         (
@@ -575,6 +589,17 @@ mod tests {
             message.contains("dossier de signatures"),
             "message: {message}"
         );
+    }
+
+    #[test]
+    fn classifies_tls_certificate_failure_with_clock_hint() {
+        let lines = vec![line(
+            "ERROR: Can't download daily.cvd from database.clamav.net: SSL peer certificate or SSH remote key was not OK",
+        )];
+        let (success, message) = summarize_update_run(&lines, false, Some(1));
+        assert!(!success);
+        assert!(message.contains("heure"), "message: {message}");
+        assert!(message.contains("jamais désactivée"), "message: {message}");
     }
 
     #[test]

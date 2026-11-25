@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBS Shield — Maquettes UI/UX Sprint 9.2 (concepts)</title>
+<style>
+  :root{
+    --bg:#050b16; --surface:#0b1524; --line:#1f2f47; --text:#e8f0fb;
+    --dim:#93a6c0; --mute:#6b7f9b; --accent:#4ea7ff; --warning:#ffb454;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.5}
+  .banner{padding:7px 14px;text-align:center;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    font-weight:700;color:#ffd591;background:repeating-linear-gradient(135deg,#3a2600,#3a2600 10px,#4a3100 10px,#4a3100 20px);
+    border-bottom:1px solid #6b4700}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:22px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  a.card{display:block;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:18px 18px 16px;transition:.15s}
+  a.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--warning);border:1px solid #6b4700;border-radius:999px;padding:2px 8px;margin-bottom:10px}
+  .card h2{margin:0 0 6px;font-size:17px}
+  .card p{margin:0 0 12px;color:var(--dim);font-size:12.5px}
+  ul{margin:0;padding-left:18px;color:var(--mute);font-size:12px}
+  li{margin:2px 0}
+  .meta{margin-top:14px;font-size:11px;color:var(--mute);display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px}
+  .note{margin-top:22px;border-left:3px solid var(--warning);padding:10px 14px;background:#12100a;border-radius:6px;
+    font-size:12px;color:#e6cf9e}
+  @media (max-width:820px){ .cards{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="banner">Maquettes — concepts visuels · non implémentés · en attente d'approbation du propriétaire</div>
+<div class="wrap">
+  <h1>CBS Shield — Refonte UI/UX (Sprint 9.2)</h1>
+  <p class="sub">Deux directions pour la même architecture d'information. Choisir une direction — ou un mélange — avant toute implémentation.</p>
+
+  <div class="cards">
+    <a class="card" href="direction-a-calme-souverain.html">
+      <span class="tag">Direction A</span>
+      <h2>Calme &amp; Souverain</h2>
+      <p>Une grande ligne d'état vraie, un seul bouton principal, trois cartes de domaine. Beaucoup d'espace, peu de texte, l'incertitude assumée.</p>
+      <ul>
+        <li>Rail latéral d'icônes (84 px)</li>
+        <li>État en héros + action unique « Analyser maintenant »</li>
+        <li>Appareil · Internet · Réseau</li>
+        <li>Réglages derrière une navigation secondaire</li>
+      </ul>
+      <div class="meta"><span>5 écrans · FR/EN · clair/sombre</span><span>Ouvrir →</span></div>
+    </a>
+
+    <a class="card" href="direction-b-console-compacte.html">
+      <span class="tag">Direction B</span>
+      <h2>Console compacte</h2>
+      <p>Barre supérieure, tuiles denses, tableaux de données et journal local. Plus d'information visible d'un coup, pour utilisateur averti.</p>
+      <ul>
+        <li>Navigation horizontale</li>
+        <li>Tuiles de mesures + journal horodaté</li>
+        <li>Tableaux d'alertes (Observé · Suspecté · Confirmé)</li>
+        <li>Réglages en onglet, accès rapide</li>
+      </ul>
+      <div class="meta"><span>5 écrans · FR/EN · clair/sombre</span><span>Ouvrir →</span></div>
+    </a>
+  </div>
+
+  <div class="note">
+    Chaque maquette est étiquetée « Maquette — concept, non implémenté ». Aucun libellé ne prétend à une protection active :
+    absence de temps réel, filtrage DNS en boucle locale uniquement, pare-feu en observation seule. Voir
+    <strong>docs/SPRINT92_UI_UX_REDESIGN.md</strong> pour la spécification, les critères d'accessibilité et le processus d'approbation.
+  </div>
+</div>
+</body>
+</html>

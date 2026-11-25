@@ -16,6 +16,9 @@ pub struct AppPaths {
     pub freshclam_conf: PathBuf,
     pub freshclam_log: PathBuf,
     pub firewall_backups: PathBuf,
+    pub webguard_dir: PathBuf,
+    pub proactive_config: PathBuf,
+    pub portable_engine_dir: PathBuf,
     pub bundled_clamav_dir: Option<PathBuf>,
 }
 
@@ -57,6 +60,9 @@ impl AppPaths {
             freshclam_conf: clamav_dir.join("freshclam.conf"),
             freshclam_log: clamav_dir.join("freshclam.log"),
             firewall_backups: data_dir.join("firewall-backups"),
+            webguard_dir: data_dir.join("webguard"),
+            proactive_config: data_dir.join("proactive.json"),
+            portable_engine_dir: clamav_dir.join("portable"),
             clamav_dir,
             bundled_clamav_dir,
             data_dir,
@@ -69,6 +75,8 @@ impl AppPaths {
         std::fs::create_dir_all(&self.signature_db)?;
         std::fs::create_dir_all(&self.quarantine_dir)?;
         std::fs::create_dir_all(&self.firewall_backups)?;
+        std::fs::create_dir_all(&self.webguard_dir)?;
+        std::fs::create_dir_all(&self.portable_engine_dir)?;
         Ok(())
     }
 
@@ -98,7 +106,7 @@ impl AppPaths {
 
     /// Additional places where a portable/app-local ClamAV build can live.
     pub fn engine_search_dirs(&self) -> Vec<PathBuf> {
-        let mut dirs = vec![self.clamav_dir.clone()];
+        let mut dirs = vec![self.portable_engine_dir.clone(), self.clamav_dir.clone()];
         if let Some(dir) = &self.bundled_clamav_dir {
             if !dirs.contains(dir) {
                 dirs.push(dir.clone());

@@ -293,7 +293,32 @@ export function SetupWizard({
             "Le composant Windows qui installe les applications (winget) est indisponible. Utilisez la page officielle ClamAV, puis déclarez l'installation existante ci-dessous.",
             "The Windows app installer component (winget) is unavailable. Use the official ClamAV page, then declare the existing installation below.",
           )
-        : code === "installTimedOut"
+        : code === "downloadToolUnavailable"
+          ? L(
+              "curl.exe est introuvable : le téléchargement officiel ne peut pas être lancé. Utilisez la page officielle ClamAV ou localisez une installation existante.",
+              "curl.exe is missing: the official download cannot start. Use the official ClamAV page or locate an existing installation.",
+            )
+          : code === "downloadTimedOut" || code === "downloadFailed"
+            ? L(
+                "Le téléchargement officiel a échoué ou dépassé le délai. Vérifiez la connexion réseau, puis réessayez. Aucune archive non vérifiée n'a été extraite.",
+                "The official download failed or timed out. Check the network connection, then retry. No unverified archive was extracted.",
+              )
+            : code === "checksumMismatch" || code === "sizeMismatch"
+              ? L(
+                  "L'archive téléchargée ne correspond pas à la taille ou au SHA-256 officiel épinglé. Elle a été refusée avant extraction.",
+                  "The downloaded archive does not match the pinned official size or SHA-256. It was rejected before extraction.",
+                )
+              : code === "extractFailed" || code === "extractionToolUnavailable"
+                ? L(
+                    "L'extraction de l'archive officielle a échoué. Aucun réglage système n'a été modifié.",
+                    "Extraction of the official archive failed. No system setting was changed.",
+                  )
+                : code === "engineNotFound"
+                  ? L(
+                      "Les binaires clamscan.exe et freshclam.exe sont absents de l'archive vérifiée. L'installation est refusée.",
+                      "The clamscan.exe and freshclam.exe binaries are missing from the verified archive. Installation is rejected.",
+                    )
+                  : code === "installTimedOut"
           ? L(
               "L'installation a dépassé 20 minutes. Vérifiez la fenêtre Windows, puis réessayez ou déclarez une installation existante.",
               "The installation exceeded 20 minutes. Check the Windows window, then retry or declare an existing installation.",
@@ -327,7 +352,12 @@ export function SetupWizard({
     setInstallError(null);
     setInstallResult(null);
     try {
-      const result = await api.installClamav(true);
+      const usePortable =
+        provisioning?.preferredMethod === "portable" ||
+        (provisioning?.portableAvailable === true && provisioning.wingetAvailable === false);
+      const result = usePortable
+        ? await api.installClamavPortable(true)
+        : await api.installClamav(true);
       setInstallResult(result);
       onEngineChanged(result.engine);
       setInventory(await api.signatureInventory());
@@ -450,6 +480,12 @@ export function SetupWizard({
     ? installResult.outcome ?? (installResult.success ? "installed" : "wingetFailed")
     : null;
   const outcomeDetected = outcome === "installed" || outcome === "alreadyInstalled";
+  const portableMethod =
+    provisioning?.preferredMethod === "portable" ||
+    (provisioning?.portableAvailable === true && provisioning.wingetAvailable === false);
+  const installAvailable = portableMethod
+    ? provisioning?.portableAvailable === true
+    : provisioning?.wingetAvailable === true;
   const outcomeText =
     outcome === "alreadyInstalled"
       ? {
@@ -471,8 +507,8 @@ export function SetupWizard({
           ? {
               title: L("Installation terminée, moteur non détecté", "Installation finished, engine not detected"),
               detail: L(
-                "La fenêtre d'installation s'est terminée, mais ClamAV n'est pas encore visible. Redémarrez CBS Shield ou localisez clamscan.exe.",
-                "The installation window finished, but ClamAV is not visible yet. Restart CBS Shield or locate clamscan.exe.",
+                "L'installation s'est terminée, mais ClamAV n'est pas encore visible. Redémarrez CBS Shield ou localisez clamscan.exe.",
+                "The installation finished, but ClamAV is not visible yet. Restart CBS Shield or locate clamscan.exe.",
               ),
             }
           : outcome === "wingetFailed"
@@ -737,10 +773,15 @@ export function SetupWizard({
                       <div>
                         <strong>{L("Installation officielle guidée", "Guided official installation")}</strong>
                         <span>
-                          {L(
-                            "CBS Shield peut lancer le paquet ClamAV du catalogue officiel Windows. Aucune commande à saisir, aucun téléchargement direct, aucune installation silencieuse.",
-                            "CBS Shield can launch the ClamAV package from the official Windows catalogue. No command to type, no direct download, no silent installation.",
-                          )}
+                          {portableMethod
+                            ? L(
+                                "CBS Shield peut télécharger l'archive portable officielle ClamAV depuis la release GitHub de Cisco Talos, vérifier sa taille et son SHA-256, puis l'extraire dans votre dossier de données. Aucune élévation, aucun winget.",
+                                "CBS Shield can download the official ClamAV portable archive from Cisco Talos' GitHub release, verify its size and SHA-256, then extract it into your data folder. No elevation, no winget.",
+                              )
+                            : L(
+                                "CBS Shield peut lancer le paquet ClamAV du catalogue officiel Windows. Aucune commande à saisir, aucun téléchargement direct, aucune installation silencieuse.",
+                                "CBS Shield can launch the ClamAV package from the official Windows catalogue. No command to type, no direct download, no silent installation.",
+                              )}
                         </span>
                       </div>
                     </div>
@@ -748,15 +789,19 @@ export function SetupWizard({
                     <div className="setup-install__source">
                       <div>
                         <span className="field__label">{L("Source", "Source")}</span>
-                        <strong>Catalogue officiel Windows · Cisco Talos</strong>
+                        <strong>
+                          {portableMethod
+                            ? `Archive portable officielle · ClamAV ${provisioning?.portableVersion ?? "1.5.4"} · Cisco Talos`
+                            : "Catalogue officiel Windows · Cisco Talos"}
+                        </strong>
                       </div>
                       <div>
                         <span className="field__label">{L("Disponibilité", "Availability")}</span>
-                        <Badge tone={provisioning?.wingetAvailable ? "ok" : "warning"} dot>
+                        <Badge tone={installAvailable ? "ok" : "warning"} dot>
                           {provisioning
-                            ? provisioning.wingetAvailable
-                              ? L("Installateur disponible", "Installer available")
-                              : L("Installateur indisponible", "Installer unavailable")
+                            ? installAvailable
+                              ? L("Installation disponible", "Installation available")
+                              : L("Installation indisponible", "Installation unavailable")
                             : L("Vérification…", "Checking…")}
                         </Badge>
                       </div>
@@ -778,24 +823,42 @@ export function SetupWizard({
                       <li>
                         <span className="setup-install-steps__num">2</span>
                         <div>
-                          <strong>{L("Windows peut demander une autorisation", "Windows may request authorization")}</strong>
+                          <strong>
+                            {portableMethod
+                              ? L("L'archive officielle est vérifiée", "The official archive is verified")
+                              : L("Windows peut demander une autorisation", "Windows may request authorization")}
+                          </strong>
                           <small>
-                            {L(
-                              "La demande d'élévation reste celle de Windows. Lisez-la et acceptez-la uniquement si vous reconnaissez le programme.",
-                              "The elevation prompt remains Windows'. Read it and accept only if you recognise the program.",
-                            )}
+                            {portableMethod
+                              ? L(
+                                  "Taille exacte et SHA-256 épinglés ; toute archive différente est refusée avant extraction.",
+                                  "Exact pinned size and SHA-256; any different archive is rejected before extraction.",
+                                )
+                              : L(
+                                  "La demande d'élévation reste celle de Windows. Lisez-la et acceptez-la uniquement si vous reconnaissez le programme.",
+                                  "The elevation prompt remains Windows'. Read it and accept only if you recognise the program.",
+                                )}
                           </small>
                         </div>
                       </li>
                       <li>
                         <span className="setup-install-steps__num">3</span>
                         <div>
-                          <strong>{L("Une fenêtre d'installation visible s'ouvre", "A visible installation window opens")}</strong>
+                          <strong>
+                            {portableMethod
+                              ? L("Extraction dans votre dossier utilisateur", "Extraction into your user folder")
+                              : L("Une fenêtre d'installation visible s'ouvre", "A visible installation window opens")}
+                          </strong>
                           <small>
-                            {L(
-                              "Sa progression détaillée appartient à l'installateur ; CBS Shield ne peut pas lire son pourcentage.",
-                              "Its detailed progress belongs to the installer; CBS Shield cannot read its percentage.",
-                            )}
+                            {portableMethod
+                              ? L(
+                                  "Aucun service, aucune clé de registre, aucun chemin système et aucune règle de pare-feu ne sont créés.",
+                                  "No service, registry key, system path or firewall rule is created.",
+                                )
+                              : L(
+                                  "Sa progression détaillée appartient à l'installateur ; CBS Shield ne peut pas lire son pourcentage.",
+                                  "Its detailed progress belongs to the installer; CBS Shield cannot read its percentage.",
+                                )}
                           </small>
                         </div>
                       </li>
@@ -821,20 +884,25 @@ export function SetupWizard({
                         disabled={installing}
                       />
                       <span>
-                        {L(
-                          "J'autorise CBS Shield à lancer l'installation officielle de ClamAV depuis le catalogue Windows. Je comprends que Windows peut afficher une demande d'élévation et que l'installateur ouvrira une fenêtre visible.",
-                          "I authorize CBS Shield to launch the official ClamAV installation from the Windows catalogue. I understand Windows may show an elevation prompt and the installer will open a visible window.",
-                        )}
+                        {portableMethod
+                          ? L(
+                              "J'autorise CBS Shield à télécharger l'archive portable officielle ClamAV, à vérifier sa taille et son SHA-256, puis à l'extraire dans mon dossier de données. Je comprends qu'aucune élévation ni modification système n'est effectuée.",
+                              "I authorize CBS Shield to download the official ClamAV portable archive, verify its size and SHA-256, then extract it into my data folder. I understand no elevation or system change is performed.",
+                            )
+                          : L(
+                              "J'autorise CBS Shield à lancer l'installation officielle de ClamAV depuis le catalogue Windows. Je comprends que Windows peut afficher une demande d'élévation et que l'installateur ouvrira une fenêtre visible.",
+                              "I authorize CBS Shield to launch the official ClamAV installation from the Windows catalogue. I understand Windows may show an elevation prompt and the installer will open a visible window.",
+                            )}
                       </span>
                     </label>
 
-                    {provisioning && !provisioning.wingetAvailable && (
+                    {provisioning && !installAvailable && (
                       <div className="callout callout--warning">
                         <strong>{L("Installation automatique indisponible", "Automatic installation unavailable")}</strong>
                         <span>
                           {L(
-                            "Le composant Windows d'installation d'applications est absent. Utilisez la page officielle ClamAV, puis déclarez l'installation existante. Aucune commande ne vous est imposée.",
-                            "The Windows app installation component is missing. Use the official ClamAV page, then declare the existing installation. No command is imposed on you.",
+                            "Ni l'archive portable officielle (curl.exe/tar.exe) ni le catalogue Windows ne sont disponibles. Utilisez la page officielle ClamAV, puis déclarez l'installation existante. Aucune commande ne vous est imposée.",
+                            "Neither the official portable archive (curl.exe/tar.exe) nor the Windows catalogue is available. Use the official ClamAV page, then declare the existing installation. No command is imposed on you.",
                           )}
                         </span>
                       </div>
@@ -844,7 +912,7 @@ export function SetupWizard({
                       <button
                         type="button"
                         className="button button--primary"
-                        disabled={!installAuthorized || installing || !provisioning?.wingetAvailable}
+                        disabled={!installAuthorized || installing || !installAvailable}
                         onClick={() => void installClamav()}
                       >
                         {installing ? <LoaderCircle size={15} className="spin" /> : <HardDriveDownload size={15} />}
@@ -876,7 +944,9 @@ export function SetupWizard({
                         <div className="setup-install-progress__head">
                           <span>
                             <LoaderCircle size={15} className="spin" />
-                            {L("Installation officielle en cours", "Official installation in progress")}
+                            {portableMethod
+                              ? L("Téléchargement et vérification officiels en cours", "Official download and verification in progress")
+                              : L("Installation officielle en cours", "Official installation in progress")}
                           </span>
                           <strong>{elapsedLabel}</strong>
                         </div>
@@ -884,10 +954,15 @@ export function SetupWizard({
                           <span className="progress-rail__bar" />
                         </div>
                         <p>
-                          {L(
-                            "Suivez la fenêtre Windows ouverte par l'installateur. Ne fermez pas CBS Shield pendant cette étape.",
-                            "Follow the Windows window opened by the installer. Do not close CBS Shield during this step.",
-                          )}
+                          {portableMethod
+                            ? L(
+                                "L'archive officielle peut prendre plusieurs minutes. Ne fermez pas CBS Shield. Aucune donnée n'est extraite avant la vérification complète.",
+                                "The official archive may take several minutes. Do not close CBS Shield. Nothing is extracted before full verification.",
+                              )
+                            : L(
+                                "Suivez la fenêtre Windows ouverte par l'installateur. Ne fermez pas CBS Shield pendant cette étape.",
+                                "Follow the Windows window opened by the installer. Do not close CBS Shield during this step.",
+                              )}
                         </p>
                       </div>
                     )}
@@ -950,7 +1025,7 @@ export function SetupWizard({
                                 setInstallError(null);
                                 void installClamav();
                               }}
-                              disabled={installing || !provisioning?.wingetAvailable}
+                              disabled={installing || !installAvailable}
                             >
                               <RefreshCw size={14} />
                               {L("Réessayer", "Retry")}

@@ -1,6 +1,6 @@
 # Architecture Pare-feu — CBS Shield 0.7.0-dev
 
-**Date :** 27 octobre 2026 — Sprint 7
+**Date :** 28 octobre 2026 — Sprint 7
 **Périmètre :** observation **strictement en lecture seule** de Microsoft Defender
 Firewall, diagnostic des services, détection de changement, alertes, mapping
 connexions → règles, distinction référence/décision effective, export d'audit avec
