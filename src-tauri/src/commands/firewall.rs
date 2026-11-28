@@ -91,7 +91,7 @@ fn query_service_state(name: &str) -> String {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let output = std::process::Command::new("sc")
+        let output = std::process::Command::new(cbs_core::fsutil::system_tool("sc.exe"))
             .args(["query", name])
             .creation_flags(0x0800_0000)
             .output();

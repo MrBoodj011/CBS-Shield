@@ -29,7 +29,7 @@ pub fn export_scan_report(
         .get_scan(scan_id)?
         .ok_or_else(|| CommandError::new("scanNotFound", "Ce rapport de scan est introuvable."))?;
     let content = render_export(&details, &format)?;
-    let target = std::path::PathBuf::from(&path);
+    let target = validate_export_destination(&state.paths.data_dir, &path, &format)?;
     if target.is_dir() {
         return Err(CommandError::new(
             "invalidExportPath",
@@ -128,11 +128,66 @@ fn render_csv(details: &ScanDetails) -> String {
     out
 }
 
+/// Expected file extension for each export format.
+fn export_extension(format: &str) -> Option<&'static str> {
+    match format {
+        "json" => Some("json"),
+        "csv" => Some("csv"),
+        "md" => Some("md"),
+        "txt" => Some("txt"),
+        _ => None,
+    }
+}
+
+/// Validate the export destination on the backend.
+///
+/// The native save dialog is only a UI convenience: the webview can send any
+/// path. Without this check an export could overwrite `quarantine.key` (making
+/// every quarantined file unrecoverable) or the history database. The target
+/// must be absolute, carry the extension of the chosen format, contain no
+/// `..`, and resolve outside the CBS Shield data directory.
+pub fn validate_export_destination(
+    data_dir: &std::path::Path,
+    raw: &str,
+    format: &str,
+) -> Result<std::path::PathBuf, CommandError> {
+    let invalid = |message: &str| CommandError::new("invalidExportPath", message.to_string());
+    let target = std::path::PathBuf::from(raw.trim());
+    let expected = export_extension(format).ok_or_else(|| invalid("Format d'export inconnu."))?;
+    let extension = target
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_ascii_lowercase());
+    if extension.as_deref() != Some(expected) {
+        return Err(invalid(&format!(
+            "Le fichier d'export doit porter l'extension .{expected}."
+        )));
+    }
+    let resolved = crate::commands::vault::normalized_destination(&target)
+        .ok_or_else(|| invalid("Chemin d'export invalide (absolu, sans « .. »)."))?;
+    let data_root =
+        crate::commands::vault::normalized_path(data_dir).unwrap_or_else(|| data_dir.to_path_buf());
+    if crate::commands::vault::path_is_inside(&resolved, &data_root) {
+        return Err(CommandError::new(
+            "forbiddenExportPath",
+            "L'export vers le dossier interne de CBS Shield est refusé.",
+        ));
+    }
+    Ok(target)
+}
+
+/// RFC 4180 quoting plus spreadsheet formula neutralisation: a cell starting
+/// with `=`, `+`, `-`, `@`, tab or CR would be evaluated by Excel/LibreOffice
+/// (file names and signature names come from scanned, untrusted content).
 fn csv_field(value: &str) -> String {
+    let value = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    };
     if value.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
-        value.to_string()
+        value
     }
 }
 
@@ -236,6 +291,45 @@ mod tests {
         assert_eq!(csv_field("plain"), "plain");
         assert_eq!(csv_field("a,b"), "\"a,b\"");
         assert_eq!(csv_field("a\"b"), "\"a\"\"b\"");
+    }
+
+    #[test]
+    fn csv_neutralises_spreadsheet_formulas() {
+        assert_eq!(csv_field("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
+        assert_eq!(csv_field("+1"), "'+1");
+        assert_eq!(csv_field("-2"), "'-2");
+        assert_eq!(csv_field("@SUM(A1)"), "'@SUM(A1)");
+        assert_eq!(csv_field("=a,b"), "\"'=a,b\"");
+        assert_eq!(csv_field("C:\\file.exe"), "C:\\file.exe");
+    }
+
+    #[test]
+    fn export_destination_is_validated_on_the_backend() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let user = dir.path().join("user");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(&user).unwrap();
+        let ok = user.join("report.csv");
+        assert!(validate_export_destination(&data, &ok.display().to_string(), "csv").is_ok());
+
+        // Overwriting the vault key / database is refused.
+        for target in [data.join("quarantine.key"), data.join("cbs-shield.db")] {
+            assert!(
+                validate_export_destination(&data, &target.display().to_string(), "txt").is_err()
+            );
+        }
+        let inside = data.join("report.csv");
+        assert!(validate_export_destination(&data, &inside.display().to_string(), "csv").is_err());
+        // Extension must match the format.
+        let wrong = user.join("report.exe");
+        assert!(validate_export_destination(&data, &wrong.display().to_string(), "csv").is_err());
+        // Relative paths and traversal are refused.
+        assert!(validate_export_destination(&data, "report.csv", "csv").is_err());
+        let traversal = user.join("..").join("data").join("r.csv");
+        assert!(
+            validate_export_destination(&data, &traversal.display().to_string(), "csv").is_err()
+        );
     }
 
     #[test]

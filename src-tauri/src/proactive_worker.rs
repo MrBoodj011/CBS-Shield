@@ -143,7 +143,11 @@ pub fn stop(app: &AppHandle) {
             .auto_scan
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        inner.cancel.notify_waiters();
+        // `notify_one` stores a permit when nobody is waiting at this instant
+        // (for example while a scan output line is being processed), so the
+        // cancellation can no longer be missed. Each generation has its own
+        // `Notify`, so a leftover permit never reaches a newer worker.
+        inner.cancel.notify_one();
     }
 }
 
@@ -253,6 +257,17 @@ async fn process_cycle(app: &AppHandle, generation: u64) {
     // over at most once per change; draining removes them whether or not the
     // batch succeeded, so a permanently failing file cannot pin the queue —
     // the audit trail records the failure instead.
+    //
+    // Never scan while freshclam rewrites the signature database, and share
+    // the single ClamAV slot with manual scans: holding the lease for the
+    // whole cycle also makes manual/automatic signature updates wait. When
+    // either is busy the queue is simply left for the next cycle.
+    if state.is_updating() {
+        return;
+    }
+    let Ok((_slot_scan_id, _slot_cancel, _scan_lease)) = state.begin_scan() else {
+        return;
+    };
     let queued = state.proactive.drain_queue().unwrap_or_default();
     if queued.is_empty() {
         return;
@@ -266,8 +281,12 @@ async fn process_cycle(app: &AppHandle, generation: u64) {
         .with_database_dir(status.database_path.clone())
         .with_forbidden_root(Some(state.paths.quarantine_dir.clone()));
 
-    for chunk in queued.chunks(MAX_BATCH) {
+    for (index, chunk) in queued.chunks(MAX_BATCH).enumerate() {
+        // Paths from this chunk onwards that have not been scanned yet. They
+        // go back to the queue on every early exit instead of being dropped.
+        let pending = || queued[index * MAX_BATCH..].to_vec();
         if !still_current(app, generation) {
+            let _ = state.proactive.requeue(pending());
             exit_because_replaced(app, generation);
             return;
         }
@@ -298,6 +317,19 @@ async fn process_cycle(app: &AppHandle, generation: u64) {
         let scan_result = scanner.scan(&scan_id, &request, sink, cancel).await;
 
         let payload = match scan_result {
+            Ok(report) if report.cancelled => {
+                // Consent revoked mid-batch: partial results are discarded (as
+                // documented above) and the unscanned paths are kept queued.
+                let _ = state.proactive.requeue(pending());
+                let mut inner = state
+                    .auto_scan
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if inner.generation == generation {
+                    inner.busy = None;
+                }
+                return;
+            }
             Ok(report) => {
                 let record_id = match state.store.save_scan(&report) {
                     Ok(id) => Some(id),
@@ -368,6 +400,10 @@ async fn process_cycle(app: &AppHandle, generation: u64) {
 
         update_last_batch(app, &payload);
         if !still_current(app, generation) {
+            let next = (index + 1) * MAX_BATCH;
+            if next < queued.len() {
+                let _ = state.proactive.requeue(queued[next..].to_vec());
+            }
             exit_because_replaced(app, generation);
             return;
         }
@@ -411,7 +447,10 @@ fn notify_if_detection(
     let key = format!("proactive-detection-{}", report.id);
     let matched = {
         let app_state = app.state::<AppState>();
-        let mut ring = app_state.notify_ring.lock().unwrap();
+        let mut ring = app_state
+            .notify_ring
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         ring.admit(&key)
     };
     if matched {

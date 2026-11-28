@@ -21,10 +21,53 @@ pub fn normalized_path(path: &Path) -> Option<PathBuf> {
     Some(PathBuf::from(stripped.to_string()))
 }
 
-fn is_inside(candidate: &Option<PathBuf>, root: &Path) -> bool {
-    match candidate {
-        Some(canonical) => canonical.starts_with(root),
-        None => false,
+/// Resolve a write destination that may not exist yet.
+///
+/// `canonicalize` fails on a missing file, which previously made every
+/// containment check pass for exactly the paths that get written (a restore
+/// or export target never exists beforehand). This canonicalizes the deepest
+/// existing ancestor (following any symlink/junction in it) and re-appends the
+/// remaining components. `..`/`.` components and relative paths are refused
+/// (`None`), so the result can be compared against the protected roots.
+pub fn normalized_destination(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    if !path.is_absolute() {
+        return None;
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+    {
+        return None;
+    }
+    if let Some(existing) = normalized_path(path) {
+        return Some(existing);
+    }
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut cursor = path;
+    loop {
+        missing.push(cursor.file_name()?.to_os_string());
+        cursor = cursor.parent()?;
+        if let Some(mut resolved) = normalized_path(cursor) {
+            for part in missing.iter().rev() {
+                resolved.push(part);
+            }
+            return Some(resolved);
+        }
+    }
+}
+
+/// Case-insensitive on Windows (NTFS paths are case-insensitive), exact
+/// component match elsewhere.
+pub fn path_is_inside(candidate: &Path, root: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let lower = |path: &Path| PathBuf::from(path.to_string_lossy().to_lowercase());
+        lower(candidate).starts_with(lower(root))
+    }
+    #[cfg(not(windows))]
+    {
+        candidate.starts_with(root)
     }
 }
 
@@ -56,12 +99,17 @@ pub fn validate_restore_destination(
         ));
     }
     // Both roots have been canonicalized at startup (AppPaths::canonicalized).
-    let canonical = std::fs::canonicalize(&destination).ok().map(|canonical| {
-        let text = canonical.as_os_str().to_string_lossy();
-        let stripped = text.strip_prefix(r"\\?\").unwrap_or(&text);
-        PathBuf::from(stripped.to_string())
-    });
-    if is_inside(&canonical, vault_root) || is_inside(&canonical, data_dir) {
+    // The destination normally does not exist yet, so resolve it through its
+    // nearest existing ancestor; an unresolvable path is refused.
+    let canonical = normalized_destination(&destination).ok_or_else(|| {
+        CommandError::new(
+            "invalidTarget",
+            format!("Chemin d'origine invalide : {original_path}"),
+        )
+    })?;
+    let vault_root = normalized_path(vault_root).unwrap_or_else(|| vault_root.to_path_buf());
+    let data_dir = normalized_path(data_dir).unwrap_or_else(|| data_dir.to_path_buf());
+    if path_is_inside(&canonical, &vault_root) || path_is_inside(&canonical, &data_dir) {
         return Err(CommandError::new(
             "forbiddenRestore",
             "La restauration vers une zone interne de CBS Shield est refusée.",
@@ -100,13 +148,13 @@ fn validate_source(state: &AppState, raw: &str) -> Result<PathBuf, CommandError>
         .unwrap_or_else(|| state.paths.quarantine_dir.clone());
     let data_root =
         normalized_path(&state.paths.data_dir).unwrap_or_else(|| state.paths.data_dir.clone());
-    if canonical.starts_with(&quarantine_root) {
+    if path_is_inside(&canonical, &quarantine_root) {
         return Err(CommandError::new(
             "invalidTarget",
             "Ce fichier se trouve déjà dans le coffre de quarantaine.",
         ));
     }
-    if canonical.starts_with(&data_root) {
+    if path_is_inside(&canonical, &data_root) {
         return Err(CommandError::new(
             "invalidTarget",
             "Les données internes de CBS Shield (historique, signatures, clé) ne peuvent pas être mises en quarantaine.",
@@ -125,6 +173,7 @@ pub async fn quarantine_file(
     sha256: Option<String>,
     confirm: bool,
 ) -> Result<QuarantineRecord, CommandError> {
+    let _vault_guard = state.vault_ops.lock().await;
     if !confirm {
         return Err(CommandError::confirmation_required(
             "le déplacement du fichier en quarantaine",
@@ -267,6 +316,7 @@ pub async fn restore_quarantine(
     id: i64,
     confirm: bool,
 ) -> Result<String, CommandError> {
+    let _vault_guard = state.vault_ops.lock().await;
     if !confirm {
         return Err(CommandError::confirmation_required(
             "la restauration d'un fichier",
@@ -318,6 +368,7 @@ pub async fn delete_quarantine(
     confirm: bool,
     phrase: String,
 ) -> Result<(), CommandError> {
+    let _vault_guard = state.vault_ops.lock().await;
     if !confirm {
         return Err(CommandError::confirmation_required(
             "la suppression définitive d'un élément de quarantaine",
@@ -406,9 +457,9 @@ mod tests {
 
     #[test]
     fn restore_destination_guard_accepts_not_yet_existing_path() {
-        // A destination that does not exist yet cannot be canonicalized: we
-        // cannot prove it lies inside a protected root, and the pre-restore
-        // overwrite refusal still applies downstream.
+        // A destination that does not exist yet (the normal restore case) is
+        // resolved through its nearest existing ancestor and accepted when it
+        // lies outside the protected roots.
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         let data = dir.path().join("data");
@@ -417,8 +468,38 @@ mod tests {
         assert!(validate_restore_destination(
             &vault,
             &data,
-            &dir.path().join("user\\new.docx").display().to_string()
+            &dir.path()
+                .join("user")
+                .join("new.docx")
+                .display()
+                .to_string()
         )
         .is_ok());
+    }
+
+    #[test]
+    fn restore_destination_guard_refuses_missing_files_inside_protected_roots() {
+        // Regression: a not-yet-existing file inside the data directory used
+        // to pass because canonicalize() failed and the check was skipped.
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        let data = dir.path().join("data");
+        fs::create_dir_all(&vault).unwrap();
+        fs::create_dir_all(&data).unwrap();
+        for target in [
+            data.join("quarantine.key"),
+            data.join("sub").join("deeper").join("x.bin"),
+            vault.join("new.cbsq"),
+        ] {
+            assert!(
+                validate_restore_destination(&vault, &data, &target.display().to_string()).is_err(),
+                "{target:?} must be refused"
+            );
+        }
+        // `..` traversal is refused outright.
+        let sneaky = dir.path().join("user").join("..").join("data").join("x");
+        assert!(
+            validate_restore_destination(&vault, &data, &sneaky.display().to_string()).is_err()
+        );
     }
 }

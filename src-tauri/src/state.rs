@@ -109,6 +109,10 @@ pub struct AppState {
     /// deltas between two Network Monitor captures.
     netmon_last: Arc<Mutex<Option<Vec<InterfaceTraffic>>>>,
     update_running: Arc<AtomicBool>,
+    /// Serializes quarantine/restore/delete commands end to end, so the
+    /// "already quarantined?" check and the insert cannot interleave between
+    /// two concurrent requests for the same file.
+    pub vault_ops: tokio::sync::Mutex<()>,
 }
 
 /// Releases the single update slot on every exit path (success, error, panic).
@@ -137,12 +141,19 @@ impl AppState {
             scan_slot: Arc::new(Mutex::new(None)),
             netmon_last: Arc::new(Mutex::new(None)),
             update_running: Arc::new(AtomicBool::new(false)),
+            vault_ops: tokio::sync::Mutex::new(()),
         }
     }
 
     /// Acquire the exclusive freshclam slot. Manual and automatic updates share
     /// it so two freshclam processes can never rewrite the database at once.
     pub fn begin_update(&self) -> Option<UpdateLease> {
+        // Decide under the scan-slot lock: `begin_scan` checks the update flag
+        // under the same lock, so a scan and an update can never both start.
+        let slot = self.scan_slot.lock().unwrap_or_else(|p| p.into_inner());
+        if slot.is_some() {
+            return None;
+        }
         if self
             .update_running
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -171,6 +182,14 @@ impl AppState {
             return Err(CommandError::new(
                 "scanInProgress",
                 "Un scan est déjà en cours. Attendez sa fin ou annulez-le.",
+            ));
+        }
+        // clamscan must never read the signature database while freshclam is
+        // rewriting it (manual and automatic updates both hold this flag).
+        if self.is_updating() {
+            return Err(CommandError::new(
+                "updateInProgress",
+                "Une mise à jour des signatures est en cours : le scan pourra démarrer dès qu'elle sera terminée.",
             ));
         }
         let scan_id = Uuid::new_v4().to_string();

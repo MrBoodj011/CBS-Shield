@@ -43,6 +43,13 @@ pub fn prepare_targets(
         return Err(CoreError::NoTargets);
     }
 
+    // Canonicalize the forbidden root the same way as each target. On
+    // Windows `canonicalize` yields verbatim `\\?\C:\...` paths while the app
+    // passes a prefix-stripped root, so a raw `starts_with` never matched and
+    // the vault guard was silently disabled.
+    let forbidden_root: Option<PathBuf> =
+        forbidden_root.map(|root| root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
+
     let mut targets: Vec<PathBuf> = Vec::with_capacity(paths.len());
     for path in paths {
         if !path.exists() {
@@ -52,7 +59,7 @@ pub fn prepare_targets(
             .canonicalize()
             .map_err(|err| CoreError::InvalidTarget(format!("{} ({err})", path.display())))?;
 
-        if let Some(root) = forbidden_root {
+        if let Some(root) = forbidden_root.as_deref() {
             if canonical.starts_with(root) {
                 return Err(CoreError::ForbiddenPath(format!(
                     "{} se trouve dans le coffre de quarantaine",
@@ -66,4 +73,34 @@ pub fn prepare_targets(
         }
     }
     Ok(targets)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn targets_inside_the_vault_are_refused_even_with_a_plain_root() {
+        // Regression: the app passes a prefix-stripped root while targets are
+        // canonicalized to `\\?\` form on Windows; the guard never matched.
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        let blob = vault.join("item.cbsq");
+        std::fs::write(&blob, b"x").unwrap();
+        let plain_root = {
+            let canonical = vault.canonicalize().unwrap();
+            let text = canonical.to_string_lossy().to_string();
+            PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text).to_string())
+        };
+        let result = prepare_targets(&[blob], Some(&plain_root));
+        assert!(
+            matches!(result, Err(CoreError::ForbiddenPath(_))),
+            "{result:?}"
+        );
+
+        let outside = dir.path().join("user.txt");
+        std::fs::write(&outside, b"y").unwrap();
+        assert!(prepare_targets(&[outside], Some(&plain_root)).is_ok());
+    }
 }

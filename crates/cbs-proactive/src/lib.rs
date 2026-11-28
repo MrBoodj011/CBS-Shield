@@ -68,6 +68,53 @@ pub struct MonitorConfig {
     pub max_depth: u32,
 }
 
+/// Accepted bounds for user-supplied settings. Values outside these ranges
+/// used to make stop/set-directories wait for hours (`cycle_seconds`) or
+/// overflow the size computation (`max_file_size_mb`).
+pub const MAX_CYCLE_SECONDS: u64 = 3_600;
+pub const MAX_FILE_SIZE_MB: u64 = 4_096;
+
+impl MonitorConfig {
+    /// Reject out-of-range settings coming from the UI.
+    pub fn validated(self) -> Result<Self, MonitorError> {
+        if !(1..=MAX_CYCLE_SECONDS).contains(&self.cycle_seconds) {
+            return Err(MonitorError::InvalidConfig(format!(
+                "intervalle de cycle invalide (1 à {MAX_CYCLE_SECONDS} s)"
+            )));
+        }
+        if !(1..=MAX_TRACKED).contains(&self.max_files_per_cycle) {
+            return Err(MonitorError::InvalidConfig(format!(
+                "nombre de fichiers par cycle invalide (1 à {MAX_TRACKED})"
+            )));
+        }
+        if !(1..=MAX_FILE_SIZE_MB).contains(&self.max_file_size_mb) {
+            return Err(MonitorError::InvalidConfig(format!(
+                "taille maximale invalide (1 à {MAX_FILE_SIZE_MB} Mo)"
+            )));
+        }
+        if self.max_depth > MAX_DEPTH {
+            return Err(MonitorError::InvalidConfig(format!(
+                "profondeur invalide (0 à {MAX_DEPTH})"
+            )));
+        }
+        Ok(self)
+    }
+
+    /// Clamp a persisted (possibly hand-edited) configuration into range.
+    fn clamped(self) -> Self {
+        Self {
+            cycle_seconds: self.cycle_seconds.clamp(1, MAX_CYCLE_SECONDS),
+            max_files_per_cycle: self.max_files_per_cycle.clamp(1, MAX_TRACKED),
+            max_file_size_mb: self.max_file_size_mb.clamp(1, MAX_FILE_SIZE_MB),
+            max_depth: self.max_depth.min(MAX_DEPTH),
+        }
+    }
+
+    fn max_file_bytes(&self) -> u64 {
+        self.max_file_size_mb.saturating_mul(1_048_576)
+    }
+}
+
 impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
@@ -207,25 +254,35 @@ fn ignore(path: &Path) -> bool {
 }
 
 /// Generate the periodic snapshot of the watched directory.
-fn walk(dir: &Path, depth: u32, max_depth: u32, files: &mut BTreeMap<PathBuf, FileStamp>) {
-    if depth > max_depth {
+fn walk(
+    dir: &Path,
+    depth: u32,
+    max_depth: u32,
+    files: &mut BTreeMap<PathBuf, FileStamp>,
+    budget: &mut usize,
+) {
+    if depth > max_depth || *budget == 0 {
         return;
     }
     for entry in match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
     } {
+        if *budget == 0 {
+            return;
+        }
         let Ok(entry) = entry else { continue };
         let path = entry.path();
         if ignore(&path) {
             continue;
         }
         if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-            walk(&path, depth + 1, max_depth, files);
+            walk(&path, depth + 1, max_depth, files, budget);
         } else if path.is_file() {
             if let Ok(metadata) = entry.metadata() {
                 if let Some(value) = stamp(&metadata) {
                     files.insert(path, value);
+                    *budget -= 1;
                 }
             }
         }
@@ -284,13 +341,36 @@ fn sanitize(directories: Vec<String>) -> Result<Vec<PathBuf>, MonitorError> {
     Ok(unique)
 }
 
+/// Filesystem walk for one cycle. Runs **without** the runtime lock so that
+/// snapshot/pause/stop commands never wait for a slow directory scan; the
+/// number of entries visited is bounded by the per-cycle file budget.
+fn walk_dirs(dirs: &[PathBuf], config: &MonitorConfig) -> Vec<BTreeMap<PathBuf, FileStamp>> {
+    // One extra entry lets the apply step detect (and report) a partial cycle.
+    let mut budget = config.max_files_per_cycle.saturating_add(1);
+    dirs.iter()
+        .map(|dir| {
+            let mut files = BTreeMap::new();
+            walk(dir, 0, config.max_depth, &mut files, &mut budget);
+            files
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn cycle_impl(dirs: &[PathBuf], config: &MonitorConfig, runtime: &mut Runtime) {
+    let walked = walk_dirs(dirs, config);
+    apply_cycle(walked, config, runtime);
+}
+
+fn apply_cycle(
+    walked: Vec<BTreeMap<PathBuf, FileStamp>>,
+    config: &MonitorConfig,
+    runtime: &mut Runtime,
+) {
     runtime.cycle_count = runtime.cycle_count.saturating_add(1);
     let seeding = !runtime.seeded;
     let mut processed = 0usize;
-    'outer: for dir in dirs {
-        let mut files = BTreeMap::new();
-        walk(dir, 0, config.max_depth, &mut files);
+    'outer: for files in walked {
         for (path, current) in files.into_iter() {
             if processed >= config.max_files_per_cycle {
                 runtime.last_error =
@@ -303,7 +383,7 @@ fn cycle_impl(dirs: &[PathBuf], config: &MonitorConfig, runtime: &mut Runtime) {
                 break 'outer;
             }
             processed += 1;
-            if current.size > config.max_file_size_mb * 1_048_576 {
+            if current.size > config.max_file_bytes() {
                 runtime.push_event(
                     EventKind::Rejected,
                     &path,
@@ -338,6 +418,40 @@ fn cycle_impl(dirs: &[PathBuf], config: &MonitorConfig, runtime: &mut Runtime) {
     runtime.last_cycle = Some(Utc::now().to_rfc3339());
 }
 
+/// Granularity of the worker's sleep: a stop request is honoured within this
+/// delay instead of after a full (up to one hour) cycle interval.
+const STOP_POLL: Duration = Duration::from_millis(200);
+
+fn spawn_worker(runtime: Arc<Mutex<Runtime>>, stop_flag: Arc<AtomicBool>) -> JoinHandle<()> {
+    thread::spawn(move || {
+        while !stop_flag.load(Ordering::SeqCst) {
+            let (directories, config, paused) = {
+                let state = runtime.lock().unwrap_or_else(|p| p.into_inner());
+                (
+                    state.persisted.directories.clone(),
+                    state.persisted.config,
+                    state.paused,
+                )
+            };
+            if !directories.is_empty() && !paused {
+                let paths: Vec<PathBuf> = directories.iter().map(PathBuf::from).collect();
+                let walked = walk_dirs(&paths, &config);
+                if stop_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+                let mut state = runtime.lock().unwrap_or_else(|p| p.into_inner());
+                if !state.paused {
+                    apply_cycle(walked, &config, &mut state);
+                }
+            }
+            let deadline = std::time::Instant::now() + Duration::from_secs(config.cycle_seconds);
+            while !stop_flag.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+                thread::sleep(STOP_POLL);
+            }
+        }
+    })
+}
+
 /// Bounded queue with explicit backpressure: when the review queue is full the
 /// file change is still recorded as an event, but the queue reports the
 /// overload instead of growing without limit.
@@ -365,6 +479,8 @@ impl ProactiveMonitor {
                 auto_watch: false,
             });
 
+        let mut persisted = persisted;
+        persisted.config = persisted.config.clamped();
         let runtime = Runtime {
             persisted,
             ..Runtime::default()
@@ -376,7 +492,7 @@ impl ProactiveMonitor {
 
         let worker = {
             let persisted = {
-                let runtime = runtime.lock().unwrap();
+                let runtime = runtime.lock().unwrap_or_else(|p| p.into_inner());
                 runtime.persisted.clone()
             };
             if persisted.auto_watch && !persisted.directories.is_empty() {
@@ -392,27 +508,7 @@ impl ProactiveMonitor {
                 }
                 let runtime = Arc::clone(&runtime);
                 let stop_flag = Arc::clone(&stop_flag);
-                let handle = thread::spawn(move || {
-                    while !stop_flag.load(Ordering::SeqCst) {
-                        let (directories, config) = {
-                            let state = runtime.lock().unwrap();
-                            (state.persisted.directories.clone(), state.persisted.config)
-                        };
-                        if !directories.is_empty() {
-                            let paths: Vec<PathBuf> =
-                                directories.iter().map(PathBuf::from).collect();
-                            let mut state = runtime
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            if !state.paused {
-                                cycle_impl(&paths, &config, &mut state);
-                                state.last_cycle = Some(Utc::now().to_rfc3339());
-                            }
-                        }
-                        thread::sleep(Duration::from_secs(config.cycle_seconds.max(1)));
-                    }
-                });
-                Some(handle)
+                Some(spawn_worker(runtime, stop_flag))
             } else {
                 None
             }
@@ -492,6 +588,7 @@ impl ProactiveMonitor {
     }
 
     pub fn set_config(&self, config: MonitorConfig) -> Result<MonitorStatus, MonitorError> {
+        let config = config.validated()?;
         {
             let mut state = self
                 .runtime
@@ -532,26 +629,7 @@ impl ProactiveMonitor {
             if worker_lock.is_none() {
                 let runtime = Arc::clone(&self.runtime);
                 let stop_flag = Arc::clone(&self.stop_flag);
-                let handle = thread::spawn(move || {
-                    while !stop_flag.load(Ordering::SeqCst) {
-                        let (directories, config) = {
-                            let state = runtime.lock().unwrap();
-                            (state.persisted.directories.clone(), state.persisted.config)
-                        };
-                        if !directories.is_empty() {
-                            let paths: Vec<PathBuf> =
-                                directories.iter().map(PathBuf::from).collect();
-                            let mut state = runtime
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            if !state.paused {
-                                cycle_impl(&paths, &config, &mut state);
-                            }
-                        }
-                        thread::sleep(Duration::from_secs(config.cycle_seconds.max(1)));
-                    }
-                });
-                *worker_lock = Some(handle);
+                *worker_lock = Some(spawn_worker(runtime, stop_flag));
             }
         }
         self.snapshot()
@@ -599,6 +677,27 @@ impl ProactiveMonitor {
         Ok(std::mem::take(&mut state.queue))
     }
 
+    /// Put paths back at the front of the review queue (used when a drained
+    /// batch could not be scanned, e.g. the worker was replaced or the scan
+    /// slot was busy). Bounded by the queue size like regular enqueues.
+    pub fn requeue(&self, paths: Vec<PathBuf>) -> Result<(), MonitorError> {
+        let mut state = self
+            .runtime
+            .lock()
+            .map_err(|err| MonitorError::Internal(err.to_string()))?;
+        let mut merged: Vec<PathBuf> = Vec::with_capacity(paths.len() + state.queue.len());
+        for path in paths.into_iter().chain(std::mem::take(&mut state.queue)) {
+            if merged.len() >= MAX_QUEUE {
+                break;
+            }
+            if !merged.contains(&path) {
+                merged.push(path);
+            }
+        }
+        state.queue = merged;
+        Ok(())
+    }
+
     pub fn clear(&self) -> Result<MonitorStatus, MonitorError> {
         {
             let mut state = self
@@ -630,6 +729,68 @@ mod tests {
         runtime.persisted.config = *config;
         runtime.persisted.directories = dirs.iter().map(|p| p.display().to_string()).collect();
         runtime
+    }
+
+    #[test]
+    fn out_of_range_config_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let monitor = ProactiveMonitor::load(&config_in(temp.path()));
+        for bad in [
+            MonitorConfig {
+                cycle_seconds: u64::MAX,
+                ..MonitorConfig::default()
+            },
+            MonitorConfig {
+                cycle_seconds: 0,
+                ..MonitorConfig::default()
+            },
+            MonitorConfig {
+                max_file_size_mb: u64::MAX,
+                ..MonitorConfig::default()
+            },
+            MonitorConfig {
+                max_depth: MAX_DEPTH + 1,
+                ..MonitorConfig::default()
+            },
+            MonitorConfig {
+                max_files_per_cycle: 0,
+                ..MonitorConfig::default()
+            },
+        ] {
+            assert!(monitor.set_config(bad).is_err(), "{bad:?}");
+        }
+        assert!(monitor.set_config(MonitorConfig::default()).is_ok());
+    }
+
+    #[test]
+    fn hand_edited_config_is_clamped_on_load() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = config_in(temp.path());
+        fs::write(
+            &path,
+            r#"{"config":{"cycleSeconds":99999999,"maxFilesPerCycle":250,"maxFileSizeMb":18446744073709551615,"maxDepth":99},"directories":[],"autoWatch":false}"#,
+        )
+        .unwrap();
+        let status = ProactiveMonitor::load(&path).snapshot().unwrap();
+        assert_eq!(status.config.cycle_seconds, MAX_CYCLE_SECONDS);
+        assert_eq!(status.config.max_file_size_mb, MAX_FILE_SIZE_MB);
+        assert_eq!(status.config.max_depth, MAX_DEPTH);
+    }
+
+    #[test]
+    fn requeue_puts_paths_back_first_without_duplicates() {
+        let temp = tempfile::tempdir().unwrap();
+        let monitor = ProactiveMonitor::load(&config_in(temp.path()));
+        monitor
+            .requeue(vec![PathBuf::from("a"), PathBuf::from("b")])
+            .unwrap();
+        monitor
+            .requeue(vec![PathBuf::from("c"), PathBuf::from("a")])
+            .unwrap();
+        assert_eq!(
+            monitor.drain_queue().unwrap(),
+            vec![PathBuf::from("c"), PathBuf::from("a"), PathBuf::from("b")]
+        );
     }
 
     #[test]

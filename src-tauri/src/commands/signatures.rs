@@ -99,53 +99,37 @@ pub struct ProvisioningStatus {
     pub preferred_method: String,
 }
 
+/// Whether a Windows system tool is present at its absolute System32 path.
+/// The same absolute path is what gets executed, so a binary found earlier on
+/// `PATH` (or planted next to the app) can never satisfy this check.
 fn command_available(program: &str) -> bool {
-    let mut command = std::process::Command::new("where");
-    command
-        .arg(program)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
-    command
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    cbs_core::fsutil::system_tool(program).is_file()
+}
+
+/// winget is an App Execution Alias under the user's
+/// `%LOCALAPPDATA%\Microsoft\WindowsApps`. Resolve it there instead of letting
+/// the process search start in the application directory.
+fn winget_path() -> std::path::PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .map(|dir| dir.join(r"Microsoft\WindowsApps\winget.exe"))
+        .unwrap_or_else(|| std::path::PathBuf::from("winget.exe"))
 }
 
 #[tauri::command]
-pub fn provisioning_status(state: State<'_, AppState>) -> Result<ProvisioningStatus, CommandError> {
+pub async fn provisioning_status(
+    state: State<'_, AppState>,
+) -> Result<ProvisioningStatus, CommandError> {
     let settings = state.store.settings()?;
     let status = probe_with_settings(&state, &settings);
 
-    let mut command = std::process::Command::new("winget");
-    command
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
-    let winget = command.output_with_timeout(Duration::from_secs(10));
-    let winget_available = winget
-        .as_ref()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
-    let winget_version = winget.ok().and_then(|output| {
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text.lines().next().unwrap_or_default().to_string())
-        }
-    });
+    // `winget --version` can take up to 10 s on a cold start: run it on the
+    // blocking pool instead of freezing the window (sync commands run on the
+    // main thread).
+    let (winget_available, winget_version) = tokio::task::spawn_blocking(probe_winget)
+        .await
+        .unwrap_or((false, None));
 
     let portable_available =
         cfg!(windows) && command_available("curl.exe") && command_available("tar.exe");
@@ -184,6 +168,34 @@ pub fn provisioning_status(state: State<'_, AppState>) -> Result<ProvisioningSta
     })
 }
 
+fn probe_winget() -> (bool, Option<String>) {
+    let mut command = std::process::Command::new(winget_path());
+    command
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let winget = command.output_with_timeout(Duration::from_secs(10));
+    let winget_available = winget
+        .as_ref()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    let winget_version = winget.ok().and_then(|output| {
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.lines().next().unwrap_or_default().to_string())
+        }
+    });
+    (winget_available, winget_version)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClamavInstallResult {
@@ -206,7 +218,7 @@ fn winget_install_command() -> std::process::Command {
     // Official winget source only, no silent/skip-confirmation switch. The
     // installer is launched in a new visible console so the user sees winget
     // and any UAC prompt; CBS Shield never elevates itself.
-    let mut command = std::process::Command::new("winget");
+    let mut command = std::process::Command::new(winget_path());
     command.args([
         "install",
         "--id",
@@ -592,7 +604,7 @@ fn file_sha256(path: &Path) -> Result<String, CommandError> {
 fn download_archive(archive: &Path) -> Result<(), CommandError> {
     let part = archive.with_extension("zip.part");
     let _ = std::fs::remove_file(&part);
-    let mut command = std::process::Command::new("curl.exe");
+    let mut command = std::process::Command::new(cbs_core::fsutil::system_tool("curl.exe"));
     command.args([
         "--fail",
         "--location",
@@ -660,7 +672,7 @@ fn download_archive(archive: &Path) -> Result<(), CommandError> {
 
 fn extract_zip(archive: &Path, destination: &Path) -> Result<(), CommandError> {
     let tar_error = {
-        let mut command = std::process::Command::new("tar.exe");
+        let mut command = std::process::Command::new(cbs_core::fsutil::system_tool("tar.exe"));
         command.arg("-xf").arg(archive).arg("-C").arg(destination);
         hide_std_console(&mut command);
         match command.output_with_timeout(EXTRACT_TIMEOUT) {
@@ -680,7 +692,9 @@ fn extract_zip(archive: &Path, destination: &Path) -> Result<(), CommandError> {
         ps_quote(&archive.display().to_string()),
         ps_quote(&destination.display().to_string())
     );
-    let mut command = std::process::Command::new("powershell.exe");
+    let mut command = std::process::Command::new(cbs_core::fsutil::system_tool(
+        r"WindowsPowerShell\v1.0\powershell.exe",
+    ));
     command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
     hide_std_console(&mut command);
     let output = command
@@ -806,7 +820,9 @@ pub fn open_documentation(url: String) -> Result<(), CommandError> {
         ));
     }
     #[cfg(windows)]
-    let result = std::process::Command::new("explorer").arg(&url).spawn();
+    let result = std::process::Command::new(cbs_core::fsutil::windows_tool("explorer.exe"))
+        .arg(&url)
+        .spawn();
     #[cfg(not(windows))]
     let result = std::process::Command::new("xdg-open").arg(&url).spawn();
     result
@@ -854,7 +870,17 @@ mod tests {
             .get_args()
             .map(|value| value.to_string_lossy().to_string())
             .collect();
-        assert_eq!(command.get_program(), "winget");
+        // Resolved to the user's WindowsApps alias, never a bare-name search
+        // that would start in the application directory.
+        let program = std::path::Path::new(command.get_program());
+        assert_eq!(program, winget_path().as_path());
+        assert!(program
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with("winget.exe"));
+        if std::env::var_os("LOCALAPPDATA").is_some() {
+            assert!(program.is_absolute(), "{program:?}");
+        }
         assert!(args.windows(2).any(|pair| pair == ["--id", "Cisco.ClamAV"]));
         assert!(args.windows(2).any(|pair| pair == ["--source", "winget"]));
         assert!(args.contains(&"--interactive".to_string()));

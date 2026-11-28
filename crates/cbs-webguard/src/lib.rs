@@ -45,6 +45,7 @@ const PROXY_READ_TIMEOUT: Duration = Duration::from_millis(350);
 const UPSTREAM_TIMEOUT: Duration = Duration::from_millis(1_200);
 const MAX_DNS_PACKET: usize = 4_096;
 const STATE_VERSION: u32 = 1;
+const EVENT_SAVE_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
 pub enum WebGuardError {
@@ -212,6 +213,34 @@ struct PersistedState {
     filters: Vec<FilterSource>,
     events: Vec<WebGuardEvent>,
     last_monitor_at: Option<String>,
+    /// Derived lookup table `domain -> blocklist position`, rebuilt whenever
+    /// the blocklist changes. Classification walks the host's parent suffixes
+    /// against this map instead of scanning up to 200 000 rules per query.
+    #[serde(skip)]
+    block_index: HashMap<String, usize>,
+}
+
+impl PersistedState {
+    fn rebuild_block_index(&mut self) {
+        let mut index = HashMap::with_capacity(self.blocklist.len());
+        for (position, entry) in self.blocklist.iter().enumerate() {
+            index.entry(entry.domain.clone()).or_insert(position);
+        }
+        self.block_index = index;
+    }
+
+    /// Most specific blocklist rule covering `host` (the host itself, then
+    /// each parent domain), matching [`domain_matches`] semantics.
+    fn find_block(&self, host: &str) -> Option<&BlockEntry> {
+        let mut candidate = host;
+        loop {
+            if let Some(&position) = self.block_index.get(candidate) {
+                return self.blocklist.get(position);
+            }
+            let dot = candidate.find('.')?;
+            candidate = &candidate[dot + 1..];
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -230,6 +259,13 @@ pub struct WebGuard {
     state: RwLock<PersistedState>,
     state_error: Mutex<Option<String>>,
     proxy: Mutex<ProxyRuntime>,
+    /// Serializes `save()` so concurrent writers never interleave on the
+    /// shared temporary file.
+    save_lock: Mutex<()>,
+    /// Last time DNS events were persisted; events are flushed at most once
+    /// per [`EVENT_SAVE_INTERVAL`] instead of on every query.
+    last_event_save: Mutex<Option<Instant>>,
+    events_dirty: AtomicBool,
 }
 
 impl WebGuard {
@@ -267,6 +303,9 @@ impl WebGuard {
             state: RwLock::new(state),
             state_error: Mutex::new(error),
             proxy: Mutex::new(ProxyRuntime::default()),
+            save_lock: Mutex::new(()),
+            last_event_save: Mutex::new(None),
+            events_dirty: AtomicBool::new(false),
         }
     }
 
@@ -287,6 +326,8 @@ impl WebGuard {
     }
 
     fn save(&self) -> Result<(), WebGuardError> {
+        let _save_guard = self.save_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.events_dirty.store(false, Ordering::SeqCst);
         let snapshot = {
             let state = self.read_state();
             PersistedState {
@@ -296,6 +337,7 @@ impl WebGuard {
                 filters: state.filters.clone(),
                 events: state.events.clone(),
                 last_monitor_at: state.last_monitor_at.clone(),
+                block_index: HashMap::new(),
             }
         };
         if let Some(parent) = self.path.parent() {
@@ -428,10 +470,7 @@ impl WebGuard {
             .iter()
             .find(|entry| domain_matches(&entry.domain, &host))
         {
-            let blocked = state
-                .blocklist
-                .iter()
-                .find(|blocked| domain_matches(&blocked.domain, &host));
+            let blocked = state.find_block(&host);
             return Ok(DomainVerdict {
                 action: "allowed".to_string(),
                 reason: "allowlist".to_string(),
@@ -441,11 +480,7 @@ impl WebGuard {
             });
         }
 
-        if let Some(entry) = state
-            .blocklist
-            .iter()
-            .find(|entry| domain_matches(&entry.domain, &host))
-        {
+        if let Some(entry) = state.find_block(&host) {
             return Ok(DomainVerdict {
                 action: "blocked".to_string(),
                 reason: "blocklist".to_string(),
@@ -552,6 +587,7 @@ impl WebGuard {
                     added += 1;
                 }
             }
+            state.block_index = index;
             state.filters.push(source.clone());
             state
                 .filters
@@ -628,6 +664,7 @@ impl WebGuard {
         {
             let mut state = self.write_state();
             state.blocklist.clear();
+            state.block_index.clear();
             state.filters.clear();
         }
         self.save()
@@ -639,6 +676,31 @@ impl WebGuard {
             state.events.insert(0, event);
             state.events.truncate(MAX_HISTORY_EVENTS);
         }
+        self.events_dirty.store(true, Ordering::SeqCst);
+        let due = {
+            let mut last = self
+                .last_event_save
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            let due = last.is_none_or(|at| at.elapsed() >= EVENT_SAVE_INTERVAL);
+            if due {
+                *last = Some(Instant::now());
+            }
+            due
+        };
+        if due {
+            self.persist_events();
+        }
+    }
+
+    /// Persist pending DNS events, if any (called when the resolver stops).
+    pub fn flush_events(&self) {
+        if self.events_dirty.load(Ordering::SeqCst) {
+            self.persist_events();
+        }
+    }
+
+    fn persist_events(&self) {
         if let Err(err) = self.save() {
             if let Ok(mut error) = self.state_error.lock() {
                 *error = Some(format!("historique non enregistré : {err}"));
@@ -691,17 +753,24 @@ impl WebGuard {
     }
 
     pub fn stop_monitor(&self) -> Result<ProxyStatus, WebGuardError> {
-        let mut proxy = self.proxy.lock().unwrap_or_else(|p| p.into_inner());
-        if proxy.join.is_none() {
-            return Err(WebGuardError::ProxyNotRunning);
-        }
-        if let Some(stop) = &proxy.stop {
+        // Take the worker handle and release the lock *before* joining: the
+        // resolver thread locks `proxy` on its way out, so joining while
+        // holding it deadlocked (and hung the UI thread).
+        let (stop, join) = {
+            let mut proxy = self.proxy.lock().unwrap_or_else(|p| p.into_inner());
+            if proxy.join.is_none() {
+                return Err(WebGuardError::ProxyNotRunning);
+            }
+            (proxy.stop.take(), proxy.join.take())
+        };
+        if let Some(stop) = &stop {
             stop.store(true, Ordering::SeqCst);
         }
-        if let Some(join) = proxy.join.take() {
+        if let Some(join) = join {
             let _ = join.join();
         }
-        proxy.stop = None;
+        self.flush_events();
+        let mut proxy = self.proxy.lock().unwrap_or_else(|p| p.into_inner());
         proxy.started_at = None;
         Ok(ProxyStatus {
             running: false,
@@ -779,13 +848,17 @@ impl WebGuard {
 
 impl Drop for WebGuard {
     fn drop(&mut self) {
-        let mut proxy = self.proxy.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(stop) = &proxy.stop {
+        let (stop, join) = {
+            let mut proxy = self.proxy.lock().unwrap_or_else(|p| p.into_inner());
+            (proxy.stop.take(), proxy.join.take())
+        };
+        if let Some(stop) = &stop {
             stop.store(true, Ordering::SeqCst);
         }
-        if let Some(join) = proxy.join.take() {
+        if let Some(join) = join {
             let _ = join.join();
         }
+        self.flush_events();
     }
 }
 
@@ -802,6 +875,7 @@ fn normalize_loaded_state(state: &mut PersistedState) {
     state.events.truncate(MAX_HISTORY_EVENTS);
     state.filters.truncate(64);
     state.allowlist.sort_by(|a, b| a.domain.cmp(&b.domain));
+    state.rebuild_block_index();
 }
 
 pub fn normalize_domain(input: &str) -> Result<String, WebGuardError> {
@@ -1087,15 +1161,26 @@ fn upstream_response(
             continue;
         }
         let mut buffer = [0u8; MAX_DNS_PACKET];
-        match socket.recv_from(&mut buffer) {
-            Ok((size, _)) if size >= 12 && buffer[..2] == query[..2] => {
-                return Ok((buffer[..size].to_vec(), *upstream));
-            }
-            Ok((_, _)) => {
-                last_error = "réponse DNS inattendue".to_string();
-            }
-            Err(err) => {
-                last_error = err.to_string();
+        // Only accept a reply from the resolver we queried, carrying our
+        // transaction id. Stray or spoofed datagrams are discarded (bounded
+        // number of attempts, each bounded by the read timeout).
+        for _ in 0..4 {
+            match socket.recv_from(&mut buffer) {
+                Ok((size, from))
+                    if from.ip() == upstream.ip()
+                        && from.port() == upstream.port()
+                        && size >= 12
+                        && buffer[..2] == query[..2] =>
+                {
+                    return Ok((buffer[..size].to_vec(), *upstream));
+                }
+                Ok((_, _)) => {
+                    last_error = "réponse DNS inattendue".to_string();
+                }
+                Err(err) => {
+                    last_error = err.to_string();
+                    break;
+                }
             }
         }
     }
@@ -1213,11 +1298,11 @@ fn proxy_loop(
             }
         }
     }
-    if let Ok(mut runtime) = guard.proxy.lock() {
-        if let Some(stop) = runtime.stop.as_ref() {
-            if stop.load(Ordering::SeqCst) {
-                runtime.last_error = None;
-            }
+    // A requested stop is a clean exit; anything else (socket failure) keeps
+    // the last error visible. `stop_monitor` has released the lock by now.
+    if stop.load(Ordering::SeqCst) {
+        if let Ok(mut runtime) = guard.proxy.lock() {
+            runtime.last_error = None;
         }
     }
 }
@@ -1450,6 +1535,53 @@ mod tests {
             guard.import_filter(&valid, "unknown", true, None),
             Err(WebGuardError::InvalidCategory(_))
         ));
+    }
+
+    #[test]
+    fn indexed_classification_matches_parents_and_survives_reload() {
+        let (dir, guard) = guard();
+        let path = write_filter("0.0.0.0 bad.example\n0.0.0.0 tracker.test\n");
+        guard.import_filter(&path, "malware", true, None).unwrap();
+        let _ = fs::remove_file(&path);
+
+        for host in ["bad.example", "a.b.bad.example", "tracker.test"] {
+            assert_eq!(guard.classify(host).unwrap().action, "blocked", "{host}");
+        }
+        for host in ["notbad.example", "example", "bad.example.evil"] {
+            assert_eq!(guard.classify(host).unwrap().action, "allowed", "{host}");
+        }
+
+        // The index is not persisted: it must be rebuilt on load.
+        drop(guard);
+        let reloaded = WebGuard::load(dir.path().join("webguard.json"));
+        assert_eq!(
+            reloaded.classify("cdn.bad.example").unwrap().action,
+            "blocked"
+        );
+        reloaded.clear_blocklist(true).unwrap();
+        assert_eq!(reloaded.classify("bad.example").unwrap().action, "allowed");
+    }
+
+    #[test]
+    fn stopping_the_resolver_does_not_deadlock() {
+        // Regression: stop_monitor joined the DNS thread while holding the
+        // `proxy` lock that the thread takes on exit, hanging forever.
+        let (_dir, guard) = guard();
+        if let Err(err) = guard.start_monitor() {
+            // No usable upstream resolver/port in this environment.
+            eprintln!("resolver unavailable, deadlock test skipped: {err}");
+            return;
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = Arc::clone(&guard);
+        thread::spawn(move || {
+            let _ = sender.send(worker.stop_monitor().map(|status| status.running));
+        });
+        let result = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("stop_monitor deadlocked");
+        assert!(!result.unwrap(), "the resolver must report stopped");
+        assert!(!guard.proxy_status().running);
     }
 
     fn write_filter(contents: &str) -> PathBuf {

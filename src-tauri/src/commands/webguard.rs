@@ -6,6 +6,7 @@
 //! the native dialog; only bounded local content is read.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use cbs_webguard::{DomainTestResult, ImportResult, WebGuardError, WebGuardView};
 use tauri::State;
@@ -31,29 +32,56 @@ fn map_error(error: WebGuardError) -> CommandError {
     CommandError::new(code, error.to_string())
 }
 
-#[tauri::command]
-pub fn webguard_snapshot(state: State<'_, AppState>) -> WebGuardView {
-    state.webguard.view()
+/// Run blocking Web Guard work (DNS probes, `sc query`, joining the resolver
+/// thread) on the blocking pool. Synchronous Tauri commands execute on the
+/// main thread, so these calls used to freeze the whole window for seconds.
+async fn off_ui_thread<T, F>(work: F) -> Result<T, CommandError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, CommandError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|err| CommandError::internal(format!("tâche Web Guard interrompue : {err}")))?
 }
 
 #[tauri::command]
-pub fn webguard_start_monitor(state: State<'_, AppState>) -> Result<WebGuardView, CommandError> {
-    state.webguard.start_monitor().map_err(map_error)?;
-    Ok(state.webguard.view())
+pub async fn webguard_snapshot(state: State<'_, AppState>) -> Result<WebGuardView, CommandError> {
+    let guard = Arc::clone(&state.webguard);
+    off_ui_thread(move || Ok(guard.view())).await
 }
 
 #[tauri::command]
-pub fn webguard_stop_monitor(state: State<'_, AppState>) -> Result<WebGuardView, CommandError> {
-    state.webguard.stop_monitor().map_err(map_error)?;
-    Ok(state.webguard.view())
+pub async fn webguard_start_monitor(
+    state: State<'_, AppState>,
+) -> Result<WebGuardView, CommandError> {
+    let guard = Arc::clone(&state.webguard);
+    off_ui_thread(move || {
+        guard.start_monitor().map_err(map_error)?;
+        Ok(guard.view())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn webguard_test_domain(
+pub async fn webguard_stop_monitor(
+    state: State<'_, AppState>,
+) -> Result<WebGuardView, CommandError> {
+    let guard = Arc::clone(&state.webguard);
+    off_ui_thread(move || {
+        guard.stop_monitor().map_err(map_error)?;
+        Ok(guard.view())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn webguard_test_domain(
     state: State<'_, AppState>,
     domain: String,
 ) -> Result<DomainTestResult, CommandError> {
-    state.webguard.test_domain(&domain).map_err(map_error)
+    let guard = Arc::clone(&state.webguard);
+    off_ui_thread(move || guard.test_domain(&domain).map_err(map_error)).await
 }
 
 #[tauri::command]
@@ -64,9 +92,27 @@ pub fn webguard_import_filter(
     confirm: bool,
 ) -> Result<ImportResult, CommandError> {
     let path = PathBuf::from(path);
+    // The file picker is UI-only: enforce on the backend that the import is
+    // an absolute, regular file outside CBS Shield's own data directory.
+    let resolved = crate::commands::vault::normalized_path(&path)
+        .filter(|_| path.is_absolute() && path.is_file())
+        .ok_or_else(|| {
+            CommandError::new(
+                "invalidImportPath",
+                "Le fichier de liste doit être un fichier existant désigné par un chemin absolu.",
+            )
+        })?;
+    let data_root = crate::commands::vault::normalized_path(&state.paths.data_dir)
+        .unwrap_or_else(|| state.paths.data_dir.clone());
+    if crate::commands::vault::path_is_inside(&resolved, &data_root) {
+        return Err(CommandError::new(
+            "forbiddenImportPath",
+            "L'import depuis le dossier interne de CBS Shield est refusé.",
+        ));
+    }
     state
         .webguard
-        .import_filter(&path, &category, confirm, None)
+        .import_filter(&resolved, &category, confirm, None)
         .map_err(map_error)
 }
 
