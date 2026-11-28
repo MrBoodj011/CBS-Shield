@@ -91,11 +91,39 @@ pub(crate) fn validate_clamscan_path(raw: &str) -> Result<PathBuf, CommandError>
         .file_name()
         .map(|name| name.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
-    if !name.starts_with("clamscan") {
+    let expected = if cfg!(windows) {
+        "clamscan.exe"
+    } else {
+        "clamscan"
+    };
+    if name != expected {
         return Err(CommandError::new(
             "invalidSetting",
-            "Le fichier sélectionné doit être clamscan.exe (ou clamscan).",
+            format!("Le fichier sélectionné doit s'appeler exactement {expected}."),
         ));
+    }
+    // This path is executed by manual scans and the proactive worker, so a
+    // lone renamed program (e.g. `clamscan.exe` dropped in Downloads) must not
+    // qualify. Official ClamAV builds are not Authenticode-signed, so instead
+    // the binary must sit in a real ClamAV installation layout.
+    #[cfg(windows)]
+    {
+        let dir = canonical
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""));
+        let missing: Vec<&str> = ["libclamav.dll", "freshclam.exe"]
+            .into_iter()
+            .filter(|sibling| !dir.join(sibling).is_file())
+            .collect();
+        if !missing.is_empty() {
+            return Err(CommandError::new(
+                "invalidSetting",
+                format!(
+                    "Ce dossier ne ressemble pas à une installation ClamAV (fichiers manquants : {}).",
+                    missing.join(", ")
+                ),
+            ));
+        }
     }
     Ok(canonical)
 }
@@ -249,7 +277,7 @@ pub fn open_data_dir(state: State<'_, AppState>) -> Result<(), CommandError> {
     }
 
     #[cfg(windows)]
-    let spawned = std::process::Command::new("explorer.exe")
+    let spawned = std::process::Command::new(cbs_core::fsutil::windows_tool("explorer.exe"))
         .arg(&path)
         .spawn();
     #[cfg(not(windows))]
@@ -265,11 +293,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_a_real_clamscan_binary_name() {
+    fn accepts_clamscan_inside_a_clamav_layout() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("clamscan.exe");
         std::fs::write(&exe, b"not really a binary").unwrap();
+        std::fs::write(dir.path().join("libclamav.dll"), b"x").unwrap();
+        std::fs::write(dir.path().join("freshclam.exe"), b"x").unwrap();
         assert!(validate_clamscan_path(&exe.display().to_string()).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_a_lone_clamscan_outside_a_clamav_installation() {
+        // Regression: any file whose name merely started with "clamscan"
+        // (e.g. dropped in Downloads) became the executed engine.
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("clamscan.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        assert!(validate_clamscan_path(&exe.display().to_string()).is_err());
+
+        let renamed = dir.path().join("clamscan-helper.exe");
+        std::fs::write(&renamed, b"x").unwrap();
+        std::fs::write(dir.path().join("libclamav.dll"), b"x").unwrap();
+        std::fs::write(dir.path().join("freshclam.exe"), b"x").unwrap();
+        assert!(validate_clamscan_path(&renamed.display().to_string()).is_err());
     }
 
     #[test]

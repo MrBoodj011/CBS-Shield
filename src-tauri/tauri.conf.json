@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CBS Shield â€” Cybrense",
+        "title": "CBS Shield — Cybrense",
         "width": 1380,
         "height": 900,
         "minWidth": 800,
@@ -32,10 +32,10 @@
     "active": true,
     "targets": ["nsis"],
     "publisher": "Cybrense",
-    "copyright": "Copyright Â© 2026 Cybrense",
+    "copyright": "Copyright © 2026 Cybrense",
     "category": "Utility",
-    "shortDescription": "Scanner de sÃ©curitÃ© manuel open source pour Windows",
-    "longDescription": "CBS Shield est une suite de sÃ©curitÃ© open source pour Windows 10/11. Cette version expÃ©rimentale fournit une analyse antivirus manuelle basÃ©e sur ClamAV, un historique SQLite, une quarantaine chiffrÃ©e, un tableau de bord local, ainsi que des modules d'observation rÃ©seau et pare-feu en lecture seule. Elle ne remplace pas Microsoft Defender et ne fournit aucune protection en temps rÃ©el.",
+    "shortDescription": "Scanner de sécurité manuel open source pour Windows",
+    "longDescription": "CBS Shield est une suite de sécurité open source pour Windows 10/11. Cette version expérimentale fournit une analyse antivirus manuelle basée sur ClamAV, un historique SQLite, une quarantaine chiffrée, un tableau de bord local, ainsi que des modules d'observation réseau et pare-feu en lecture seule. Elle ne remplace pas Microsoft Defender et ne fournit aucune protection en temps réel.",
     "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",

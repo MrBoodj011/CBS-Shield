@@ -119,7 +119,7 @@ pub fn dns_health() -> DnsHealth {
 #[cfg(windows)]
 fn service_state(name: &str) -> String {
     use std::os::windows::process::CommandExt;
-    let mut command = std::process::Command::new("sc");
+    let mut command = std::process::Command::new(cbs_core::fsutil::system_tool("sc.exe"));
     command
         .args(["query", name])
         .stdin(std::process::Stdio::null())
@@ -246,7 +246,10 @@ unsafe fn sockaddr_string(
     }
 }
 
-fn wide_string(pointer: *const u16) -> String {
+/// # Safety
+/// `pointer` must be null or point to a readable, NUL-terminated UTF-16
+/// string (at most 512 units are read).
+unsafe fn wide_string(pointer: *const u16) -> String {
     if pointer.is_null() {
         return String::new();
     }
@@ -296,17 +299,19 @@ fn looks_like_vpn(name: &str, description: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn registry_dword(subkey: &str, value: &str) -> Option<u32> {
-    use windows_sys::Win32::System::Registry::{
-        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD,
-    };
+fn registry_dword(
+    root: windows_sys::Win32::System::Registry::HKEY,
+    subkey: &str,
+    value: &str,
+) -> Option<u32> {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_DWORD};
     let subkey = wide_null(subkey);
     let value = wide_null(value);
     let mut data: u32 = 0;
     let mut size = std::mem::size_of::<u32>() as u32;
     let result = unsafe {
         RegGetValueW(
-            HKEY_LOCAL_MACHINE,
+            root,
             subkey.as_ptr(),
             value.as_ptr(),
             RRF_RT_REG_DWORD,
@@ -319,15 +324,19 @@ fn registry_dword(subkey: &str, value: &str) -> Option<u32> {
 }
 
 #[cfg(windows)]
-fn registry_string(subkey: &str, value: &str) -> Option<String> {
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+fn registry_string(
+    root: windows_sys::Win32::System::Registry::HKEY,
+    subkey: &str,
+    value: &str,
+) -> Option<String> {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_SZ};
     let subkey = wide_null(subkey);
     let value = wide_null(value);
     let mut buffer = [0u16; 1024];
     let mut size = (buffer.len() * 2) as u32;
     let result = unsafe {
         RegGetValueW(
-            HKEY_LOCAL_MACHINE,
+            root,
             subkey.as_ptr(),
             value.as_ptr(),
             RRF_RT_REG_SZ,
@@ -352,26 +361,28 @@ fn registry_string(subkey: &str, value: &str) -> Option<String> {
 #[cfg(windows)]
 fn auto_doh_enabled() -> Option<bool> {
     registry_dword(
+        windows_sys::Win32::System::Registry::HKEY_LOCAL_MACHINE,
         r"SYSTEM\CurrentControlSet\Services\Dnscache\Parameters",
         "EnableAutoDoh",
     )
     .map(|value| value > 0)
 }
 
+/// WinINET proxy settings are per user (HKCU). A machine-wide policy under
+/// HKLM is only consulted as a fallback.
 #[cfg(windows)]
 fn proxy_server() -> Option<String> {
-    let enabled = registry_dword(
-        r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
-        "ProxyEnable",
-    )
-    .unwrap_or(0);
-    if enabled == 0 {
-        return None;
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        if registry_dword(root, KEY, "ProxyEnable").unwrap_or(0) == 0 {
+            continue;
+        }
+        if let Some(server) = registry_string(root, KEY, "ProxyServer") {
+            return Some(server);
+        }
     }
-    registry_string(
-        r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
-        "ProxyServer",
-    )
+    None
 }
 
 #[cfg(windows)]

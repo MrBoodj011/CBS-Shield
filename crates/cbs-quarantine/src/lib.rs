@@ -126,11 +126,16 @@ impl Quarantine {
             if let Some(parent) = self.key_path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&self.key_path)
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            // Off Windows (tests/CI) the key file itself is the secret: make
+            // it owner-only, as documented in dpapi.rs.
+            #[cfg(unix)]
             {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            match options.open(&self.key_path) {
                 Ok(mut file) => {
                     file.write_all(&protected)?;
                     file.sync_all()?;
@@ -164,8 +169,15 @@ impl Quarantine {
         Ok(out)
     }
 
-    fn blob_path(&self, item_id: &str) -> PathBuf {
-        self.root.join(format!("{item_id}.cbsq"))
+    /// Path of an item's blob. `item_id` is always a UUID minted by
+    /// [`Quarantine::stage`]; anything else (for example a tampered database
+    /// value such as `..\key`) is refused so it can never address a file
+    /// outside the vault.
+    fn blob_path(&self, item_id: &str) -> Result<PathBuf, QuarantineError> {
+        let parsed = Uuid::parse_str(item_id).map_err(|_| {
+            QuarantineError::InvalidVault(format!("identifiant d'élément invalide : {item_id}"))
+        })?;
+        Ok(self.root.join(format!("{}.cbsq", parsed.hyphenated())))
     }
 
     /// Encrypt a file into the vault **without touching the source**.
@@ -193,9 +205,26 @@ impl Quarantine {
             return Err(QuarantineError::TooLarge(metadata.len()));
         }
 
-        let mut data = Vec::with_capacity(metadata.len() as usize);
-        let mut file = fs::File::open(source)?;
-        file.read_to_end(&mut data)?;
+        // Open without following reparse points and re-check the *opened*
+        // object: a symlink swapped in after `symlink_metadata` is refused.
+        let mut file = open_no_follow(source, false)?;
+        let opened = file.metadata()?;
+        if opened.file_type().is_symlink() || !opened.is_file() {
+            return Err(QuarantineError::NotAFile(
+                "le fichier a été remplacé par un lien ou un dossier".to_string(),
+            ));
+        }
+        if opened.len() > MAX_FILE_BYTES {
+            return Err(QuarantineError::TooLarge(opened.len()));
+        }
+        let mut data = Vec::with_capacity(opened.len() as usize);
+        (&mut file)
+            .take(MAX_FILE_BYTES + 1)
+            .read_to_end(&mut data)?;
+        if data.len() as u64 > MAX_FILE_BYTES {
+            return Err(QuarantineError::TooLarge(data.len() as u64));
+        }
+        drop(file);
 
         let sha256 = hex_digest(&data);
         let item_id = Uuid::new_v4().to_string();
@@ -220,7 +249,7 @@ impl Quarantine {
             )
             .map_err(|_| QuarantineError::Crypto("chiffrement refusé".to_string()))?;
 
-        let stored_path = self.blob_path(&item_id);
+        let stored_path = self.blob_path(&item_id)?;
         let temp_path = self.root.join(format!(".{item_id}.tmp"));
 
         // Write, flush, rename. Any error removes the partial file so a
@@ -283,14 +312,21 @@ impl Quarantine {
         // Re-verify before deletion: never remove a source whose blob is gone
         // or unreadable (for example if the vault was cleaned concurrently).
         self.verify_blob(&item.item_id, &item.sha256)?;
-        match fs::remove_file(source) {
+        // Only delete the exact content that was encrypted: the file is
+        // re-hashed through the handle that performs the deletion, so a file
+        // swapped in after staging is never removed.
+        let retained = |reason: String| QuarantineError::SourceRetained {
+            path: source.display().to_string(),
+            item_id: item.item_id.clone(),
+            reason,
+        };
+        match delete_if_unchanged(source, &item.sha256) {
             Ok(()) => Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(QuarantineError::SourceRetained {
-                path: source.display().to_string(),
-                item_id: item.item_id.clone(),
-                reason: err.to_string(),
-            }),
+            Err(DeleteError::Missing) => Ok(()),
+            Err(DeleteError::Changed) => Err(retained(
+                "le fichier a changé ou a été remplacé depuis sa copie chiffrée".to_string(),
+            )),
+            Err(DeleteError::Io(err)) => Err(retained(err.to_string())),
         }
     }
 
@@ -322,7 +358,7 @@ impl Quarantine {
     /// Read and decrypt one blob, proving its authenticity (AES-GCM tag) and
     /// returning the plaintext. Used by restore, commits and staging checks.
     fn decrypt_blob(&self, item_id: &str) -> Result<Vec<u8>, QuarantineError> {
-        let blob_path = self.blob_path(item_id);
+        let blob_path = self.blob_path(item_id)?;
         let blob = fs::read(&blob_path).map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 QuarantineError::NotFound(blob_path.display().to_string())
@@ -397,7 +433,7 @@ impl Quarantine {
             )));
         }
 
-        let blob_path = self.blob_path(item_id);
+        let blob_path = self.blob_path(item_id)?;
         let plaintext = self.decrypt_blob(item_id)?;
 
         if let Some(expected) = expected_sha256 {
@@ -427,7 +463,7 @@ impl Quarantine {
     /// explicit confirmation and for updating the audit record.
     pub fn purge(&self, item_id: &str) -> Result<(), QuarantineError> {
         let _guard = self.lock_ops()?;
-        let path = self.blob_path(item_id);
+        let path = self.blob_path(item_id)?;
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -472,6 +508,107 @@ fn hex_digest(data: &[u8]) -> String {
     format!("{:x}", Sha256::digest(data))
 }
 
+/// Open a file for reading without following a final symlink/junction
+/// (`FILE_FLAG_OPEN_REPARSE_POINT`). With `delete`, the handle also carries
+/// `DELETE` access so the file can be removed through it.
+fn open_no_follow(path: &Path, delete: bool) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DELETE, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+        };
+        let access = if delete {
+            FILE_GENERIC_READ | DELETE
+        } else {
+            FILE_GENERIC_READ
+        };
+        options
+            .access_mode(access)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = delete;
+    }
+    options.open(path)
+}
+
+#[derive(Debug)]
+enum DeleteError {
+    Missing,
+    Changed,
+    Io(std::io::Error),
+}
+
+/// Delete `path` only if it is still a regular file whose SHA-256 equals
+/// `expected_sha256`.
+///
+/// On Windows the hash check and the deletion use the same handle (delete
+/// disposition set via `SetFileInformationByHandle`), so the object that was
+/// verified is exactly the one removed, even if the path is swapped.
+fn delete_if_unchanged(path: &Path, expected_sha256: &str) -> Result<(), DeleteError> {
+    let mut file = match open_no_follow(path, true) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Err(DeleteError::Missing),
+        Err(err) => return Err(DeleteError::Io(err)),
+    };
+    let metadata = file.metadata().map_err(DeleteError::Io)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(DeleteError::Changed);
+    }
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(DeleteError::Io)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    if !format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected_sha256) {
+        return Err(DeleteError::Changed);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileDispositionInfo, SetFileInformationByHandle, FILE_DISPOSITION_INFO,
+        };
+        let info = FILE_DISPOSITION_INFO { DeleteFile: true };
+        // SAFETY: the handle is owned by `file` and valid for the call; `info`
+        // is a properly sized FILE_DISPOSITION_INFO living on the stack.
+        let ok = unsafe {
+            SetFileInformationByHandle(
+                file.as_raw_handle() as _,
+                FileDispositionInfo,
+                (&info as *const FILE_DISPOSITION_INFO).cast(),
+                std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+            )
+        };
+        if ok == 0 {
+            return Err(DeleteError::Io(std::io::Error::last_os_error()));
+        }
+        // The file disappears when this last handle closes.
+        drop(file);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        drop(file);
+        fs::remove_file(path).map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                DeleteError::Missing
+            } else {
+                DeleteError::Io(err)
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,6 +617,44 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let q = Quarantine::new(dir.path().join("vault"));
         (dir, q)
+    }
+
+    #[test]
+    fn commit_never_deletes_a_file_swapped_after_staging() {
+        // Regression: commit() used to delete by path, so a different file
+        // placed at the same path after staging was removed.
+        let (dir, q) = setup();
+        let source = dir.path().join("target.bin");
+        fs::write(&source, b"original detected content").unwrap();
+        let item = q.stage(&source).unwrap();
+
+        fs::write(&source, b"an unrelated user document").unwrap();
+        match q.commit(&item, &source) {
+            Err(QuarantineError::SourceRetained { .. }) => {}
+            other => panic!("expected SourceRetained, got {other:?}"),
+        }
+        assert_eq!(fs::read(&source).unwrap(), b"an unrelated user document");
+        assert!(item.stored_path.is_file(), "the verified blob is kept");
+    }
+
+    #[test]
+    fn commit_deletes_the_unchanged_source() {
+        let (dir, q) = setup();
+        let source = dir.path().join("unchanged.bin");
+        fs::write(&source, b"payload").unwrap();
+        let item = q.stage(&source).unwrap();
+        q.commit(&item, &source).unwrap();
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn non_uuid_item_ids_are_refused() {
+        let (_dir, q) = setup();
+        q.ensure_layout().unwrap();
+        for id in ["..\\quarantine", "../key", "abc", ""] {
+            assert!(q.purge(id).is_err(), "{id:?} must be refused");
+            assert!(q.verify_blob(id, "00").is_err(), "{id:?} must be refused");
+        }
     }
 
     #[test]
